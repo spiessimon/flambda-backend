@@ -180,34 +180,34 @@ let reg_stack_arg_end  = phys_reg Int 18 (* x21 *)
 let label_prefix =
   if macosx then "L" else ".L"
 
-let emitp_label lbl =
-  emitp_string label_prefix; emitp_string (Label.to_string lbl)
+let emitp_label out lbl =
+  emitp_string out label_prefix; emitp_string out (Label.to_string lbl)
 
 (* Symbols *)
 
 (* CR sdolan: Support local symbol definitions & references on arm64 *)
 
-let emitp_symbol s =
-  if macosx then emitp_string "_";
-  Emitaux.emitp_symbol s
+let emitp_symbol out s =
+  if macosx then emitp_string out "_";
+  emitp_symbol out s
 
 (* Object types *)
 
-let emitp_symbol_type emitp_lbl_or_sym lbl_or_sym ty =
+let emitp_symbol_type emitp_lbl_or_sym out lbl_or_sym ty =
   if not macosx then begin
     emitp_format out "	.type	%a, %%%a\n" emitp_lbl_or_sym lbl_or_sym emitp_string ty
   end
 
 
-let emitp_symbol_size sym =
+let emitp_symbol_size out sym =
   if not macosx then begin
     emitp_format out "	.size	%a, .-%a\n" emitp_symbol sym emitp_symbol sym
   end
 
 (* Output a pseudo-register *)
 
-let emitp_reg = function
-    {loc = Reg r; typ; _} -> emitp_string (register_name typ r)
+let emitp_reg out = function
+    {loc = Reg r; typ; _} -> emitp_string out (register_name typ r)
   | {loc = (Stack _ | Unknown); _}  -> fatal_error "Emit.emitp_reg"
 
 (* Likewise, but with the 32-bit name of the register *)
@@ -218,8 +218,8 @@ let int_reg_name_w =
      "w19"; "w20"; "w21"; "w22"; "w23"; "w24"; "w25";
      "w26"; "w27"; "w28"; "w16"; "w17" |]
 
-let emitp_wreg = function
-    {loc = Reg r; _} -> emitp_string int_reg_name_w.(r)
+let emitp_wreg out = function
+    {loc = Reg r; _} -> emitp_string out int_reg_name_w.(r)
   | {loc = (Stack _ | Unknown); _}  -> fatal_error "Emit.emitp_wreg"
 
 (* Layout of the stack frame *)
@@ -254,7 +254,7 @@ let slot_offset loc stack_class =
 
 (* Output a stack reference *)
 
-let emitp_stack r =
+let emitp_stack out r =
   match r.loc with
   | Stack (Domainstate n) ->
       let ofs = n + Domainstate.(idx_of_field Domain_extra_params) * 8 in
@@ -266,19 +266,19 @@ let emitp_stack r =
 
 (* Output an addressing mode *)
 
-let emitp_symbol_offset s ofs =
-  emitp_symbol s;
+let emitp_symbol_offset out (s, ofs) =
+  emitp_symbol out s;
   if ofs > 0 then emitp_format out "+%a" emitp_int ofs
   else if ofs < 0 then emitp_format out "-%a" emitp_int (-ofs)
   else ()
 
-let emitp_addressing addr r =
+let emitp_addressing out (addr, r) =
   match addr with
   | Iindexed ofs ->
       emitp_format out "[%a, #%a]" emitp_reg r emitp_int ofs
   | Ibased(s, ofs) ->
       assert (not !Clflags.dlcode);  (* see selection.ml *)
-      emitp_format out "[%a, #:lo12:%a]" emitp_reg r emitp_symbol_offset s ofs
+      emitp_format out "[%a, #:lo12:%a]" emitp_reg r emitp_symbol_offset (s, ofs)
 
 (* Record live pointers at call points *)
 
@@ -300,11 +300,11 @@ let record_frame_label live dbg =
           Misc.fatal_error ("Unknown location " ^ Reg.name r)
       | { typ = Int | Float | Float32 | Vec128; _ } -> ())
     live;
-  record_frame_descr ~label:lbl ~frame_size:(frame_size())
+  Emitaux.record_frame_descr ~label:lbl ~frame_size:(frame_size())
     ~live_offset:!live_offset dbg;
   lbl
 
-let record_frame live dbg =
+let record_frame out (live, dbg) =
   let lbl = record_frame_label live dbg in emitp_format out "%a:" emitp_label lbl
 
 (* Record calls to the GC -- we've moved them out of the way *)
@@ -316,7 +316,7 @@ type gc_call =
 
 let call_gc_sites = ref ([] : gc_call list)
 
-let emitp_call_gc gc =
+let emitp_call_gc out gc =
   emitp_format out "%a:	bl	%a\n" emitp_label gc.gc_lbl emitp_symbol "caml_call_gc";
   emitp_format out "%a:	b	%a\n" emitp_label gc.gc_frame_lbl emitp_label gc.gc_return_lbl
 
@@ -330,9 +330,9 @@ type local_realloc_call =
 
 let local_realloc_sites = ref ([] : local_realloc_call list)
 
-let emitp_local_realloc lr =
+let emitp_local_realloc out lr =
   emitp_format out "%a:\n" emitp_label lr.lr_lbl;
-  emitp_format out "	%a\n" emitp_debug_info lr.lr_dbg;
+  emitp_format out "	%a\n" (emitp_debug_info ~discriminator:None) lr.lr_dbg;
   emitp_format out "	bl	%a\n" emitp_symbol "caml_call_local_realloc";
   emitp_format out "	b	%a\n" emitp_label lr.lr_return_lbl
 
@@ -349,7 +349,7 @@ let stack_realloc = ref (None : stack_realloc option)
 let clear_stack_realloc () =
   stack_realloc := None
 
-let emitp_stack_realloc () =
+let emitp_stack_realloc out () =
   match !stack_realloc with
   | None -> ()
   | Some { sc_label; sc_return; sc_max_frame_size_in_bytes; } ->
@@ -401,10 +401,10 @@ let decompose_int default n =
 
 (* Load an integer constant into a register *)
 
-let emitp_movk dst (f, p) =
+let emitp_movk out dst (f, p) =
     emitp_format out "	movk	%a, #%a, lsl #%a\n" emitp_reg dst emitp_nativeint f emitp_int p
 
-let emitp_intconst dst n =
+let emitp_intconst out dst n =
   if is_logical_immediate n then
     emitp_format out "	orr	%a, xzr, #%a\n" emitp_reg dst emitp_nativeint n
   else begin
@@ -416,7 +416,7 @@ let emitp_intconst dst n =
           emitp_format out "	mov	%a, xzr\n" emitp_reg dst
       | (f, p) :: l ->
           emitp_format out "	movz	%a, #%a, lsl #%a\n" emitp_reg dst emitp_nativeint f emitp_int p;
-          List.iter (emitp_movk dst) l
+          List.iter (emitp_movk out dst) l
     end else begin
       match dn with
       | [] ->
@@ -424,7 +424,7 @@ let emitp_intconst dst n =
       | (f, p) :: l ->
           let nf = Nativeint.logxor f 0xFFFFn in
           emitp_format out "	movn	%a, #%a, lsl #%a\n" emitp_reg dst emitp_nativeint nf emitp_int p;
-          List.iter (emitp_movk dst) l
+          List.iter (emitp_movk out dst) l
     end
   end
 
@@ -451,32 +451,32 @@ let is_immediate_float32 bits =
 
 (* Adjust sp (up or down) by the given byte amount *)
 
-let emitp_stack_adjustment n =
+let emitp_stack_adjustment out n =
   let instr = if n < 0 then "sub" else "add" in
   let m = abs n in
   assert (m < 0x1_000_000);
   let ml = m land 0xFFF and mh = m land 0xFFF_000 in
   if mh <> 0 then emitp_format out "	%a	sp, sp, #%a\n" emitp_string instr emitp_int mh;
   if ml <> 0 then emitp_format out "	%a	sp, sp, #%a\n" emitp_string instr emitp_int ml;
-  if n <> 0 then cfi_adjust_cfa_offset (-n)
+  if n <> 0 then cfi_adjust_cfa_offset out (-n)
 
 (* Deallocate the stack frame and reload the return address
    before a return or tail call *)
 
-let output_epilogue f =
+let output_epilogue out f =
   let n = frame_size() in
   if !contains_calls then
     emitp_format out "	ldr	x30, [sp, #%a]\n" emitp_int (n-8);
   if n > 0 then
-    emitp_stack_adjustment n;
+    emitp_stack_adjustment out n;
   f();
   (* reset CFA back because function body may continue *)
-  if n > 0 then cfi_adjust_cfa_offset n
+  if n > 0 then cfi_adjust_cfa_offset out n
 
 (* Output add-immediate / sub-immediate / cmp-immediate instructions *)
 
-let rec emitp_addimm rd rs n =
-  if n < 0 then emitp_subimm rd rs (-n)
+let rec emitp_addimm out rd rs n =
+  if n < 0 then emitp_subimm out rd rs (-n)
   else if n <= 0xFFF then
     emitp_format out "	add	%a, %a, #%a\n" emitp_reg rd emitp_reg rs emitp_int n
   else begin
@@ -487,8 +487,8 @@ let rec emitp_addimm rd rs n =
       emitp_format out "	add	%a, %a, #%a\n" emitp_reg rd emitp_reg rd emitp_int nl
   end
 
-and emitp_subimm rd rs n =
-  if n < 0 then emitp_addimm rd rs (-n)
+and emitp_subimm out rd rs n =
+  if n < 0 then emitp_addimm out rd rs (-n)
   else if n <= 0xFFF then
     emitp_format out "	sub	%a, %a, #%a\n" emitp_reg rd emitp_reg rs emitp_int n
   else begin
@@ -499,7 +499,7 @@ and emitp_subimm rd rs n =
       emitp_format out "	sub	%a, %a, #%a\n" emitp_reg rd emitp_reg rd emitp_int nl
   end
 
-let emitp_cmpimm rs n =
+let emitp_cmpimm out rs n =
   if n >= 0
   then emitp_format out "	cmp	%a, #%a\n" emitp_reg rs emitp_int n
   else emitp_format out "	cmn	%a, #%a\n" emitp_reg rs emitp_int (-n)
@@ -525,7 +525,7 @@ let float_literal f = add_literal float_literals f
 let vec128_literal f = add_literal vec128_literals f
 
 (* Emit all pending literals *)
-let emitp_literals p align emitp_literal =
+let emitp_literals out p align emitp_literal =
   if !p <> [] then begin
     if macosx then
     emitp_format out "	.section	__TEXT,__literal%a,%abyte_literals\n" emitp_int align emitp_int align;
@@ -534,21 +534,21 @@ let emitp_literals p align emitp_literal =
     p := []
   end
 
-let emitp_float_literal (f, lbl) =
-     emitp_format out "%a:" emitp_label lbl; emitp_float64_directive ".quad" f
+let emitp_float_literal out (f, lbl) =
+     emitp_format out "%a:" emitp_label lbl; emitp_float64_directive out ".quad" f
 
-let emitp_vec128_literal (({ high; low; } : Cmm.vec128_bits), lbl) =
+let emitp_vec128_literal out (({ high; low; } : Cmm.vec128_bits), lbl) =
      emitp_format out "%a:\n" emitp_label lbl;
-     emitp_float64_directive ".quad" low;
-     emitp_float64_directive ".quad" high
+     emitp_float64_directive out ".quad" low;
+     emitp_float64_directive out ".quad" high
 
-let emitp_literals () =
-  emitp_literals float_literals size_float emitp_float_literal;
-  emitp_literals vec128_literals size_vec128 emitp_vec128_literal
+let emitp_literals out () =
+  emitp_literals out float_literals size_float (emitp_float_literal out);
+  emitp_literals out vec128_literals size_vec128 (emitp_vec128_literal out)
 
 (* Emit code to load the address of a symbol *)
 
-let emitp_load_symbol_addr dst s =
+let emitp_load_symbol_addr out dst s =
   if macosx then begin
     emitp_format out "	adrp	%a, %a%@GOTPAGE\n" emitp_reg dst emitp_symbol s;
     emitp_format out "	ldr	%a, [%a, %a%@GOTPAGEOFF]\n" emitp_reg dst emitp_reg dst emitp_symbol s
@@ -612,9 +612,9 @@ module DSL : sig
   val emitp_reg_w : Reg.t -> Arm64_ast.Operand.t
   val emitp_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
-  val ins : I.t -> Arm64_ast.Operand.t array -> unit
+  val ins : out_channel -> I.t -> Arm64_ast.Operand.t array -> unit
 
-  val simd_instr : Simd.operation -> Linear.instruction -> unit
+  val simd_instr : out_channel -> Simd.operation -> Linear.instruction -> unit
   val simd_instr_size : Simd.operation -> int
 
 end [@warning "-32"]  = struct
@@ -711,9 +711,9 @@ end [@warning "-32"]  = struct
   let emitp_regs_unary i =
     [| emitp_reg i.res.(0); emitp_reg i.arg.(0); |]
 
-  let ins name ops = print_ins name ops |> emitp_string
+  let ins out name ops = print_ins name ops |> emitp_string out
 
-  let ins_cond name cond ops = print_ins_cond name cond ops |> emitp_string
+  let ins_cond out name cond ops = print_ins_cond name cond ops |> emitp_string out
 
   let emitp_operands (register_behavior : Simd_proc.register_behavior) i =
     match register_behavior with
@@ -746,7 +746,7 @@ end [@warning "-32"]  = struct
     | Zero -> I.Rounding_mode.Z
     | Current -> I.Rounding_mode.X
 
-  let simd_instr (op : Simd.operation) i =
+  let simd_instr out (op : Simd.operation) i =
     let b = Simd_proc.register_behavior op in
     check_instr b i;
     let operands = emitp_operands b i in
@@ -755,28 +755,28 @@ end [@warning "-32"]  = struct
        "minss", even when the flag [FPCR.AH] is not set. A separate intrinsics generates
        fmin/fmax arm64 instructions directly. *)
     | Min_scalar_f32 ->
-      ins I.FCMP (src_operands operands);
-      ins_cond I.FCSEL I.Cond.MI operands;
+      ins out I.FCMP (src_operands operands);
+      ins_cond out I.FCSEL I.Cond.MI operands;
     | Max_scalar_f32 ->
-      ins I.FCMP (src_operands operands);
-      ins_cond I.FCSEL I.Cond.GT operands;
+      ins out I.FCMP (src_operands operands);
+      ins_cond out I.FCSEL I.Cond.GT operands;
     | Round_f32 rm ->
-      ins (I.FRINT (emitp_rounding_mode rm)) operands
+      ins out (I.FRINT (emitp_rounding_mode rm)) operands
     | Round_f32_i64 ->
-      ins I.FCVTNS operands
+      ins out I.FCVTNS operands
     | Fmin_f32 ->
-      ins I.FMIN operands
+      ins out I.FMIN operands
     | Fmax_f32 ->
-      ins I.FMAX operands
+      ins out I.FMAX operands
     | Zip1_f32    | Zip1q_f32
     | Zip1q_f64  ->
-      ins I.ZIP1 operands
+      ins out I.ZIP1 operands
     | Zip2q_f64  ->
-      ins I.ZIP2 operands
+      ins out I.ZIP2 operands
     | Addq_i64 ->
-      ins I.ADD operands
+      ins out I.ADD operands
     | Subq_i64 ->
-      ins I.SUB operands
+      ins out I.SUB operands
 end
 
 module BR = Branch_relaxation.Make (struct
@@ -989,7 +989,7 @@ let name_for_float_comparison : Cmm.float_comparison -> string = function
 
 (* Output the assembly code for allocation. *)
 
-let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
+let assembly_code_for_allocation out i ~local ~n ~far ~dbginfo =
   if local then begin
     let r = i.res.(0) in
     let module DS = Domainstate in
@@ -998,7 +998,7 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
     let domain_local_top_offset = DS.(idx_of_field Domain_local_top) * 8 in
     emitp_format out "	ldr	%a, [%a, #%a]\n" emitp_reg reg_tmp1 emitp_reg reg_domain_state_ptr emitp_int domain_local_limit_offset;
     emitp_format out "	ldr	%a, [%a, #%a]\n" emitp_reg r emitp_reg reg_domain_state_ptr emitp_int domain_local_sp_offset;
-    emitp_subimm r r n;
+    emitp_subimm out r r n;
     emitp_format out "	str	%a, [%a, #%a]\n" emitp_reg r emitp_reg reg_domain_state_ptr emitp_int domain_local_sp_offset;
     emitp_format out "	cmp	%a, %a\n" emitp_reg r emitp_reg reg_tmp1;
     let lbl_call = Cmm.new_label () in
@@ -1025,7 +1025,7 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
       assert (16 <= n && n < 0x1_000 && n land 0x7 = 0);
       let offset = Domainstate.(idx_of_field Domain_young_limit) * 8 in
       emitp_format out "	ldr	%a, [%a, #%a]\n" emitp_reg reg_tmp1 emitp_reg reg_domain_state_ptr emitp_int offset;
-      emitp_subimm reg_alloc_ptr reg_alloc_ptr n;
+      emitp_subimm out reg_alloc_ptr reg_alloc_ptr n;
       emitp_format out "	cmp	%a, %a\n" emitp_reg reg_alloc_ptr emitp_reg reg_tmp1;
       if not far then begin
         emitp_format out "	b.lo	%a\n" emitp_label lbl_call_gc
@@ -1046,14 +1046,14 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
       | 16 -> emitp_format out "	bl	%a\n" emitp_symbol "caml_alloc1"
       | 24 -> emitp_format out "	bl	%a\n" emitp_symbol "caml_alloc2"
       | 32 -> emitp_format out "	bl	%a\n" emitp_symbol "caml_alloc3"
-      | _  -> emitp_intconst reg_x8 (Nativeint.of_int n);
+      | _  -> emitp_intconst out reg_x8 (Nativeint.of_int n);
               emitp_format out "	bl	%a\n" emitp_symbol "caml_allocN"
       end;
       emitp_format out "%a:	add	%a, %a, #8\n" emitp_label lbl_frame emitp_reg i.res.(0) emitp_reg reg_alloc_ptr
     end
   end
 
-let assembly_code_for_poll i ~far ~return_label =
+let assembly_code_for_poll out i ~far ~return_label =
   let lbl_frame = record_frame_label i.live (Dbg_alloc []) in
   let lbl_call_gc = Cmm.new_label() in
   let lbl_after_poll = match return_label with
@@ -1089,7 +1089,7 @@ let assembly_code_for_poll i ~far ~return_label =
 
 (* Output .text section directive, or named .text.caml.<name> if enabled. *)
 
-let emitp_named_text_section func_name =
+let emitp_named_text_section out func_name =
   if !Clflags.function_sections then begin
     emitp_format out "	.section .text.caml.%a,%a,%%progbits\n" emitp_symbol func_name emitp_string_literal "ax"
   end
@@ -1098,7 +1098,7 @@ let emitp_named_text_section func_name =
 
 (* Emit code to load an emitted literal *)
 
-let emitp_load_literal dst lbl =
+let emitp_load_literal out dst lbl =
   if macosx then begin
     emitp_format out "	adrp	%a, %a%@PAGE\n" emitp_reg reg_tmp1 emitp_label lbl;
     emitp_format out "	ldr	%a, [%a, %a%@PAGEOFF]\n" emitp_reg dst emitp_reg reg_tmp1 emitp_label lbl
@@ -1107,18 +1107,18 @@ let emitp_load_literal dst lbl =
     emitp_format out "	ldr	%a, [%a, #:lo12:%a]\n" emitp_reg dst emitp_reg reg_tmp1 emitp_label lbl
   end
 
-let move (src : Reg.t) (dst : Reg.t) =
+let move out (src : Reg.t) (dst : Reg.t) =
   let distinct = not (Reg.same_loc src dst) in
   if distinct then
   match src.typ, src.loc, dst.typ, dst.loc with
   | Float, Reg _, Float, Reg _
   | Float32, Reg _, Float32, Reg _
      ->
-     DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
+     DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
   | (Vec128|Valx2), Reg _, (Vec128|Valx2), Reg _ ->
-     DSL.ins I.MOV [| DSL.emitp_reg_v2d dst; DSL.emitp_reg_v2d src |]
+     DSL.ins out I.MOV [| DSL.emitp_reg_v2d dst; DSL.emitp_reg_v2d src |]
   | (Int | Val | Addr), Reg _, (Int | Val | Addr), Reg _ ->
-      DSL.ins I.MOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
+      DSL.ins out I.MOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
   | _, Reg _, _, Stack _ ->
      emitp_format out "	str	%a, %a\n" emitp_reg src emitp_stack dst
   | _, Stack _, _, Reg _ ->
@@ -1137,132 +1137,132 @@ let move (src : Reg.t) (dst : Reg.t) =
        "Illegal move between registers of differing types (%a to %a)\n"
        Printreg.reg src Printreg.reg dst
 
-let emitp_reinterpret_cast (cast : Cmm.reinterpret_cast) i =
+let emitp_reinterpret_cast out (cast : Cmm.reinterpret_cast) i =
     let src = i.arg.(0) in
     let dst = i.res.(0) in
     let distinct = not (Reg.same_loc src dst) in
     match cast with
     | Int64_of_float ->
       DSL.check_reg Float src;
-      DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
+      DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
     | Float_of_int64 ->
       DSL.check_reg Float dst;
-      DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
+      DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |]
     | Float32_of_int32 ->
       DSL.check_reg Float32 dst;
-      DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_w src |]
+      DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_w src |]
     | Int32_of_float32 ->
       DSL.check_reg Float32 src;
-      DSL.ins I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg src |]
+      DSL.ins out I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg src |]
     | Float32_of_float ->
        if distinct then (
         DSL.check_reg Float src;
         DSL.check_reg Float32 dst;
-        DSL.ins I.MOV [| DSL.emitp_reg_d dst; DSL.emitp_reg_d src |])
+        DSL.ins out I.MOV [| DSL.emitp_reg_d dst; DSL.emitp_reg_d src |])
     | Float_of_float32 ->
       if distinct then (
         DSL.check_reg Float32 src;
         DSL.check_reg Float dst;
-        DSL.ins I.MOV [| DSL.emitp_reg_d dst; DSL.emitp_reg_d src |])
+        DSL.ins out I.MOV [| DSL.emitp_reg_d dst; DSL.emitp_reg_d src |])
     | V128_of_v128 ->
       if distinct then (
         DSL.check_reg Vec128 src;
         DSL.check_reg Vec128 dst;
-        DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |])
-    | Int_of_value | Value_of_int -> move src dst
+        DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg src |])
+    | Int_of_value | Value_of_int -> move out src dst
 
-let emitp_static_cast (cast : Cmm.static_cast) i =
+let emitp_static_cast out (cast : Cmm.static_cast) i =
     let dst = i.res.(0) in
     let src = i.arg.(0) in
     let distinct = not (Reg.same_loc src dst) in
     match cast with
     | Int_of_float Float64 ->
        DSL.check_reg Float src;
-       DSL.ins I.FCVTZS[| DSL.emitp_reg dst; DSL.emitp_reg src |]
+       DSL.ins out I.FCVTZS[| DSL.emitp_reg dst; DSL.emitp_reg src |]
     | Int_of_float Float32 ->
        DSL.check_reg Float32 src;
-       DSL.ins I.FCVTZS[| DSL.emitp_reg dst; DSL.emitp_reg src |]
+       DSL.ins out I.FCVTZS[| DSL.emitp_reg dst; DSL.emitp_reg src |]
     | Float_of_int Float64 ->
       DSL.check_reg Float dst;
-      DSL.ins I.SCVTF [| DSL.emitp_reg dst; DSL.emitp_reg src |];
+      DSL.ins out I.SCVTF [| DSL.emitp_reg dst; DSL.emitp_reg src |];
     | Float_of_int Float32 ->
       DSL.check_reg Float32 dst;
-      DSL.ins I.SCVTF [| DSL.emitp_reg dst; DSL.emitp_reg src |];
+      DSL.ins out I.SCVTF [| DSL.emitp_reg dst; DSL.emitp_reg src |];
     | Float_of_float32 ->
       DSL.check_reg Float dst;
       DSL.check_reg Float32 src;
-      DSL.ins I.FCVT [| DSL.emitp_reg dst; DSL.emitp_reg src |];
+      DSL.ins out I.FCVT [| DSL.emitp_reg dst; DSL.emitp_reg src |];
     | Float32_of_float ->
       DSL.check_reg Float32 dst;
       DSL.check_reg Float src;
-      DSL.ins I.FCVT [| DSL.emitp_reg dst; DSL.emitp_reg src |];
+      DSL.ins out I.FCVT [| DSL.emitp_reg dst; DSL.emitp_reg src |];
     | Scalar_of_v128 v ->
       DSL.check_reg Vec128 src;
       begin match v with
        | Int8x16 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |];
-         DSL.ins I.UXTB [| DSL.emitp_reg dst; DSL.emitp_reg_w dst; |];
+         DSL.ins out I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |];
+         DSL.ins out I.UXTB [| DSL.emitp_reg dst; DSL.emitp_reg_w dst; |];
        | Int16x8 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |];
-         DSL.ins I.UXTH [| DSL.emitp_reg dst; DSL.emitp_reg_w dst; |];
+         DSL.ins out I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |];
+         DSL.ins out I.UXTH [| DSL.emitp_reg dst; DSL.emitp_reg_w dst; |];
        | Int32x4 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |]
+         DSL.ins out I.FMOV [| DSL.emitp_reg_w dst; DSL.emitp_reg_s src |]
        | Int64x2 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_d src |]
+         DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_d src |]
        | Float32x4 ->
          if distinct then (
            DSL.check_reg Float32 dst;
-           DSL.ins I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_s src |])
+           DSL.ins out I.FMOV [| DSL.emitp_reg dst; DSL.emitp_reg_s src |])
        | Float64x2 ->
          if distinct then (
            DSL.check_reg Float dst;
-           DSL.ins I.FMOV [| DSL.emitp_reg dst ; DSL.emitp_reg_d src |])
+           DSL.ins out I.FMOV [| DSL.emitp_reg dst ; DSL.emitp_reg_d src |])
       end
     | V128_of_scalar v ->
        DSL.check_reg Vec128 dst;
        begin match v with
        | Int8x16 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |];
+         DSL.ins out I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |];
        | Int16x8 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |];
+         DSL.ins out I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |];
        | Int32x4 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |]
+         DSL.ins out I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg_w src |]
        | Int64x2 ->
-         DSL.ins I.FMOV [| DSL.emitp_reg_d dst; DSL.emitp_reg src |]
+         DSL.ins out I.FMOV [| DSL.emitp_reg_d dst; DSL.emitp_reg src |]
        | Float32x4 ->
          if distinct then (
            DSL.check_reg Float32 src;
-           DSL.ins I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg src |])
+           DSL.ins out I.FMOV [| DSL.emitp_reg_s dst; DSL.emitp_reg src |])
        | Float64x2 ->
          if distinct then (
            DSL.check_reg Float src;
-           DSL.ins I.FMOV [| DSL.emitp_reg_d dst ; DSL.emitp_reg src |])
+           DSL.ins out I.FMOV [| DSL.emitp_reg_d dst ; DSL.emitp_reg src |])
       end
 
 (* Output the assembly code for an instruction *)
 
-let emitp_instr i =
-    emitp_debug_info i.dbg;
+let emitp_instr out i =
+    emitp_debug_info out i.dbg;
     match i.desc with
     | Lend -> ()
     | Lprologue ->
       assert (!prologue_required);
       let n = frame_size() in
       if n > 0 then
-        emitp_stack_adjustment (-n);
+        emitp_stack_adjustment out (-n);
       if !contains_calls then begin
-        cfi_offset ~reg:30 (* return address *) ~offset:(-8);
+        cfi_offset out ~reg:30 (* return address *) ~offset:(-8);
         emitp_format out "	str	x30, [sp, #%a]\n" emitp_int (n-8)
       end
     | Lop(Intop_atomic _) ->
       (* Never generated; builtins are not yet translated to atomics *)
       assert false
     | Lop (Reinterpret_cast cast) ->
-      emitp_reinterpret_cast cast i
+      emitp_reinterpret_cast out cast i
     | Lop (Static_cast cast) ->
-      emitp_static_cast cast i
+      emitp_static_cast out cast i
     | Lop(Move | Spill | Reload) ->
-        move i.arg.(0) i.res.(0)
+        move out i.arg.(0) i.res.(0)
     | Lop(Specific Imove32) ->
         let src = i.arg.(0) and dst = i.res.(0) in
         if not (Reg.same_loc src dst) then begin
@@ -1279,73 +1279,73 @@ let emitp_instr i =
             -> assert false
         end
     | Lop(Const_int n) ->
-        emitp_intconst i.res.(0) n
+        emitp_intconst out i.res.(0) n
     | Lop (Const_float32 f) ->
         DSL.check_reg Float32 i.res.(0);
         if f = 0l then
           emitp_format out "	fmov	%a, wzr\n" emitp_reg i.res.(0)
         else if is_immediate_float32 f then
-          emitp_format out "	fmov	%a, #%a\n" emitp_reg i.res.(0) emitp_printf "%.7f" (Int32.float_of_bits f)
+          emitp_format out "	fmov	%a, #%a\n" emitp_reg i.res.(0) (fun out -> emitp_format out "%.7f") (Int32.float_of_bits f)
         else begin
           (* float32 constants still take up 8 bytes; we load the lower half. *)
           let lbl = float_literal (Int64.of_int32 f) in
-          emitp_load_literal i.res.(0) lbl
+          emitp_load_literal out i.res.(0) lbl
         end
     | Lop(Const_float f) ->
         if f = 0L then
           emitp_format out "	fmov	%a, xzr\n" emitp_reg i.res.(0)
         else if is_immediate_float f then
-          emitp_format out "	fmov	%a, #%a\n" emitp_reg i.res.(0) emitp_printf "%.7f" (Int64.float_of_bits f)
+          emitp_format out "	fmov	%a, #%a\n" emitp_reg i.res.(0) (fun out -> emitp_format out "%.7f") (Int64.float_of_bits f)
         else begin
           let lbl = float_literal f in
-          emitp_load_literal i.res.(0) lbl
+          emitp_load_literal out i.res.(0) lbl
         end
     | Lop(Const_vec128 ({high; low} as l)) ->
       DSL.check_reg Vec128 i.res.(0);
       begin match (high, low) with
       | 0x0000_0000_0000_0000L, 0x0000_0000_0000_0000L ->
           let dst = DSL.emitp_reg_v2d i.res.(0) in
-          DSL.ins I.MOVI [| dst; DSL.imm 0  |]
+          DSL.ins out I.MOVI [| dst; DSL.imm 0  |]
       | _ ->
           let lbl = vec128_literal l in
-          emitp_load_literal i.res.(0) lbl
+          emitp_load_literal out i.res.(0) lbl
       end
     | Lop(Const_symbol s) ->
-        emitp_load_symbol_addr i.res.(0) s.sym_name
+        emitp_load_symbol_addr out i.res.(0) s.sym_name
     | Lcall_op(Lcall_ind) ->
         emitp_format out "	blr	%a\n" emitp_reg i.arg.(0);
-        emitp_format out "%a\n" record_frame i.live (Dbg_other i.dbg)
+        emitp_format out "%a\n" record_frame (i.live, (Dbg_other i.dbg: Emitaux.frame_debuginfo))
     | Lcall_op(Lcall_imm { func; }) ->
         emitp_format out "	bl	%a\n" emitp_symbol func.sym_name;
-        emitp_format out "%a\n" record_frame i.live (Dbg_other i.dbg)
+        emitp_format out "%a\n" record_frame (i.live, (Dbg_other i.dbg: Emitaux.frame_debuginfo))
     | Lcall_op(Ltailcall_ind) ->
-        output_epilogue (fun () -> emitp_format out "	br	%a\n" emitp_reg i.arg.(0))
+        output_epilogue out (fun () -> emitp_format out "	br	%a\n" emitp_reg i.arg.(0))
     | Lcall_op(Ltailcall_imm { func; }) ->
         if func.sym_name = !function_name then
           match !tailrec_entry_point with
           | None -> Misc.fatal_error "jump to missing tailrec entry point"
           | Some tailrec_entry_point -> emitp_format out "	b	%a\n" emitp_label tailrec_entry_point
         else
-          output_epilogue (fun () -> emitp_format out "	b	%a\n" emitp_symbol func.sym_name)
+          output_epilogue out (fun () -> emitp_format out "	b	%a\n" emitp_symbol func.sym_name)
     | Lcall_op(Lextcall {func; alloc; stack_ofs}) ->
         if Config.runtime5 && stack_ofs > 0 then begin
           emitp_format out "	mov	%a, sp\n" emitp_reg reg_stack_arg_begin;
           emitp_format out "	add	%a, sp, #%a\n" emitp_reg reg_stack_arg_end emitp_int (Misc.align stack_ofs 16);
-          emitp_load_symbol_addr reg_x8 func;
+          emitp_load_symbol_addr out reg_x8 func;
           emitp_format out "	bl	%a\n" emitp_symbol "caml_c_call_stack_args";
-          emitp_format out "%a\n" record_frame i.live (Dbg_other i.dbg)
+          emitp_format out "%a\n" record_frame (i.live, (Dbg_other i.dbg: Emitaux.frame_debuginfo))
         end else if alloc then begin
-          emitp_load_symbol_addr reg_x8 func;
+          emitp_load_symbol_addr out reg_x8 func;
           emitp_format out "	bl	%a\n" emitp_symbol "caml_c_call";
-          emitp_format out "%a\n" record_frame i.live (Dbg_other i.dbg)
+          emitp_format out "%a\n" record_frame (i.live, (Dbg_other i.dbg: Emitaux.frame_debuginfo))
         end else begin
           (* store ocaml stack in the frame pointer register
              NB: no need to store previous x29 because OCaml frames don't
              maintain frame pointer *)
           if Config.runtime5 then begin
             emitp_format out "	mov	x29, sp\n";
-            cfi_remember_state ();
-            cfi_def_cfa_register ~reg:29;
+            cfi_remember_state out ();
+            cfi_def_cfa_register out ~reg:29;
             let offset = Domainstate.(idx_of_field Domain_c_stack) * 8 in
             emitp_format out "	ldr	%a, [%a, %a]\n" emitp_reg reg_tmp1 emitp_reg reg_domain_state_ptr emitp_int offset;
               emitp_format out "	mov	sp, %a\n" emitp_reg reg_tmp1
@@ -1354,11 +1354,11 @@ let emitp_instr i =
           if Config.runtime5 then begin
             emitp_format out "	mov	sp, x29\n";
           end;
-          cfi_restore_state ()
+          cfi_restore_state out ()
         end
     | Lop(Stackoffset n) ->
         assert (n mod 16 = 0);
-        emitp_stack_adjustment (-n);
+        emitp_stack_adjustment out (-n);
         stack_offset := !stack_offset + n
     | Lop(Load { memory_chunk; addressing_mode; is_atomic }) ->
         assert(memory_chunk = Cmm.Word_int || memory_chunk = Cmm.Word_val || is_atomic = false);
@@ -1368,24 +1368,24 @@ let emitp_instr i =
           | Iindexed _ -> i.arg.(0)
           | Ibased(s, ofs) ->
               assert (not !Clflags.dlcode);  (* see selection_utils.ml *)
-              emitp_format out "	adrp	%a, %a\n" emitp_reg reg_tmp1 emitp_symbol_offset s ofs;
+              emitp_format out "	adrp	%a, %a\n" emitp_reg reg_tmp1 emitp_symbol_offset (s, ofs);
               reg_tmp1 in
         begin match memory_chunk with
         | Byte_unsigned ->
-            emitp_format out "	ldrb	%a, %a\n" emitp_wreg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldrb	%a, %a\n" emitp_wreg dst emitp_addressing (addressing_mode, base)
         | Byte_signed ->
-            emitp_format out "	ldrsb	%a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldrsb	%a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Sixteen_unsigned ->
-            emitp_format out "	ldrh	%a, %a\n" emitp_wreg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldrh	%a, %a\n" emitp_wreg dst emitp_addressing (addressing_mode, base)
         | Sixteen_signed ->
-            emitp_format out "	ldrsh	%a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldrsh	%a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Thirtytwo_unsigned ->
-            emitp_format out "	ldr	%a, %a\n" emitp_wreg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldr	%a, %a\n" emitp_wreg dst emitp_addressing (addressing_mode, base)
         | Thirtytwo_signed ->
-            emitp_format out "	ldrsw	%a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldrsw	%a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Single { reg = Float64 } ->
             DSL.check_reg Float dst;
-            emitp_format out "	ldr	s7, %a\n" emitp_addressing addressing_mode base;
+            emitp_format out "	ldr	s7, %a\n" emitp_addressing (addressing_mode, base);
             emitp_format out "	fcvt	%a, s7\n" emitp_reg dst
         | Word_int | Word_val ->
           if is_atomic then begin
@@ -1393,16 +1393,16 @@ let emitp_instr i =
             emitp_format out "	dmb	ishld\n";
             emitp_format out "	ldar	%a, [%a]\n" emitp_reg dst emitp_reg i.arg.(0)
           end else
-            emitp_format out "	ldr	%a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out "	ldr	%a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Double ->
-                      emitp_format out "	ldr	%a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+                      emitp_format out "	ldr	%a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Single { reg = Float32 } ->
             DSL.check_reg Float32 dst;
-            emitp_format out " ldr %a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out " ldr %a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         | Onetwentyeight_aligned | Onetwentyeight_unaligned ->
             (* CR gyorsh: check alignment *)
             DSL.check_reg Vec128 dst;
-            emitp_format out " ldr %a, %a\n" emitp_reg dst emitp_addressing addressing_mode base
+            emitp_format out " ldr %a, %a\n" emitp_reg dst emitp_addressing (addressing_mode, base)
         end
     | Lop(Store(size, addr, assignment)) ->
       (* NB: assignments other than Word_int and Word_val do not follow the
@@ -1413,39 +1413,39 @@ let emitp_instr i =
           | Iindexed _ -> i.arg.(1)
           | Ibased(s, ofs) ->
               assert (not !Clflags.dlcode);
-              emitp_format out "	adrp	%a, %a\n" emitp_reg reg_tmp1 emitp_symbol_offset s ofs;
+              emitp_format out "	adrp	%a, %a\n" emitp_reg reg_tmp1 emitp_symbol_offset (s, ofs);
               reg_tmp1 in
         begin match size with
         | Byte_unsigned | Byte_signed ->
-            emitp_format out "	strb	%a, %a\n" emitp_wreg src emitp_addressing addr base
+            emitp_format out "	strb	%a, %a\n" emitp_wreg src emitp_addressing (addr, base)
         | Sixteen_unsigned | Sixteen_signed ->
-            emitp_format out "	strh	%a, %a\n" emitp_wreg src emitp_addressing addr base
+            emitp_format out "	strh	%a, %a\n" emitp_wreg src emitp_addressing (addr, base)
         | Thirtytwo_unsigned | Thirtytwo_signed ->
-            emitp_format out "	str	%a, %a\n" emitp_wreg src emitp_addressing addr base
+            emitp_format out "	str	%a, %a\n" emitp_wreg src emitp_addressing (addr, base)
         | Single { reg = Float64 } ->
             DSL.check_reg Float src;
             emitp_format out "	fcvt	s7, %a\n" emitp_reg src;
-            emitp_format out "	str	s7, %a\n" emitp_addressing addr base;
+            emitp_format out "	str	s7, %a\n" emitp_addressing (addr, base);
         | Word_int | Word_val ->
             (* memory model barrier for non-initializing store *)
             if assignment then emitp_format out "	dmb	ishld\n";
-            emitp_format out "	str	%a, %a\n" emitp_reg src emitp_addressing addr base
+            emitp_format out "	str	%a, %a\n" emitp_reg src emitp_addressing (addr, base)
         | Double ->
-          emitp_format out "	str	%a, %a\n" emitp_reg src emitp_addressing addr base
+          emitp_format out "	str	%a, %a\n" emitp_reg src emitp_addressing (addr, base)
         | Single { reg = Float32 } ->
           DSL.check_reg Float32 src;
-          emitp_format out " str %a, %a\n" emitp_reg src emitp_addressing addr base
+          emitp_format out " str %a, %a\n" emitp_reg src emitp_addressing (addr, base)
         | Onetwentyeight_aligned | Onetwentyeight_unaligned ->
           (* CR gyorsh: check alignment *)
           DSL.check_reg Vec128 src;
-          emitp_format out " str %a, %a\n" emitp_reg src emitp_addressing addr base
+          emitp_format out " str %a, %a\n" emitp_reg src emitp_addressing (addr, base)
         end
     | Lop(Alloc { bytes = n; dbginfo; mode = Heap }) ->
-        assembly_code_for_allocation i ~n ~local:false ~far:false ~dbginfo
+        assembly_code_for_allocation out i ~n ~local:false ~far:false ~dbginfo
     | Lop(Specific (Ifar_alloc { bytes = n; dbginfo })) ->
-        assembly_code_for_allocation i ~n ~local:false ~far:true ~dbginfo
+        assembly_code_for_allocation out i ~n ~local:false ~far:true ~dbginfo
     | Lop(Alloc { bytes = n; dbginfo; mode = Local }) ->
-        assembly_code_for_allocation i ~n ~local:true ~far:false ~dbginfo
+        assembly_code_for_allocation out i ~n ~local:true ~far:false ~dbginfo
     | Lop(Begin_region) ->
         let offset = Domainstate.(idx_of_field Domain_local_sp) * 8 in
         emitp_format out "	ldr	%a, [%a, #%a]\n" emitp_reg i.res.(0) emitp_reg reg_domain_state_ptr emitp_int offset
@@ -1453,13 +1453,13 @@ let emitp_instr i =
         let offset = Domainstate.(idx_of_field Domain_local_sp) * 8 in
         emitp_format out "	str	%a, [%a, #%a]\n" emitp_reg i.arg.(0) emitp_reg reg_domain_state_ptr emitp_int offset
     | Lop(Poll) ->
-        assembly_code_for_poll i ~far:false ~return_label:None
+        assembly_code_for_poll out i ~far:false ~return_label:None
     | Lop(Specific (Ifar_poll { return_label })) ->
-        assembly_code_for_poll i ~far:true ~return_label
+        assembly_code_for_poll out i ~far:true ~return_label
     | Lop(Intop_imm(Iadd, n)) ->
-        emitp_addimm i.res.(0) i.arg.(0) n
+        emitp_addimm out i.res.(0) i.arg.(0) n
     | Lop(Intop_imm(Isub, n)) ->
-        emitp_subimm i.res.(0) i.arg.(0) n
+        emitp_subimm out i.res.(0) i.arg.(0) n
     | Lop(Intop(Icomp cmp)) ->
         emitp_format out "	cmp	%a, %a\n" emitp_reg i.arg.(0) emitp_reg i.arg.(1);
         emitp_format out "	cset	%a, %a\n" emitp_reg i.res.(0) emitp_string (name_for_comparison cmp)
@@ -1472,7 +1472,7 @@ let emitp_instr i =
         emitp_format out "	fcmp	%a, %a\n" emitp_reg i.arg.(0) emitp_reg i.arg.(1);
         emitp_format out "	cset	%a, %a\n" emitp_reg i.res.(0) emitp_string comp
     | Lop(Intop_imm(Icomp cmp, n)) ->
-        emitp_cmpimm i.arg.(0) n;
+        emitp_cmpimm out i.arg.(0) n;
         emitp_format out "	cset	%a, %a\n" emitp_reg i.res.(0) emitp_string (name_for_comparison cmp)
     | Lop(Intop Imod) ->
         emitp_format out "	sdiv	%a, %a, %a\n" emitp_reg reg_tmp1 emitp_reg i.arg.(0) emitp_reg i.arg.(1);
@@ -1546,7 +1546,7 @@ let emitp_instr i =
     | Lop(Specific(Isignext size)) ->
         emitp_format out "	sbfm	%a, %a, #0, #%a\n" emitp_reg i.res.(0) emitp_reg i.arg.(0) emitp_int (size - 1)
     | Lop(Specific(Isimd simd)) ->
-      DSL.simd_instr simd i
+      DSL.simd_instr out simd i
     | Lop (Name_for_debugger _) -> ()
     | Lcall_op (Lprobe _) | Lop (Probe_is_enabled _) ->
       fatal_error ("Probes not supported.")
@@ -1560,7 +1560,7 @@ let emitp_instr i =
       let ifso = i.arg.(len - 2) in
       let ifnot = i.arg.(len - 1) in
       if Reg.same_loc ifso ifnot then
-        move ifso i.res.(0)
+        move out ifso i.res.(0)
       else
         begin match tst with
         | Itruetest ->
@@ -1575,7 +1575,7 @@ let emitp_instr i =
             emitp_format out "	csel	%a, %a, %a, %a\n" emitp_reg i.res.(0) emitp_reg i.arg.(2) emitp_reg i.arg.(3) emitp_string comp
         | Iinttest_imm(cmp, n) ->
             let comp = name_for_comparison cmp in
-            emitp_cmpimm i.arg.(0) n;
+            emitp_cmpimm out i.arg.(0) n;
             emitp_format out "	csel	%a, %a, %a, %a\n" emitp_reg i.res.(0) emitp_reg i.arg.(1) emitp_reg i.arg.(2) emitp_string comp
         | Ifloattest ((Float32 | Float64), cmp) ->
             let comp = name_for_float_comparison cmp in
@@ -1591,7 +1591,7 @@ let emitp_instr i =
     | Lreloadretaddr ->
         ()
     | Lreturn ->
-        output_epilogue (fun () -> emitp_format out "	ret\n")
+        output_epilogue out (fun () -> emitp_format out "	ret\n")
     | Llabel { label = lbl; _ } ->
         emitp_format out "%a:\n" emitp_label lbl
     | Lbranch lbl ->
@@ -1607,7 +1607,7 @@ let emitp_instr i =
             let comp = name_for_comparison cmp in
             emitp_format out "	b.%a	%a\n" emitp_string comp emitp_label lbl
         | Iinttest_imm(cmp, n) ->
-            emitp_cmpimm i.arg.(0) n;
+            emitp_cmpimm out i.arg.(0) n;
             let comp = name_for_comparison cmp in
             emitp_format out "	b.%a	%a\n" emitp_string comp emitp_label lbl
         | Ifloattest ((Float32 | Float64), cmp) ->
@@ -1656,29 +1656,29 @@ let emitp_instr i =
     | Lentertrap ->
         ()
     | Ladjust_stack_offset { delta_bytes } ->
-        cfi_adjust_cfa_offset delta_bytes;
+        cfi_adjust_cfa_offset out delta_bytes;
         stack_offset := !stack_offset + delta_bytes
     | Lpushtrap { lbl_handler; } ->
         emitp_format out "	adr	%a, %a\n" emitp_reg reg_tmp1 emitp_label lbl_handler;
         stack_offset := !stack_offset + 16;
         emitp_format out "	stp	%a, %a, [sp, -16]!\n" emitp_reg reg_trap_ptr emitp_reg reg_tmp1;
-        cfi_adjust_cfa_offset 16;
+        cfi_adjust_cfa_offset out 16;
         emitp_format out "	mov	%a, sp\n" emitp_reg reg_trap_ptr
     | Lpoptrap ->
         emitp_format out "	ldr	%a, [sp], 16\n" emitp_reg reg_trap_ptr;
-        cfi_adjust_cfa_offset (-16);
+        cfi_adjust_cfa_offset out (-16);
         stack_offset := !stack_offset - 16
     | Lraise k ->
         begin match k with
         | Lambda.Raise_regular ->
           emitp_format out "	bl	%a\n" emitp_symbol "caml_raise_exn";
-          emitp_format out "%a\n" record_frame Reg.Set.empty (Dbg_raise i.dbg)
+          emitp_format out "%a\n" record_frame (Reg.Set.empty, (Dbg_raise i.dbg: Emitaux.frame_debuginfo))
         | Lambda.Raise_reraise ->
           if Config.runtime5 then
             emitp_format out "	bl	%a\n" emitp_symbol "caml_reraise_exn"
           else
             emitp_format out "	bl	%a\n" emitp_symbol "caml_raise_exn";
-          emitp_format out "%a\n" record_frame Reg.Set.empty (Dbg_raise i.dbg)
+          emitp_format out "%a\n" record_frame (Reg.Set.empty, (Dbg_raise i.dbg: Emitaux.frame_debuginfo))
         | Lambda.Raise_notrace ->
           emitp_format out "	mov	sp, %a\n" emitp_reg reg_trap_ptr;
           emitp_format out "	ldp	%a, %a, [sp], 16\n" emitp_reg reg_trap_ptr emitp_reg reg_tmp1;
@@ -1692,7 +1692,7 @@ let emitp_instr i =
       let f = max_frame_size_bytes + threshold_offset in
       let offset = Domainstate.(idx_of_field Domain_current_stack) * 8 in
       emitp_format out "	ldr	%a, [%a, #%a]\n" emitp_reg reg_tmp1 emitp_reg reg_domain_state_ptr emitp_int offset;
-      emitp_addimm reg_tmp1 reg_tmp1 f;
+      emitp_addimm out reg_tmp1 reg_tmp1 f;
       emitp_format out "	cmp	sp, %a\n" emitp_reg reg_tmp1;
       emitp_format out "	bcc	%a\n" emitp_label overflow;
       emitp_format out "%a:" emitp_label ret;
@@ -1702,8 +1702,8 @@ let emitp_instr i =
         sc_max_frame_size_in_bytes = max_frame_size_bytes;
       }
 
-let emitp_instr i =
-  try emitp_instr i
+let emitp_instr out i =
+  try emitp_instr out i
   with exn -> (
     Format.eprintf "Exception whilst emitting instruction:@ %a\n"
       Printlinear.instr i;
@@ -1712,12 +1712,13 @@ let emitp_instr i =
 
 (* Emission of an instruction sequence *)
 
-let rec emitp_all i =
-  if i.desc = Lend then () else (emitp_instr i; emitp_all i.next)
+let rec emitp_all out i =
+  if i.desc = Lend then () else (emitp_instr out i; emitp_all out i.next)
 
 (* Emission of a function declaration *)
 
 let fundecl fundecl =
+  let out = !Emitaux.output_channel in
   let fun_end_label, fundecl =
     match Emitaux.Dwarf_helpers.record_dwarf_for_fundecl fundecl with
     | None -> None, fundecl
@@ -1736,34 +1737,34 @@ let fundecl fundecl =
   done;
   prologue_required := fundecl.fun_prologue_required;
   contains_calls := fundecl.fun_contains_calls;
-  emitp_named_text_section !function_name;
+  emitp_named_text_section out !function_name;
   emitp_format out "	.align	3\n";
   emitp_format out "	.globl	%a\n" emitp_symbol fundecl.fun_name;
-  emitp_symbol_type emitp_symbol fundecl.fun_name "function";
+  emitp_symbol_type emitp_symbol out fundecl.fun_name "function";
   emitp_format out "%a:\n" emitp_symbol fundecl.fun_name;
-  emitp_debug_info fundecl.fun_dbg;
-  cfi_startproc();
+  emitp_debug_info out fundecl.fun_dbg;
+  cfi_startproc out ();
   let num_call_gc = num_call_gc_points fundecl.fun_body in
   let max_out_of_line_code_offset = max_out_of_line_code_offset ~num_call_gc in
   BR.relax fundecl.fun_body ~max_out_of_line_code_offset;
 
-  emitp_all fundecl.fun_body;
-  List.iter emitp_call_gc !call_gc_sites;
-  List.iter emitp_local_realloc !local_realloc_sites;
-  emitp_stack_realloc ();
+  emitp_all out fundecl.fun_body;
+  List.iter (emitp_call_gc out) !call_gc_sites;
+  List.iter (emitp_local_realloc out) !local_realloc_sites;
+  emitp_stack_realloc out ();
   assert (List.length !call_gc_sites = num_call_gc);
   (match fun_end_label with
    | None -> ()
    | Some fun_end_label -> emitp_format out "%a:\n" emitp_label fun_end_label);
 
-  cfi_endproc();
-  emitp_symbol_type emitp_symbol fundecl.fun_name "function";
-  emitp_symbol_size fundecl.fun_name;
-  emitp_literals()
+  cfi_endproc out ();
+  emitp_symbol_type emitp_symbol out fundecl.fun_name "function";
+  emitp_symbol_size out fundecl.fun_name;
+  emitp_literals out ()
 
 (* Emission of data *)
 
-let emitp_item (d : Cmm.data_item) =
+let emitp_item out (d : Cmm.data_item) =
   match d with
   | Cdefine_symbol s ->
     if !Clflags.dlcode || s.sym_global = Cmm.Global then begin
@@ -1778,33 +1779,37 @@ let emitp_item (d : Cmm.data_item) =
   | Cint16 n -> emitp_format out "	.short	%a\n" emitp_int n
   | Cint32 n -> emitp_format out "	.long	%a\n" emitp_nativeint n
   | Cint n -> emitp_format out "	.quad	%a\n" emitp_nativeint n
-  | Csingle f -> emitp_float32_directive ".long" (Int32.bits_of_float f)
-  | Cdouble f -> emitp_float64_directive ".quad" (Int64.bits_of_float f)
+  | Csingle f -> emitp_float32_directive out ".long" (Int32.bits_of_float f)
+  | Cdouble f -> emitp_float64_directive out ".quad" (Int64.bits_of_float f)
   | Cvec128 { high; low; } ->
-     emitp_float64_directive ".quad" low;
-     emitp_float64_directive ".quad" high;
+     emitp_float64_directive out ".quad" low;
+     emitp_float64_directive out ".quad" high;
   | Csymbol_address s -> emitp_format out "	.quad	%a\n" emitp_symbol s.sym_name
   | Csymbol_offset (s, o) -> emitp_format out "	.quad	%a+%a\n" emitp_symbol s.sym_name emitp_int o
-  | Cstring s -> emitp_string_directive "	.ascii  " s
+  | Cstring s -> emitp_string_directive out "	.ascii  " s
   | Cskip n -> if n > 0 then emitp_format out "	.space	%a\n" emitp_int n
   | Calign n -> emitp_format out "	.align	%a\n" emitp_int(Misc.log2 n)
 
 let data l =
+  let out = !Emitaux.output_channel in
   emitp_format out "	.data\n";
   emitp_format out "	.align  3\n";
-  List.iter emitp_item l
+  List.iter (emitp_item out) l
 
-let emitp_line str = emitp_string (str ^ "\n")
+let emitp_line out str = emitp_string out (str ^ "\n")
 
-let file_emitter ~file_num ~file_name =
-  emitp_line (Printf.sprintf ".file %d %S" file_num file_name)
+let file_emitter out ~file_num ~file_name =
+  emitp_line out (Printf.sprintf ".file %d %S" file_num file_name)
 
 let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
   module Asm_targets.Asm_directives.Make(struct
-    let emitp_line = emitp_line
+    let emit_line s =
+      let out = !Emitaux.output_channel in
+      emitp_line out s
 
     let get_file_num file_name =
-      Emitaux.get_file_num ~file_emitter file_name
+      let out = !Emitaux.output_channel in
+      Emitaux.get_file_num ~file_emitter:(file_emitter out) file_name
 
     let debugging_comments_in_asm_files =
       !Flambda_backend_flags.dasm_comments
@@ -1838,77 +1843,92 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
         | QWORD
         | VEC128
 
-      let file = file_emitter
+      let file =
+        let out = !Emitaux.output_channel in
+        file_emitter out
 
       let loc ~file_num ~line ~col ?discriminator () =
+        let out = !Emitaux.output_channel in
         ignore discriminator;
-        emitp_line (Printf.sprintf ".loc %d %d %d" file_num line col)
+        emitp_line out (Printf.sprintf ".loc %d %d %d" file_num line col)
 
       let comment str =
-        emitp_line (Printf.sprintf "; %s" str)
+        let out = !Emitaux.output_channel in
+        emitp_line out (Printf.sprintf "; %s" str)
 
       let label ?data_type str =
+        let out = !Emitaux.output_channel in
         let _ = data_type in
-        emitp_line (Printf.sprintf "%s:" str)
+        emitp_line out (Printf.sprintf "%s:" str)
 
       let section ?delayed:_ name flags args =
+        let out = !Emitaux.output_channel in
         match name, flags, args with
-        | [".data" ], _, _ -> emitp_line "\t.data"
-        | [".text" ], _, _ -> emitp_line "\t.text"
+        | [".data" ], _, _ -> emitp_line out "\t.data"
+        | [".text" ], _, _ -> emitp_line out "\t.text"
         | name, flags, args ->
-          emitp_string (Printf.sprintf "\t.section %s"
+          emitp_string out (Printf.sprintf "\t.section %s"
             (String.concat "," name));
           begin match flags with
           | None -> ()
-          | Some flags -> emitp_string (Printf.sprintf ",%S" flags)
+          | Some flags -> emitp_string out (Printf.sprintf ",%S" flags)
           end;
           begin match args with
           | [] -> ()
           | _ ->
-            emitp_string (Printf.sprintf ",%s" (String.concat "," args))
+            emitp_string out (Printf.sprintf ",%s" (String.concat "," args))
           end;
-          emitp_string "\n"
+          emitp_string out "\n"
 
-      let text () = emitp_line "\t.text"
+      let text () = let out = !Emitaux.output_channel in emitp_line out "\t.text"
 
-      let new_line () = emitp_line ""
+      let new_line () = let out = !Emitaux.output_channel in emitp_line out ""
 
-      let global sym = emitp_line (Printf.sprintf "\t.globl %s" sym)
+      let global sym = let out = !Emitaux.output_channel in emitp_line out (Printf.sprintf "\t.globl %s" sym)
 
       let protected sym =
-        if not macosx then emitp_line (Printf.sprintf "\t.protected %s" sym)
+        let out = !Emitaux.output_channel in
+        if not macosx then emitp_line out (Printf.sprintf "\t.protected %s" sym)
 
-      let type_ sym typ_ = emitp_line (Printf.sprintf "\t.type %s,%s" sym typ_)
+      let type_ sym typ_ = let out = !Emitaux.output_channel in emitp_line out (Printf.sprintf "\t.type %s,%s" sym typ_)
 
       let byte const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.byte %s" (string_of_constant const))
 
       let word const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.short %s" (string_of_constant const))
 
       let long const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.long %s" (string_of_constant const))
 
       let qword const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.quad %s" (string_of_constant const))
 
       let bytes str =
-        emitp_line (Printf.sprintf "\t.ascii %S" str)
+        let out = !Emitaux.output_channel in
+        emitp_line out (Printf.sprintf "\t.ascii %S" str)
 
       let uleb128 const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.uleb128 %s" (string_of_constant const))
 
       let sleb128 const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.sleb128 %s" (string_of_constant const))
 
       let direct_assignment var const =
-        emitp_line
+        let out = !Emitaux.output_channel in
+        emitp_line out
           (Printf.sprintf "\t.set %s,%s" var (string_of_constant const))
     end
   end)
@@ -1917,14 +1937,15 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
 (* Beginning / end of an assembly file *)
 
 let begin_assembly _unix =
-  reset_debug_info();
+  let out = !Emitaux.output_channel in
+  Emitaux.reset_debug_info();
   emitp_format out "	.file	\"\"\n";  (* PR#7037 *)
   let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
   emitp_format out "	.data\n";
   emitp_format out "	.globl	%a\n" emitp_symbol lbl_begin;
   emitp_format out "%a:\n" emitp_symbol lbl_begin;
   let lbl_begin = Cmm_helpers.make_symbol "code_begin" in
-  emitp_named_text_section lbl_begin;
+  emitp_named_text_section out lbl_begin;
   emitp_format out "	.globl	%a\n" emitp_symbol lbl_begin;
   emitp_format out "%a:\n" emitp_symbol lbl_begin;
   (* we need to pad here to avoid collision for the unwind test between
@@ -1939,11 +1960,12 @@ let begin_assembly _unix =
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
   Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives
     ~code_begin:lbl_begin ~code_end:lbl_end
-    ~file_emitter
+    ~file_emitter:(file_emitter out)
 
 let end_assembly () =
+  let out = !Emitaux.output_channel in
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  emitp_named_text_section lbl_end;
+  emitp_named_text_section out lbl_end;
   emitp_format out "	.globl	%a\n" emitp_symbol lbl_end;
   emitp_format out "%a:\n" emitp_symbol lbl_end;
   let lbl_end = Cmm_helpers.make_symbol "data_end" in
@@ -1956,12 +1978,12 @@ let end_assembly () =
   let lbl = Cmm_helpers.make_symbol "frametable" in
   emitp_format out "	.globl	%a\n" emitp_symbol lbl;
   emitp_format out "%a:\n" emitp_symbol lbl;
-  emitp_frames
+  Emitaux.emit_frames
     { efa_code_label = (fun lbl ->
-                       emitp_symbol_type emitp_label lbl "function";
+                       emitp_symbol_type emitp_label out lbl "function";
                        emitp_format out "	.quad	%a\n" emitp_label lbl);
       efa_data_label = (fun lbl ->
-                       emitp_symbol_type emitp_label lbl "object";
+                       emitp_symbol_type emitp_label out lbl "object";
                        emitp_format out "	.quad	%a\n" emitp_label lbl);
       efa_8 = (fun n -> emitp_format out "	.byte	%a\n" emitp_int n);
       efa_16 = (fun n -> emitp_format out "	.short	%a\n" emitp_int n);
@@ -1971,11 +1993,11 @@ let end_assembly () =
       efa_label_rel = (fun lbl ofs ->
                            emitp_format out "	.long	%a - . + %a\n" emitp_label lbl emitp_int32 ofs);
       efa_def_label = (fun lbl -> emitp_format out "%a:\n" emitp_label lbl);
-      efa_string = (fun s -> emitp_string_directive "	.asciz	" s) };
-  emitp_symbol_type emitp_symbol lbl "object";
-  emitp_symbol_size lbl;
+      efa_string = (fun s -> emitp_string_directive out "	.asciz	" s) };
+  emitp_symbol_type emitp_symbol out lbl "object";
+  emitp_symbol_size out lbl;
   if not !Flambda_backend_flags.internal_assembler then
-    Emitaux.Dwarf_helpers.emitp_dwarf ();
+    Emitaux.Dwarf_helpers.emit_dwarf ();
   begin match Config.system with
   | "linux" ->
       (* Mark stack as non-executable *)
