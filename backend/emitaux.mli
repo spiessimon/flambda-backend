@@ -93,6 +93,8 @@ val emit_frames : emit_frame_actions -> unit
 
 val is_generic_function : string -> bool
 
+val is_cfi_enabled : unit -> bool
+
 val cfi_startproc : unit -> unit
 
 val cfi_endproc : unit -> unit

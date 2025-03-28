@@ -32,6 +32,134 @@ open Linear
 
 module I = Arm64_ast.Instruction_name
 
+(* Basic emitters with output streams *)
+let emitp_string out s = output_string out s
+let emitp_char out c = output_char out c
+let emitp_int out i = output_string out (Int.to_string i)
+let emitp_nativeint out i = output_string out (Nativeint.to_string i)
+
+let emitp_int32 out n = Printf.fprintf out "0x%lx" n
+let emitp_float64_directive out directive x = Printf.fprintf out "\t%s\t0x%Lx\n" directive x
+let emitp_float32_directive out directive x = Printf.fprintf out "\t%s\t0x%lx\n" directive x
+
+
+let emitp_symbol out s =
+  for i = 0 to String.length s - 1 do
+    let c = s.[i] in
+    match c with
+    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' | '.' ->
+      output_char out c
+    | _ -> Printf.fprintf out "$%02x" (Char.code c)
+  done
+
+let emitp_string_literal out s =
+  let last_was_escape = ref false in
+  emitp_string out "\"";
+  for i = 0 to String.length s - 1 do
+    let c = s.[i] in
+    if c >= '0' && c <= '9'
+    then
+      if !last_was_escape
+      then Printf.fprintf out "\\%o" (Char.code c)
+      else output_char out c
+    else if c >= ' ' && c <= '~' && c <> '"' (* '"' *) && c <> '\\'
+    then (
+      output_char out c;
+      last_was_escape := false)
+    else (
+      Printf.fprintf out "\\%o" (Char.code c);
+      last_was_escape := true)
+  done;
+  emitp_string out "\""
+
+let emitp_string_directive out directive s =
+  let l = String.length s in
+  if l = 0
+  then ()
+  else if l < 80
+  then (
+    emitp_string out directive;
+    emitp_string_literal out s;
+    emitp_char out '\n')
+  else
+    let i = ref 0 in
+    while !i < l do
+      let n = min (l - !i) 80 in
+      emitp_string out directive;
+      emitp_string_literal out (String.sub s !i n);
+      emitp_char out '\n';
+      i := !i + n
+    done
+
+
+let emitp_format = Printf.fprintf
+
+let emitp_debug_info ?discriminator out dbg =
+  ignore discriminator;
+  Emitaux.emit_debug_info_gen dbg
+    (fun ~file_num ~file_name ->
+      emitp_string out "\t.file\t";
+      emitp_int out file_num;
+      emitp_char out '\t';
+      emitp_string_literal out file_name;
+      emitp_char out '\n')
+    (fun ~file_num ~line ~col:_ ?discriminator () ->
+      emitp_string out "\t.loc\t";
+      emitp_int out file_num;
+      emitp_char out '\t';
+      emitp_int out line;
+      emitp_char out '\t';
+      (match discriminator with
+      | None -> ()
+      | Some k ->
+        emitp_string out "discriminator ";
+        emitp_int out k);
+      emitp_char out '\n')
+
+
+let cfi_adjust_cfa_offset out n =
+  if Emitaux.is_cfi_enabled ()
+  then (
+    emitp_string out "\t.cfi_adjust_cfa_offset\t";
+    emitp_int out n;
+    emitp_string out "\n")
+
+(* let cfi_def_cfa_offset out n =
+  if Emitaux.is_cfi_enabled ()
+  then (
+    emitp_string out "\t.cfi_def_cfa_offset\t";
+    emitp_int out n;
+    emitp_string out "\n") *)
+
+let cfi_offset out ~reg ~offset =
+  if Emitaux.is_cfi_enabled ()
+  then (
+    emitp_string out "\t.cfi_offset ";
+    emitp_int out reg;
+    emitp_string out ", ";
+    emitp_int out offset;
+    emitp_string out "\n")
+
+let cfi_def_cfa_register out ~reg =
+  if Emitaux.is_cfi_enabled ()
+  then (
+    emitp_string out "\t.cfi_def_cfa_register ";
+    emitp_int out reg;
+    emitp_string out "\n")
+
+let cfi_startproc out () =
+  if Emitaux.is_cfi_enabled () then emitp_string out "\t.cfi_startproc\n"
+
+let cfi_endproc out () = if Emitaux.is_cfi_enabled () then emitp_string out "\t.cfi_endproc\n"
+
+let cfi_remember_state out () =
+  if Emitaux.is_cfi_enabled () then emitp_string out "\t.cfi_remember_state\n"
+
+let cfi_restore_state out () =
+  if Emitaux.is_cfi_enabled () then emitp_string out "\t.cfi_restore_state\n"
+
+
+
 (* Tradeoff between code size and code speed *)
 
 let fastcode_flag = ref true
