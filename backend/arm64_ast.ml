@@ -282,6 +282,7 @@ module Instruction_name = struct
     | TBNZ
     | TBZ
     | ADR
+    | ADRP
     | STP
     | BCC
     (* neon *)
@@ -378,6 +379,7 @@ module Instruction_name = struct
     | TBNZ -> "tbnz"
     | TBZ -> "tbz"
     | ADR -> "adr"
+    | ADRP -> "adrp"
     | STP -> "stp"
     | BCC -> "bcc"
     (* neon *)
@@ -417,23 +419,48 @@ module Instruction_name = struct
     | ADDV -> "addv"
 end
 
+
+module Symbol = struct
+
+  type reloc_directive =
+    | LOWER_TWELVE
+    | GOT_PAGE
+    | GOT_PAGE_OFF
+    | GOT
+    | GOT_LOWER_TWELVE
+
+  type t = string * int * reloc_directive option
+
+  let add_reloc_directive reloc s  =
+    match reloc with
+    | None -> s
+    | Some LOWER_TWELVE -> ":lo12:" ^ s
+    | Some GOT -> ":got:" ^ s
+    | Some GOT_LOWER_TWELVE -> ":got_lo12:" ^ s
+    | Some GOT_PAGE -> s ^ "@GOTPAGE"
+    | Some GOT_PAGE_OFF -> s ^ "@GOTPAGEOFF"
+
+  let add_int_offset ofs s =
+    if ofs > 0
+    then s ^ "+" ^ Int.to_string ofs
+    else if ofs < 0
+    then s ^ "-" ^ Int.to_string (-ofs)
+    else s
+
+  let print ppf ((sym, ofs, reloc) : t) =
+    Format.fprintf ppf "%s" (add_int_offset ofs (add_reloc_directive reloc sym))
+
+  let print_immediate ppf ((sym, ofs, reloc) : t) =
+    Format.fprintf ppf "#%s" (add_int_offset ofs (add_reloc_directive reloc sym))
+
+end
+
 module Operand = struct
   module Imm = struct
     (* int is big enough for all instruction encodings *)
     type t = int
 
     let print ppf t = Format.fprintf ppf "#%d" t
-  end
-
-  module SymbolOffset = struct
-    type t = string * int
-
-    let print ppf ((sym, ofs) : t) =
-      if ofs > 0
-      then Format.fprintf ppf "#:lo12:%s+%d" sym ofs
-      else if ofs < 0
-      then Format.fprintf ppf "#:lo12:%s-%d" sym (-ofs)
-      else Format.fprintf ppf "#:lo12:%s" sym
   end
 
   module Extend = struct
@@ -501,7 +528,7 @@ module Operand = struct
     (* CR gyorsh: only immediate offsets implemented. *)
     type t =
       | Offset of Reg.t * Imm.t
-      | SymbolOffset of Reg.t * string * Imm.t
+      | SymbolOffset of Reg.t * Symbol.t
       | Pre of Reg.t * Imm.t
       | Post of Reg.t * Imm.t
       | Literal of label
@@ -510,8 +537,7 @@ module Operand = struct
       let open Format in
       match t with
       | Offset (r, imm) -> fprintf ppf "[%s, %a]" (Reg.name r) Imm.print imm
-      | SymbolOffset (r, s, imm) ->
-        fprintf ppf "[%s, %a]" (Reg.name r) SymbolOffset.print (s, imm)
+      | SymbolOffset (r, s) -> fprintf ppf "[%s, #%a]" (Reg.name r) Symbol.print s
       | Pre (r, imm) -> fprintf ppf "[%s, %a]!" (Reg.name r) Imm.print imm
       | Post (r, imm) -> fprintf ppf "[%s], %a" (Reg.name r) Imm.print imm
       | Literal l -> fprintf ppf "%s" l
@@ -519,21 +545,22 @@ module Operand = struct
 
   type t =
     | Imm of Imm.t
+    | ImmSym of Symbol.t
     | Reg of Reg.t
     | Extend of Extend.t
     | Shift of Shift.t
-    | Sym of string
+    | Sym of Symbol.t
     | Cond of Instruction_name.Cond.t
     | Mem of Addressing_mode.t
 
   let print ppf t =
-    let open Format in
     match t with
     | Imm imm -> Imm.print ppf imm
+    | ImmSym sym -> Symbol.print_immediate ppf sym
     | Reg r -> Format.fprintf ppf "%s" (Reg.name r)
     | Extend e -> Extend.print ppf e
     | Shift s -> Shift.print ppf s
-    | Sym s -> fprintf ppf "%s" s
+    | Sym s -> Symbol.print ppf s
     | Cond c -> Format.fprintf ppf "%s" (Instruction_name.Cond.to_string c)
     | Mem m -> Format.fprintf ppf "%a" Addressing_mode.print m
 end
@@ -673,13 +700,18 @@ module DSL = struct
 
   let reg_q_operands = neon_operand_array Neon_reg_name.(Scalar Q)
 
-  let symbol (s : string) = Operand.Sym s
+  let symbol (s : string) = Operand.Sym (s, 0, None)
+
+  let symbol_with_offset_and_relocation ~symbol ~offset ~reloc = Operand.Sym (symbol, offset, reloc)
+
+  let immediate_symbol_with_offset_and_relocation ~symbol ~offset ~reloc =
+    Operand.ImmSym (symbol, offset, reloc)
 
   let mem ~base ~offset =
     Operand.(Mem (Addressing_mode.Offset (reg_x.(base), offset)))
 
   let mem_symbol ~base ~symbol ~offset =
-    Operand.(Mem (Addressing_mode.SymbolOffset (reg_x.(base), symbol, offset)))
+    Operand.(Mem (Addressing_mode.SymbolOffset (reg_x.(base), (symbol, offset, Some LOWER_TWELVE))))
 
   let mem_pre ~base ~offset =
     Operand.(Mem (Addressing_mode.Pre (reg_x.(base), offset)))

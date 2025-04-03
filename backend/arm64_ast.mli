@@ -56,6 +56,17 @@ module Reg : sig
   val create : Reg_name.t -> int -> t
 end
 
+module Symbol : sig
+  type t
+
+  type reloc_directive =
+  | LOWER_TWELVE
+  | GOT_PAGE
+  | GOT_PAGE_OFF
+  | GOT
+  | GOT_LOWER_TWELVE
+end
+
 module Instruction_name : sig
   module Float_cond : sig
     type t =
@@ -173,6 +184,7 @@ module Instruction_name : sig
     | TBNZ
     | TBZ
     | ADR
+    | ADRP
     | STP
     | BCC
     (* neon *)
@@ -254,6 +266,10 @@ module DSL : sig
   (* An ARM symbol can be used for both labels and symbols from the symbol
      table; the respective conversion must be applied first *)
   val symbol : string -> Operand.t
+
+  val symbol_with_offset_and_relocation : symbol:string -> offset:int -> reloc:Symbol.reloc_directive option ->  Operand.t
+
+  val immediate_symbol_with_offset_and_relocation : symbol:string -> offset:int -> reloc:Symbol.reloc_directive option ->  Operand.t
 
   (* access memory at a ARM symbol *)
   val mem_literal : string -> Operand.t
