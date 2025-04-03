@@ -121,14 +121,6 @@ let slot_offset loc stack_class =
 
 (* Output an addressing mode *)
 
-let femit_symbol_offset out (s, ofs) =
-  femit_symbol out s;
-  if ofs > 0 then Printf.fprintf out "+%a" femit_int ofs
-  else if ofs < 0 then Printf.fprintf out "-%a" femit_int (-ofs)
-  else ()
-
-
-
 module DSL : sig
 
   val check_reg : Cmm.machtype_component -> Reg.t -> unit
@@ -142,12 +134,14 @@ module DSL : sig
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
   val sp: Arm64_ast.Operand.t
+  val mem_sp_offset : int -> Arm64_ast.Operand.t
   val xzr: Arm64_ast.Operand.t
   val emit_addressing : addressing_mode -> Reg.t -> Arm64_ast.Operand.t
   (* Output a stack reference *)
   val emit_stack : Reg.t -> Arm64_ast.Operand.t
   val emit_label : label -> Arm64_ast.Operand.t
-  val emit_symbol : string -> Arm64_ast.Operand.t
+  val emit_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
+  val emit_immediate_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
   val ins : I.t -> Arm64_ast.Operand.t array -> unit
 
   val simd_instr : Simd.operation -> Linear.instruction -> unit
@@ -216,9 +210,13 @@ end [@warning "-32"]  = struct
   let convert_symbol_representation (s: string) =
     if macosx then "_" ^ Emitaux.symbol_to_string s else Emitaux.symbol_to_string s
 
-  let emit_symbol (s: string) =
+  let emit_symbol ?(offset=0) ?reloc (s: string)  =
     let sym = convert_symbol_representation s in
-    symbol sym
+    symbol_with_offset_and_relocation ~symbol:sym ~offset ~reloc
+
+  let emit_immediate_symbol ?(offset=0) ?reloc (s: string)  =
+    let sym = convert_symbol_representation s in
+    immediate_symbol_with_offset_and_relocation ~symbol:sym ~offset ~reloc
 
   let emit_addressing addr r =
     let index = reg_index r in
@@ -688,13 +686,13 @@ let emit_literals () =
 
 let emit_load_symbol_addr dst s =
   if macosx then begin
-    emit_printf "	adrp	%a, %a%@GOTPAGE\n" femit_reg dst femit_symbol s;
+    DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol s ~reloc:GOT_PAGE |];
     emit_printf "	ldr	%a, [%a, %a%@GOTPAGEOFF]\n" femit_reg dst femit_reg dst femit_symbol s
   end else if not !Clflags.dlcode then begin
-    emit_printf "	adrp	%a, %a\n" femit_reg dst femit_symbol s;
-    emit_printf "	add	%a, %a, #:lo12:%a\n" femit_reg dst femit_reg dst femit_symbol s
+    DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol s |];
+    DSL.ins I.ADD [| DSL.emit_reg dst; DSL.emit_reg dst; DSL.emit_immediate_symbol ~reloc:LOWER_TWELVE s |]
   end else begin
-    emit_printf "	adrp	%a, :got:%a\n" femit_reg dst femit_symbol s;
+    DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol ~reloc:GOT s |];
     emit_printf "	ldr	%a, [%a, #:got_lo12:%a]\n" femit_reg dst femit_reg dst femit_symbol s
   end
 
@@ -1332,7 +1330,7 @@ let emit_instr i =
           | Iindexed _ -> i.arg.(0)
           | Ibased(s, ofs) ->
               assert (not !Clflags.dlcode);  (* see selection_utils.ml *)
-              emit_printf "	adrp	%a, %a\n" femit_reg reg_tmp1 femit_symbol_offset (s, ofs);
+              DSL.ins I.ADRP [| DSL.emit_reg reg_tmp1; DSL.emit_symbol ~offset:ofs s |];
               reg_tmp1 in
         begin match memory_chunk with
         | Byte_unsigned ->
@@ -1377,7 +1375,7 @@ let emit_instr i =
           | Iindexed _ -> i.arg.(1)
           | Ibased(s, ofs) ->
               assert (not !Clflags.dlcode);
-              emit_printf "	adrp	%a, %a\n" femit_reg reg_tmp1 femit_symbol_offset (s, ofs);
+              DSL.ins I.ADRP [| DSL.emit_reg reg_tmp1; DSL.emit_symbol ~offset:ofs s |];
               reg_tmp1 in
         begin match size with
         | Byte_unsigned | Byte_signed ->
