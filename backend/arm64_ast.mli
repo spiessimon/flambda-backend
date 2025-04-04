@@ -54,6 +54,16 @@ module Reg : sig
   type t
 
   val create : Reg_name.t -> int -> t
+
+  val reg_x : int -> t
+  val reg_w : int -> t
+  val reg_d : int -> t
+  val reg_s : int -> t
+  val reg_q : int -> t
+  val wzr : t
+  val xzr : t
+  val wsp : t
+  val sp  : t
 end
 
 module Symbol : sig
@@ -65,6 +75,8 @@ module Symbol : sig
   | GOT_PAGE_OFF
   | GOT
   | GOT_LOWER_TWELVE
+
+  val create: ?reloc:reloc_directive -> ?offset:int -> string -> t
 end
 
 module Instruction_name : sig
@@ -238,6 +250,30 @@ module Operand : sig
 end
 
 module DSL : sig
+
+  val reg_op : Reg.t -> Operand.t
+
+  val imm : int -> Operand.t
+
+  (* ARM symbol operand; string must be converted to the OS specific
+     representation first *)
+  (* An ARM symbol can be used for both labels and symbols from the symbol
+     table; the respective conversion must be applied first *)
+  val symbol : Symbol.t -> Operand.t
+
+  val immediate_symbol : Symbol.t -> Operand.t
+
+  (* Note: Memory accesses are only allowed on X-registers and the stack pointer *)
+  val mem : base:Reg.t -> offset:int -> Operand.t
+
+  val mem_symbol : base:Reg.t -> symbol:Symbol.t -> Operand.t
+
+  val mem_pre : base:Reg.t -> offset:int -> Operand.t
+
+  val mem_post : base:Reg.t -> offset:int -> Operand.t
+
+  (* The functions below are shorthands for composing [reg_op] and
+     the respective function from [Reg] *)
   val reg_v2d : int -> Operand.t
 
   val reg_v2s : int -> Operand.t
@@ -257,31 +293,6 @@ module DSL : sig
   val sp : Operand.t
 
   val xzr : Operand.t
-
-  val imm : int -> Operand.t
-
-  val mem : base:int -> offset:int -> Operand.t
-
-  val mem_symbol : base:int -> symbol:string -> offset:int -> Operand.t
-
-  val mem_sp_offset : int -> Operand.t
-
-  val mem_pre : base:int -> offset:int -> Operand.t
-
-  val mem_post : base:int -> offset:int -> Operand.t
-
-  (* ARM symbol operand; string must be converted to the OS specific
-     representation first *)
-  (* An ARM symbol can be used for both labels and symbols from the symbol
-     table; the respective conversion must be applied first *)
-  val symbol : string -> Operand.t
-
-  val symbol_with_offset_and_relocation : symbol:string -> offset:int -> reloc:Symbol.reloc_directive option ->  Operand.t
-
-  val immediate_symbol_with_offset_and_relocation : symbol:string -> offset:int -> reloc:Symbol.reloc_directive option ->  Operand.t
-
-  (* access memory at a ARM symbol *)
-  val mem_literal : string -> Operand.t
 
   (* CR gyorsh: [print_*] functions below are exposed temporarily to use DSL for
      some but not all instructions in [emit.mlp]. They can eventually*)
