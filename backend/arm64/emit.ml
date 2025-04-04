@@ -1649,7 +1649,7 @@ let emit_instr i =
     | Lreloadretaddr ->
         ()
     | Lreturn ->
-        output_epilogue (fun () -> emit_printf "	ret\n")
+        output_epilogue (fun () -> DSL.ins I.RET [| |])
     | Llabel { label = lbl; _ } ->
         emit_printf "%a:\n" femit_label lbl
     | Lbranch lbl ->
