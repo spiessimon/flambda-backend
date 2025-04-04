@@ -1719,11 +1719,15 @@ let emit_instr i =
     | Lpushtrap { lbl_handler; } ->
         DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbl_handler |];
         stack_offset := !stack_offset + 16;
-        DSL.ins I.STP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |];
+        emit_printf "	stp	%a, %a, [sp, -16]!\n" femit_reg reg_trap_ptr femit_reg reg_tmp1;
+        (* CR sspies: enable the instruction below  *)
+        (* DSL.ins I.STP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |]; *)
         cfi_adjust_cfa_offset 16;
         DSL.ins I.MOV [| DSL.emit_reg reg_trap_ptr; DSL.sp |]
     | Lpoptrap ->
-        DSL.ins I.LDR [| DSL.emit_reg reg_trap_ptr; DSL.mem_post ~base:Arm64_ast.Reg.sp ~offset:16 |];
+        emit_printf "	ldr	%a, [sp], 16\n" femit_reg reg_trap_ptr;
+        (* CR sspies: enable the instruction below *)
+        (* DSL.ins I.LDR [| DSL.emit_reg reg_trap_ptr; DSL.mem_post ~base:Arm64_ast.Reg.sp ~offset:16 |]; *)
         cfi_adjust_cfa_offset (-16);
         stack_offset := !stack_offset - 16
     | Lraise k ->
@@ -1739,7 +1743,9 @@ let emit_instr i =
           emit_printf "%a\n" frecord_frame (Reg.Set.empty, Dbg_raise i.dbg)
         | Lambda.Raise_notrace ->
           DSL.ins I.MOV [| DSL.sp; DSL.emit_reg reg_trap_ptr |];
-          DSL.ins I.LDP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem ~base:Arm64_ast.Reg.sp; DSL.imm 16 |];
+          emit_printf "	ldp	%a, %a, [sp], 16\n" femit_reg reg_trap_ptr femit_reg reg_tmp1;
+          (* CR sspies: enable the instruction below *)
+          (* DSL.ins I.LDP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem ~base:Arm64_ast.Reg.sp; DSL.imm 16 |]; *)
           DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
       end
     | Lstackcheck { max_frame_size_bytes; } ->
