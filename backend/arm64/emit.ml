@@ -124,6 +124,11 @@ let slot_offset loc stack_class =
 module DSL : sig
 
   val check_reg : Cmm.machtype_component -> Reg.t -> unit
+
+  val translate_reg : Reg.t -> Arm64_ast.Reg.t
+  val reg_op : Arm64_ast.Reg.t -> Arm64_ast.Operand.t
+
+
   val emit_reg : Reg.t -> Arm64_ast.Operand.t
   val emit_reg_fixed_x : int -> Arm64_ast.Operand.t
   val emit_reg_d : Reg.t -> Arm64_ast.Operand.t
@@ -134,6 +139,7 @@ module DSL : sig
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
   val sp: Arm64_ast.Operand.t
+  val mem_reg_offset : Reg.t -> int -> Arm64_ast.Operand.t
   val mem_sp_offset : int -> Arm64_ast.Operand.t
   val xzr: Arm64_ast.Operand.t
   val emit_addressing : addressing_mode -> Reg.t -> Arm64_ast.Operand.t
@@ -149,6 +155,11 @@ module DSL : sig
 
 end [@warning "-32"]  = struct
   include Arm64_ast.DSL
+
+
+
+
+
   let check_reg typ reg =
    (* same type and not on stack *)
    assert (Cmm.equal_machtype_component typ reg.typ);
@@ -177,6 +188,21 @@ end [@warning "-32"]  = struct
       reg_name_to_arch_index reg_class name_index
     | {loc = (Stack _ | Unknown); _}  -> fatal_error "Emit.reg"
 
+
+  let translate_reg reg =
+    let index = reg_index reg in
+    (* use machtype to select register name *)
+    match reg.typ with
+    | Val | Int | Addr ->
+      Arm64_ast.Reg.reg_x index
+    | Float ->
+      Arm64_ast.Reg.reg_d index
+    | Float32 ->
+      Arm64_ast.Reg.reg_s index
+    | Vec128
+    | Valx2 ->
+      Arm64_ast.Reg.reg_q index
+
   let emit_reg_v2s reg = reg_v2s (reg_index reg)
 
   let emit_reg_v4s reg = reg_v4s (reg_index reg)
@@ -193,9 +219,16 @@ end [@warning "-32"]  = struct
 
   let emit_reg_d reg = reg_d (reg_index reg)
 
+  let mem_reg_offset reg off =
+    mem ~base:(translate_reg reg) ~offset:off
+
+  let mem_sp_offset off =
+    mem ~base:Arm64_ast.Reg.sp ~offset:off
+
+  (* FIXME: Is this using an array to increase sharing in the DSL? *)
   let emit_reg reg =
-    (* use machtype to select register name *)
     let index = reg_index reg in
+    (* use machtype to select register name *)
     match reg.typ with
     | Val | Int | Addr ->
       reg_x index
@@ -212,27 +245,26 @@ end [@warning "-32"]  = struct
 
   let emit_symbol ?(offset=0) ?reloc (s: string)  =
     let sym = convert_symbol_representation s in
-    symbol_with_offset_and_relocation ~symbol:sym ~offset ~reloc
+    symbol (Arm64_ast.Symbol.create ~offset ?reloc sym)
 
   let emit_immediate_symbol ?(offset=0) ?reloc (s: string)  =
     let sym = convert_symbol_representation s in
-    immediate_symbol_with_offset_and_relocation ~symbol:sym ~offset ~reloc
+    symbol (Arm64_ast.Symbol.create ~offset ?reloc sym)
 
   let emit_addressing addr r =
-    let index = reg_index r in
     match addr with
     | Iindexed ofs ->
-      mem ~base:index ~offset:ofs
+      mem ~base:(translate_reg r) ~offset:ofs
     | Ibased(s, ofs) ->
       assert (not !Clflags.dlcode);  (* see selection.ml *)
-      mem_symbol ~base:index ~symbol:(convert_symbol_representation s) ~offset:ofs
+      let sym = Arm64_ast.Symbol.create ~reloc:LOWER_TWELVE ~offset:ofs (convert_symbol_representation s) in
+      mem_symbol ~base:(translate_reg r) ~symbol:sym
 
   let emit_stack (r: t) =
     match r.loc with
     | Stack (Domainstate n) ->
         let ofs = n + Domainstate.(idx_of_field Domain_extra_params) * 8 in
-        let index = reg_index reg_domain_state_ptr in
-        mem ~base:index ~offset:ofs
+        mem ~base:(translate_reg reg_domain_state_ptr) ~offset:ofs
     | Stack ((Local _ | Incoming _ | Outgoing _) as s) ->
         let ofs = slot_offset s (Stack_class.of_machtype r.typ) in
         mem_sp_offset ofs
@@ -241,7 +273,7 @@ end [@warning "-32"]  = struct
 
   let emit_label (s: label) =
     let l = label_prefix ^ Label.to_string s in
-    symbol l
+    symbol (Arm64_ast.Symbol.create l)
 
 
   let check_instr (register_behavior : Simd_proc.register_behavior) i =

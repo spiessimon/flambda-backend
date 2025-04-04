@@ -120,13 +120,23 @@ module Reg = struct
   let name t = Reg_name.name t.reg_name t.index
 
   (* for special GP registers we use the last index *)
-  let stack_pointer_x = create (GP SP) GP_reg_name.last
+  let sp = create (GP SP) GP_reg_name.last
 
-  let stack_pointer_w = create (GP WSP) GP_reg_name.last [@@warning "-32"]
+  let wsp = create (GP WSP) GP_reg_name.last
 
-  let zero_register_x = create (GP XZR) GP_reg_name.last [@@warning "-32"]
+  let xzr = create (GP XZR) GP_reg_name.last
 
-  let zero_register_w = create (GP WZR) GP_reg_name.last [@@warning "-32"]
+  let wzr = create (GP WZR) GP_reg_name.last
+
+  let reg_x i = create (GP X) i
+
+  let reg_w i = create (GP W) i
+
+  let reg_s i = create (Neon (Scalar S)) i
+
+  let reg_d i = create (Neon (Scalar D)) i
+
+  let reg_q i = create (Neon (Scalar Q)) i
 end
 
 module Instruction_name = struct
@@ -453,6 +463,8 @@ module Symbol = struct
 
   type t = string * int * reloc_directive option
 
+  let create ?reloc ?(offset=0) name : t = (name, offset, reloc)
+
   let add_reloc_directive reloc s  =
     match reloc with
     | None -> s
@@ -710,7 +722,7 @@ module DSL = struct
   let gp_reg_and_operand_array name =
     reg_and_operand_array ~last:GP_reg_name.last_numbered (Reg_name.GP name)
 
-  let reg_x, reg_x_operands = gp_reg_and_operand_array GP_reg_name.X
+  let _, reg_x_operands = gp_reg_and_operand_array GP_reg_name.X
 
   let _, reg_w_operands = gp_reg_and_operand_array GP_reg_name.W
 
@@ -722,26 +734,17 @@ module DSL = struct
 
   let reg_q_operands = neon_operand_array Neon_reg_name.(Scalar Q)
 
-  let symbol (s : string) = Operand.Sym (s, 0, None)
+  let symbol (s : Symbol.t) = Operand.Sym s
 
-  let symbol_with_offset_and_relocation ~symbol ~offset ~reloc = Operand.Sym (symbol, offset, reloc)
+  let immediate_symbol (s: Symbol.t) = Operand.ImmSym s
 
-  let immediate_symbol_with_offset_and_relocation ~symbol ~offset ~reloc =
-    Operand.ImmSym (symbol, offset, reloc)
+  let mem ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, offset)))
 
-  let mem ~base ~offset =
-    Operand.(Mem (Addressing_mode.Offset (reg_x.(base), offset)))
+  let mem_symbol ~base ~symbol = Operand.(Mem (Addressing_mode.SymbolOffset (base, symbol)))
 
-  let mem_symbol ~base ~symbol ~offset =
-    Operand.(Mem (Addressing_mode.SymbolOffset (reg_x.(base), (symbol, offset, Some LOWER_TWELVE))))
+  let mem_pre ~base ~offset = Operand.(Mem (Addressing_mode.Pre (base, offset)))
 
-  let mem_pre ~base ~offset =
-    Operand.(Mem (Addressing_mode.Pre (reg_x.(base), offset)))
-
-  let mem_post ~base ~offset =
-    Operand.(Mem (Addressing_mode.Post (reg_x.(base), offset)))
-
-  let mem_literal l = Operand.(Mem (Addressing_mode.Literal l))
+  let mem_post ~base ~offset = Operand.(Mem (Addressing_mode.Post (base, offset)))
 
   let reg_v2s index =
     Operand.Reg (Reg.create (Reg_name.Neon (Vector V2S)) index)
@@ -763,12 +766,11 @@ module DSL = struct
 
   let reg_w index = reg_w_operands.(index)
 
-  let sp = Operand.Reg Reg.stack_pointer_x
+  let sp = Operand.Reg Reg.sp
 
-  let xzr = Operand.Reg Reg.zero_register_x
+  let xzr = Operand.Reg Reg.xzr
 
-  let mem_sp_offset ofs =
-    Operand.Mem (Operand.Addressing_mode.Offset (Reg.stack_pointer_x, ofs))
+  let reg_op reg = Operand.Reg reg
 
   let imm n = Operand.Imm n
 
