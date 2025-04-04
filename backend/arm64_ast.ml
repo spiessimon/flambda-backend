@@ -463,9 +463,7 @@ module Instruction_name = struct
     | ADDV -> "addv"
 end
 
-
 module Symbol = struct
-
   type reloc_directive =
     | LOWER_TWELVE
     | GOT_PAGE
@@ -477,9 +475,9 @@ module Symbol = struct
 
   type t = string * int * reloc_directive option
 
-  let create ?reloc ?(offset=0) name : t = (name, offset, reloc)
+  let create ?reloc ?(offset = 0) name : t = name, offset, reloc
 
-  let add_reloc_directive reloc s  =
+  let add_reloc_directive reloc s =
     match reloc with
     | None -> s
     | Some LOWER_TWELVE -> ":lo12:" ^ s
@@ -489,6 +487,7 @@ module Symbol = struct
     | Some GOT_PAGE_OFF -> s ^ "@GOTPAGEOFF"
     | Some PAGE -> s ^ "@PAGE"
     | Some PAGE_OFF -> s ^ "@PAGEOFF"
+
   let add_int_offset ofs s =
     if ofs > 0
     then s ^ "+" ^ Int.to_string ofs
@@ -500,8 +499,8 @@ module Symbol = struct
     Format.fprintf ppf "%s" (add_int_offset ofs (add_reloc_directive reloc sym))
 
   let print_immediate ppf ((sym, ofs, reloc) : t) =
-    Format.fprintf ppf "#%s" (add_int_offset ofs (add_reloc_directive reloc sym))
-
+    Format.fprintf ppf "#%s"
+      (add_int_offset ofs (add_reloc_directive reloc sym))
 end
 
 module Operand = struct
@@ -574,9 +573,7 @@ module Operand = struct
   type label = string
 
   module Addressing_mode = struct
-
     module Offset = struct
-
       type t =
         | Imm of Imm.t
         | Symbol of Symbol.t
@@ -585,7 +582,6 @@ module Operand = struct
         match t with
         | Imm i -> Imm.print ppf i
         | Symbol s -> Format.fprintf ppf "%a" Symbol.print s
-
     end
 
     (* CR gyorsh: only immediate offsets implemented. *)
@@ -630,7 +626,8 @@ module Operand = struct
     | Shift s -> Shift.print ppf s
     | Sym s -> Symbol.print ppf s
     | Cond c -> Format.fprintf ppf "%s" (Instruction_name.Cond.to_string c)
-    | FloatCond c -> Format.fprintf ppf "%s" (Instruction_name.Float_cond.to_string c)
+    | FloatCond c ->
+      Format.fprintf ppf "%s" (Instruction_name.Float_cond.to_string c)
     | Mem m -> Format.fprintf ppf "%a" Addressing_mode.print m
 end
 
@@ -771,17 +768,21 @@ module DSL = struct
 
   let symbol (s : Symbol.t) = Operand.Sym s
 
-  let immediate_symbol (s: Symbol.t) = Operand.ImmSym s
+  let immediate_symbol (s : Symbol.t) = Operand.ImmSym s
 
   let mem ~base = Operand.(Mem (Addressing_mode.Reg base))
 
-  let mem_offset ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, Imm offset)))
+  let mem_offset ~base ~offset =
+    Operand.(Mem (Addressing_mode.Offset (base, Imm offset)))
 
-  let mem_symbol ~base ~symbol = Operand.(Mem (Addressing_mode.Offset (base, Symbol symbol)))
+  let mem_symbol ~base ~symbol =
+    Operand.(Mem (Addressing_mode.Offset (base, Symbol symbol)))
 
-  let mem_pre ~base ~offset = Operand.(Mem (Addressing_mode.Pre (base, Imm offset)))
+  let mem_pre ~base ~offset =
+    Operand.(Mem (Addressing_mode.Pre (base, Imm offset)))
 
-  let mem_post ~base ~offset = Operand.(Mem (Addressing_mode.Post (base, Imm offset)))
+  let mem_post ~base ~offset =
+    Operand.(Mem (Addressing_mode.Post (base, Imm offset)))
 
   let shift shift = Operand.Shift shift
 
@@ -821,7 +822,6 @@ module DSL = struct
 
   (* CR sspies: probably these should be part of the instruction name instead *)
   let float_cond c = Operand.FloatCond c
-
 
   let ins name operands = Asm.Ins (Instruction.create name operands)
 

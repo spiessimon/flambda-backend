@@ -74,8 +74,16 @@ module Float_cond = struct
 
   let equal t1 t2 =
     match t1, t2 with
-    | EQ, EQ | GT, GT | LE, LE | GE, GE | LT, LT
-    | NE, NE | CC, CC | CS, CS | LS, LS | HI, HI ->
+    | EQ, EQ
+    | GT, GT
+    | LE, LE
+    | GE, GE
+    | LT, LT
+    | NE, NE
+    | CC, CC
+    | CS, CS
+    | LS, LS
+    | HI, HI ->
       true
     | (EQ | GT | LE | GE | LT | NE | CC | CS | LS | HI), _ -> false
 end

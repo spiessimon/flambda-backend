@@ -56,41 +56,47 @@ module Reg : sig
   val create : Reg_name.t -> int -> t
 
   val reg_x : int -> t
+
   val reg_w : int -> t
+
   val reg_d : int -> t
+
   val reg_s : int -> t
+
   val reg_q : int -> t
+
   val wzr : t
+
   val xzr : t
+
   val wsp : t
-  val sp  : t
+
+  val sp : t
 end
 
 module Symbol : sig
   type t
 
   type reloc_directive =
-  | LOWER_TWELVE
-  | GOT_PAGE
-  | GOT_PAGE_OFF
-  | GOT
-  | GOT_LOWER_TWELVE
-  | PAGE
-  | PAGE_OFF
+    | LOWER_TWELVE
+    | GOT_PAGE
+    | GOT_PAGE_OFF
+    | GOT
+    | GOT_LOWER_TWELVE
+    | PAGE
+    | PAGE_OFF
 
-  val create: ?reloc:reloc_directive -> ?offset:int -> string -> t
+  val create : ?reloc:reloc_directive -> ?offset:int -> string -> t
 end
 
 module Operand : sig
   type t
-
 
   module Imm : sig
     type t = int
   end
 
   module Shift : sig
-
     module Kind : sig
       type t =
         | LSL
@@ -102,7 +108,6 @@ module Operand : sig
       { kind : Kind.t;
         amount : Imm.t
       }
-
   end
 end
 
@@ -149,8 +154,6 @@ module Instruction_name : sig
       | X
       | N
   end
-
-
 
   module Memory_barrier : sig
     type t =
@@ -280,9 +283,7 @@ module Instruction_name : sig
     | ADDV
 end
 
-
 module DSL : sig
-
   val reg_op : Reg.t -> Operand.t
 
   val imm : int -> Operand.t
@@ -299,10 +300,11 @@ module DSL : sig
 
   val immediate_symbol : Symbol.t -> Operand.t
 
-  val shift: Operand.Shift.t -> Operand.t
+  val shift : Operand.Shift.t -> Operand.t
 
-  (* Note: Memory accesses are only allowed on X-registers and the stack pointer *)
-  val mem: base:Reg.t -> Operand.t
+  (* Note: Memory accesses are only allowed on X-registers and the stack
+     pointer *)
+  val mem : base:Reg.t -> Operand.t
 
   val mem_offset : base:Reg.t -> offset:int -> Operand.t
 
@@ -318,8 +320,8 @@ module DSL : sig
   (* CR sspies: probably these should be part of the instruction name instead *)
   val float_cond : Instruction_name.Float_cond.t -> Operand.t
 
-  (* The functions below are shorthands for composing [reg_op] and
-     the respective function from [Reg] *)
+  (* The functions below are shorthands for composing [reg_op] and the
+     respective function from [Reg] *)
   val reg_v2d : int -> Operand.t
 
   val reg_v2s : int -> Operand.t
