@@ -135,10 +135,26 @@ module Instruction_name = struct
       | EQ
       | GT
       | LE
+      | GE
       | LT
+      | NE
+      | CC
+      | CS
+      | LS
+      | HI
 
     let to_string t =
-      match t with EQ -> "eq" | GT -> "gt" | LE -> "le" | LT -> "lt"
+      match t with
+      | EQ -> "eq"
+      | GT -> "gt"
+      | LE -> "le"
+      | GE -> "ge"
+      | LT -> "lt"
+      | NE -> "ne"
+      | CC -> "cc"
+      | CS -> "cs"
+      | LS -> "ls"
+      | HI -> "hi"
   end
 
   module Cond = struct
@@ -243,9 +259,12 @@ module Instruction_name = struct
     | CNT
     | SMULH
     | UMULH
+    | ORR
+    | EOR
     | B
     | BR
     | B_cond of Cond.t
+    | B_cond_float of Float_cond.t
     | BL
     | BLR
     | CMP
@@ -340,9 +359,12 @@ module Instruction_name = struct
     | CNT -> "cnt"
     | SMULH -> "smulh"
     | UMULH -> "umulh"
+    | ORR -> "orr"
+    | EOR -> "eor"
     | B -> "b"
     | BR -> "br"
     | B_cond c -> "b." ^ Cond.to_string c
+    | B_cond_float c -> "b." ^ Float_cond.to_string c
     | BL -> "bl"
     | BLR -> "blr"
     | CMP -> "cmp"
