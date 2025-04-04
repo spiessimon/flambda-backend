@@ -239,6 +239,7 @@ module Instruction_name : sig
     | ADRP
     | STP
     | BCC
+    | RET
     (* neon *)
     | MOV
     | MOVI

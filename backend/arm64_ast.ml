@@ -316,6 +316,7 @@ module Instruction_name = struct
     | ADRP
     | STP
     | BCC
+    | RET
     (* neon *)
     | MOV
     | MOVI
@@ -421,6 +422,7 @@ module Instruction_name = struct
     | ADRP -> "adrp"
     | STP -> "stp"
     | BCC -> "bcc"
+    | RET -> "ret"
     (* neon *)
     | MOV -> "mov"
     | MOVI -> "movi"
