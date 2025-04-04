@@ -73,7 +73,13 @@ module Instruction_name : sig
       | EQ
       | GT
       | LE
+      | GE
       | LT
+      | NE
+      | CC
+      | CS
+      | LS
+      | HI
   end
 
   module Cond : sig
@@ -145,9 +151,12 @@ module Instruction_name : sig
     | CNT
     | SMULH
     | UMULH
+    | ORR
+    | EOR
     | B
     | BR
     | B_cond of Cond.t
+    | B_cond_float of Float_cond.t
     | BL
     | BLR
     | CMP
