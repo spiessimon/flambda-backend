@@ -135,11 +135,8 @@ module DSL : sig
   val float_cond : Arm64_ast.Instruction_name.Float_cond.t -> Arm64_ast.Operand.t
 
   val emit_reg : Reg.t -> Arm64_ast.Operand.t
-  val emit_reg_fixed_x : int -> Arm64_ast.Operand.t
   val emit_reg_d : Reg.t -> Arm64_ast.Operand.t
   val emit_reg_s : Reg.t -> Arm64_ast.Operand.t
-  (* emit a specific ARM register *)
-  val emit_reg_fixed_s : int -> Arm64_ast.Operand.t
   val emit_reg_w : Reg.t -> Arm64_ast.Operand.t
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
@@ -579,7 +576,7 @@ let emit_stack_realloc () =
     (* Pass the desired frame size on the stack, since all of the
        argument-passing registers may be in use. *)
     DSL.ins I.MOV [| DSL.emit_reg reg_tmp1; DSL.imm sc_max_frame_size_in_bytes|];
-    DSL.ins I.STP [| DSL.emit_reg reg_tmp1; DSL.emit_reg_fixed_x 30; DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |];
+    DSL.ins I.STP [| DSL.emit_reg reg_tmp1; DSL.reg_op (Arm64_ast.Reg.reg_x 30); DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |];
     DSL.ins I.BL [| DSL.emit_symbol "caml_call_realloc_stack" |];
     DSL.ins I.LDP [| DSL.emit_reg reg_tmp1; DSL.mem_post ~base:Arm64_ast.Reg.sp ~offset:16 |];
     DSL.ins I.B [| DSL.emit_label sc_return |]
@@ -704,7 +701,7 @@ let emit_stack_adjustment n =
 let output_epilogue f =
   let n = frame_size() in
   if !contains_calls then
-    DSL.ins I.LDR [| DSL.emit_reg_fixed_x 30; DSL.emit_mem_sp_offset (n - 8)|];
+    DSL.ins I.LDR [| DSL.reg_op (Arm64_ast.Reg.reg_x 30); DSL.emit_mem_sp_offset (n - 8)|];
   if n > 0 then
     emit_stack_adjustment n;
   f();
@@ -1314,7 +1311,7 @@ let emit_instr i =
         emit_stack_adjustment (-n);
       if !contains_calls then begin
         cfi_offset ~reg:30 (* return address *) ~offset:(-8);
-        DSL.ins I.STR [| DSL.emit_reg_fixed_x 30; DSL.emit_mem_sp_offset (n - 8) |];
+        DSL.ins I.STR [| DSL.reg_op (Arm64_ast.Reg.reg_x 30); DSL.emit_mem_sp_offset (n - 8) |];
       end
     | Lop(Intop_atomic _) ->
       (* Never generated; builtins are not yet translated to atomics *)
@@ -1406,7 +1403,7 @@ let emit_instr i =
              NB: no need to store previous x29 because OCaml frames don't
              maintain frame pointer *)
           if Config.runtime5 then begin
-            DSL.ins I.MOV [| DSL.emit_reg_fixed_x 29; DSL.sp |];
+            DSL.ins I.MOV [| DSL.reg_op (Arm64_ast.Reg.reg_x 29); DSL.sp |];
             cfi_remember_state ();
             cfi_def_cfa_register ~reg:29;
             let offset = Domainstate.(idx_of_field Domain_c_stack) * 8 in
@@ -1416,7 +1413,7 @@ let emit_instr i =
           end;
           DSL.ins I.BL [| DSL.emit_symbol func |];
           if Config.runtime5 then begin
-            DSL.ins I.MOV [| DSL.sp; DSL.emit_reg_fixed_x 29 |]
+            DSL.ins I.MOV [| DSL.sp; DSL.reg_op (Arm64_ast.Reg.reg_x 29) |]
           end;
           cfi_restore_state ()
         end
@@ -1449,8 +1446,8 @@ let emit_instr i =
             DSL.ins I.LDRSW [| DSL.emit_reg dst; DSL.emit_addressing addressing_mode base |]
         | Single { reg = Float64 } ->
             DSL.check_reg Float dst;
-            DSL.ins I.LDR [| DSL.emit_reg_fixed_s 7; DSL.emit_addressing addressing_mode base |];
-            DSL.ins I.FCVT [| DSL.emit_reg dst; DSL.emit_reg_fixed_s 7 |]
+            DSL.ins I.LDR [| DSL.reg_op (Arm64_ast.Reg.reg_s 7); DSL.emit_addressing addressing_mode base |];
+            DSL.ins I.FCVT [| DSL.emit_reg dst; DSL.reg_op (Arm64_ast.Reg.reg_s 7) |]
         | Word_int | Word_val ->
           if is_atomic then begin
             assert (addressing_mode = Iindexed 0);
@@ -1488,8 +1485,8 @@ let emit_instr i =
             DSL.ins I.STR [| DSL.emit_reg_w src; DSL.emit_addressing addr base |]
         | Single { reg = Float64 } ->
             DSL.check_reg Float src;
-            DSL.ins I.FCVT [| DSL.emit_reg_fixed_s 7; DSL.emit_reg src |];
-            DSL.ins I.STR [| DSL.emit_reg_fixed_s 7; DSL.emit_addressing addr base |]
+            DSL.ins I.FCVT [| DSL.reg_op (Arm64_ast.Reg.reg_s 7); DSL.emit_reg src |];
+            DSL.ins I.STR [| DSL.reg_op (Arm64_ast.Reg.reg_s 7); DSL.emit_addressing addr base |]
         | Word_int | Word_val ->
             (* memory model barrier for non-initializing store *)
             if assignment then DSL.ins (I.DMB ISHLD) [| |];
