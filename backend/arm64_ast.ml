@@ -559,23 +559,35 @@ module Operand = struct
   type label = string
 
   module Addressing_mode = struct
+
+    module Offset = struct
+
+      type t =
+        | Imm of Imm.t
+        | Symbol of Symbol.t
+
+      let print ppf t =
+        match t with
+        | Imm i -> Imm.print ppf i
+        | Symbol s -> Format.fprintf ppf "#%a" Symbol.print s
+
+    end
+
     (* CR gyorsh: only immediate offsets implemented. *)
     type t =
       | Reg of Reg.t
-      | Offset of Reg.t * Imm.t
-      | SymbolOffset of Reg.t * Symbol.t
-      | Pre of Reg.t * Imm.t
-      | Post of Reg.t * Imm.t
+      | Offset of Reg.t * Offset.t
+      | Pre of Reg.t * Offset.t
+      | Post of Reg.t * Offset.t
       | Literal of label
 
     let print ppf t =
       let open Format in
       match t with
       | Reg r -> fprintf ppf "[%s]" (Reg.name r)
-      | Offset (r, imm) -> fprintf ppf "[%s, %a]" (Reg.name r) Imm.print imm
-      | SymbolOffset (r, s) -> fprintf ppf "[%s, #%a]" (Reg.name r) Symbol.print s
-      | Pre (r, imm) -> fprintf ppf "[%s, %a]!" (Reg.name r) Imm.print imm
-      | Post (r, imm) -> fprintf ppf "[%s], %a" (Reg.name r) Imm.print imm
+      | Offset (r, off) -> fprintf ppf "[%s, %a]" (Reg.name r) Offset.print off
+      | Pre (r, off) -> fprintf ppf "[%s, %a]!" (Reg.name r) Offset.print off
+      | Post (r, off) -> fprintf ppf "[%s], %a" (Reg.name r) Offset.print off
       | Literal l -> fprintf ppf "%s" l
   end
 
@@ -742,13 +754,13 @@ module DSL = struct
 
   let mem ~base = Operand.(Mem (Addressing_mode.Reg base))
 
-  let mem_offset ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, offset)))
+  let mem_offset ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, Imm offset)))
 
-  let mem_symbol ~base ~symbol = Operand.(Mem (Addressing_mode.SymbolOffset (base, symbol)))
+  let mem_symbol ~base ~symbol = Operand.(Mem (Addressing_mode.Offset (base, Symbol symbol)))
 
-  let mem_pre ~base ~offset = Operand.(Mem (Addressing_mode.Pre (base, offset)))
+  let mem_pre ~base ~offset = Operand.(Mem (Addressing_mode.Pre (base, Imm offset)))
 
-  let mem_post ~base ~offset = Operand.(Mem (Addressing_mode.Post (base, offset)))
+  let mem_post ~base ~offset = Operand.(Mem (Addressing_mode.Post (base, Imm offset)))
 
   let shift shift = Operand.Shift shift
 
