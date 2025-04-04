@@ -584,7 +584,7 @@ module Operand = struct
       let print ppf t =
         match t with
         | Imm i -> Imm.print ppf i
-        | Symbol s -> Format.fprintf ppf "#%a" Symbol.print s
+        | Symbol s -> Format.fprintf ppf "%a" Symbol.print s
 
     end
 
