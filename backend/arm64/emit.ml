@@ -131,7 +131,8 @@ module DSL : sig
   val mem_offset : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
   val mem_pre : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
   val mem_post : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
-
+  val cond : Arm64_ast.Instruction_name.Cond.t -> Arm64_ast.Operand.t
+  val float_cond : Arm64_ast.Instruction_name.Float_cond.t -> Arm64_ast.Operand.t
 
   val emit_reg : Reg.t -> Arm64_ast.Operand.t
   val emit_reg_fixed_x : int -> Arm64_ast.Operand.t
@@ -142,6 +143,8 @@ module DSL : sig
   val emit_reg_w : Reg.t -> Arm64_ast.Operand.t
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
+  val imm_float : float -> Arm64_ast.Operand.t
+  val imm_nativeint : nativeint -> Arm64_ast.Operand.t
   val sp: Arm64_ast.Operand.t
   val xzr: Arm64_ast.Operand.t
 
@@ -577,12 +580,6 @@ let emit_stack_realloc () =
 
 (* Names of various instructions *)
 
-let name_for_comparison = function
-  | Isigned Ceq -> "eq" | Isigned Cne -> "ne" | Isigned Cle -> "le"
-  | Isigned Cge -> "ge" | Isigned Clt -> "lt" | Isigned Cgt -> "gt"
-  | Iunsigned Ceq -> "eq" | Iunsigned Cne -> "ne" | Iunsigned Cle -> "ls"
-  | Iunsigned Cge -> "cs" | Iunsigned Clt -> "cc" | Iunsigned Cgt -> "hi"
-
 let comp_for_comparison : integer_comparison -> Arm64_ast.Instruction_name.Cond.t =
   function
   | Isigned Ceq -> EQ | Isigned Cne -> NE | Isigned Cle -> LE
@@ -637,11 +634,11 @@ let decompose_int default n =
 (* Load an integer constant into a register *)
 
 let emit_movk dst (f, p) =
-    emit_printf "	movk	%a, #%a, lsl #%a\n" femit_reg dst femit_nativeint f femit_int p
+    DSL.ins I.MOVK [| DSL.emit_reg dst; DSL.imm_nativeint f; DSL.emit_shift LSL p |]
 
 let emit_intconst dst n =
   if is_logical_immediate n then
-    emit_printf "	orr	%a, xzr, #%a\n" femit_reg dst femit_nativeint n
+    DSL.ins I.ORR [| DSL.emit_reg dst; DSL.xzr; DSL.imm_nativeint n |]
   else begin
     let dz = decompose_int 0x0000n n
     and dn = decompose_int 0xFFFFn n in
@@ -650,15 +647,15 @@ let emit_intconst dst n =
       | [] ->
           DSL.ins I.MOV [| DSL.emit_reg dst; DSL.xzr |]
       | (f, p) :: l ->
-          emit_printf "	movz	%a, #%a, lsl #%a\n" femit_reg dst femit_nativeint f femit_int p;
+          DSL.ins I.MOVZ [| DSL.emit_reg dst; DSL.imm_nativeint f; DSL.emit_shift LSL p |];
           List.iter (emit_movk dst) l
     end else begin
       match dn with
       | [] ->
-          emit_printf "	movn	%a, #0\n" femit_reg dst
+          DSL.ins I.MOVN [| DSL.emit_reg dst; DSL.imm 0 |];
       | (f, p) :: l ->
           let nf = Nativeint.logxor f 0xFFFFn in
-          emit_printf "	movn	%a, #%a, lsl #%a\n" femit_reg dst femit_nativeint nf femit_int p;
+          DSL.ins I.MOVN [| DSL.emit_reg dst; DSL.imm_nativeint nf; DSL.emit_shift LSL p |];
           List.iter (emit_movk dst) l
     end
   end
@@ -1034,18 +1031,6 @@ module BR = Branch_relaxation.Make (struct
     Lop (Specific (Ifar_alloc { bytes = num_bytes; dbginfo }))
 end)
 
-let name_for_float_comparison : Cmm.float_comparison -> string = function
-  | CFeq -> "eq"
-  | CFneq -> "ne"
-  | CFlt -> "cc"
-  | CFnlt -> "cs"
-  | CFle -> "ls"
-  | CFnle -> "hi"
-  | CFgt -> "gt"
-  | CFngt -> "le"
-  | CFge -> "ge"
-  | CFnge -> "lt"
-
 let comp_for_float_comparison : Cmm.float_comparison -> Arm64_ast.Instruction_name.Float_cond.t = function
   | CFeq -> EQ
   | CFneq -> NE
@@ -1356,7 +1341,7 @@ let emit_instr i =
         if f = 0l then
           DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); DSL.reg_op Arm64_ast.Reg.wzr |]
         else if is_immediate_float32 f then
-          emit_printf "	fmov	%a, #%.7f\n" femit_reg i.res.(0)  (Int32.float_of_bits f)
+          DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); DSL.imm_float (Int32.float_of_bits f) |]
         else begin
           (* float32 constants still take up 8 bytes; we load the lower half. *)
           let lbl = float_literal (Int64.of_int32 f) in
@@ -1366,7 +1351,7 @@ let emit_instr i =
         if f = 0L then
           DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); DSL.xzr |]
         else if is_immediate_float f then
-          emit_printf "	fmov	%a, #%.7f\n" femit_reg i.res.(0)  (Int64.float_of_bits f)
+          DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); DSL.imm_float (Int64.float_of_bits f) |]
         else begin
           let lbl = float_literal f in
           emit_load_literal i.res.(0) lbl
@@ -1535,18 +1520,18 @@ let emit_instr i =
         emit_subimm i.res.(0) i.arg.(0) n
     | Lop(Intop(Icomp cmp)) ->
         DSL.ins I.CMP [| DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1) |];
-        emit_printf "	cset	%a, %a\n" femit_reg i.res.(0) femit_string (name_for_comparison cmp)
+        DSL.ins I.CSET [| DSL.emit_reg i.res.(0); DSL.cond (comp_for_comparison cmp) |]
     | Lop(Floatop(Float64, Icompf cmp)) ->
-        let comp = name_for_float_comparison cmp in
+        let comp = comp_for_float_comparison cmp in
         DSL.ins I.FCMP [| DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1) |];
-        emit_printf "	cset	%a, %a\n" femit_reg i.res.(0) femit_string comp
+        DSL.ins I.CSET [| DSL.emit_reg i.res.(0); DSL.float_cond comp |]
     | Lop(Floatop(Float32, Icompf cmp)) ->
-        let comp = name_for_float_comparison cmp in
+        let comp = comp_for_float_comparison cmp in
         DSL.ins I.FCMP [| DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1) |];
-        emit_printf "	cset	%a, %a\n" femit_reg i.res.(0) femit_string comp
+        DSL.ins I.CSET [| DSL.emit_reg i.res.(0); DSL.float_cond comp |]
     | Lop(Intop_imm(Icomp cmp, n)) ->
         emit_cmpimm i.arg.(0) n;
-        emit_printf "	cset	%a, %a\n" femit_reg i.res.(0) femit_string (name_for_comparison cmp)
+        DSL.ins I.CSET [| DSL.emit_reg i.res.(0); DSL.cond (comp_for_comparison cmp) |]
     | Lop(Intop Imod) ->
         DSL.ins I.SDIV [| DSL.emit_reg reg_tmp1; DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1)|];
         DSL.ins I.MSUB [| DSL.emit_reg i.res.(0); DSL.emit_reg reg_tmp1; DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(0)|];
@@ -1638,28 +1623,28 @@ let emit_instr i =
         begin match tst with
         | Itruetest ->
             DSL.ins I.CMP [| DSL.emit_reg i.arg.(0); DSL.imm 0 |];
-            emit_printf "	csel	%a, %a, %a, ne\n" femit_reg i.res.(0) femit_reg i.arg.(1) femit_reg i.arg.(2)
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2); DSL.cond NE |]
         | Ifalsetest ->
             DSL.ins I.CMP [| DSL.emit_reg i.arg.(0); DSL.imm 0 |];
-            emit_printf "	csel	%a, %a, %a, eq\n" femit_reg i.res.(0) femit_reg i.arg.(1) femit_reg i.arg.(2)
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2); DSL.cond EQ |]
         | Iinttest cmp ->
-            let comp = name_for_comparison cmp in
+            let comp = comp_for_comparison cmp in
             DSL.ins I.CMP [| DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1) |];
-            emit_printf "	csel	%a, %a, %a, %a\n" femit_reg i.res.(0) femit_reg i.arg.(2) femit_reg i.arg.(3) femit_string comp
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(2); DSL.emit_reg i.arg.(3); DSL.cond comp |]
         | Iinttest_imm(cmp, n) ->
-            let comp = name_for_comparison cmp in
+            let comp = comp_for_comparison cmp in
             emit_cmpimm i.arg.(0) n;
-            emit_printf "	csel	%a, %a, %a, %a\n" femit_reg i.res.(0) femit_reg i.arg.(1) femit_reg i.arg.(2) femit_string comp
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2); DSL.cond comp |]
         | Ifloattest ((Float32 | Float64), cmp) ->
-            let comp = name_for_float_comparison cmp in
+            let comp = comp_for_float_comparison cmp in
             DSL.ins I.FCMP [| DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1) |];
-            emit_printf "	csel	%a, %a, %a, %a\n" femit_reg i.res.(0) femit_reg i.arg.(2) femit_reg i.arg.(3) femit_string comp
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(2); DSL.emit_reg i.arg.(3); DSL.float_cond comp |]
         | Ioddtest ->
             DSL.ins I.TST [| DSL.emit_reg i.arg.(0); DSL.imm 1 |];
-            emit_printf "	csel	%a, %a, %a, ne\n" femit_reg i.res.(0) femit_reg i.arg.(1) femit_reg i.arg.(2)
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2); DSL.cond NE |]
         | Ieventest ->
             DSL.ins I.TST [| DSL.emit_reg i.arg.(0); DSL.imm 1 |];
-            emit_printf "	csel	%a, %a, %a, eq\n" femit_reg i.res.(0) femit_reg i.arg.(1) femit_reg i.arg.(2)
+            DSL.ins I.CSEL [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2); DSL.cond EQ |]
         end
     | Lreloadretaddr ->
         ()

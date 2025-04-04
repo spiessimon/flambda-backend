@@ -321,6 +321,7 @@ module Instruction_name = struct
     | MOVI
     | MOVN
     | MOVK
+    | MOVZ
     | FMOV
     | FADD
     | FSUB
@@ -425,6 +426,7 @@ module Instruction_name = struct
     | MOVI -> "movi"
     | MOVN -> "movn"
     | MOVK -> "movk"
+    | MOVZ -> "movz"
     | FMOV -> "fmov"
     | FADD -> "fadd"
     | FSUB -> "fsub"
@@ -605,22 +607,28 @@ module Operand = struct
   type t =
     | Imm of Imm.t
     | ImmSym of Symbol.t
+    | ImmFloat of float
+    | ImmNativeInt of nativeint
     | Reg of Reg.t
     | Extend of Extend.t
     | Shift of Shift.t
     | Sym of Symbol.t
     | Cond of Instruction_name.Cond.t
+    | FloatCond of Instruction_name.Float_cond.t
     | Mem of Addressing_mode.t
 
   let print ppf t =
     match t with
     | Imm imm -> Imm.print ppf imm
     | ImmSym sym -> Symbol.print_immediate ppf sym
+    | ImmFloat f -> Format.fprintf ppf "#%.7f" f
+    | ImmNativeInt n -> Format.fprintf ppf "#%s" (Nativeint.to_string n)
     | Reg r -> Format.fprintf ppf "%s" (Reg.name r)
     | Extend e -> Extend.print ppf e
     | Shift s -> Shift.print ppf s
     | Sym s -> Symbol.print ppf s
     | Cond c -> Format.fprintf ppf "%s" (Instruction_name.Cond.to_string c)
+    | FloatCond c -> Format.fprintf ppf "%s" (Instruction_name.Float_cond.to_string c)
     | Mem m -> Format.fprintf ppf "%a" Addressing_mode.print m
 end
 
@@ -802,6 +810,16 @@ module DSL = struct
   let reg_op reg = Operand.Reg reg
 
   let imm n = Operand.Imm n
+
+  let imm_float f = Operand.ImmFloat f
+
+  let imm_nativeint n = Operand.ImmNativeInt n
+
+  let cond c = Operand.Cond c
+
+  (* CR sspies: probably these should be part of the instruction name instead *)
+  let float_cond c = Operand.FloatCond c
+
 
   let ins name operands = Asm.Ins (Instruction.create name operands)
 
