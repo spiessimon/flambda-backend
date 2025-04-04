@@ -166,6 +166,8 @@ module DSL : sig
   val emit_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
   val emit_immediate_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
   val ins : I.t -> Arm64_ast.Operand.t array -> unit
+  val labeled_ins : label -> I.t -> Arm64_ast.Operand.t array -> unit
+
 
   val simd_instr : Simd.operation -> Linear.instruction -> unit
   val simd_instr_size : Simd.operation -> int
@@ -373,6 +375,10 @@ end [@warning "-32"]  = struct
 
   let ins name ops = print_ins name ops |> Emitaux.emit_string
 
+  let labeled_ins lbl name ops =
+    Emitaux.emit_printf "%s:" (convert_label_representation lbl);
+    print_ins name ops |> Emitaux.emit_string
+
   let ins_cond name cond ops = print_ins_cond name cond ops |> Emitaux.emit_string
 
   let emit_operands (register_behavior : Simd_proc.register_behavior) i =
@@ -532,8 +538,8 @@ type gc_call =
 let call_gc_sites = ref ([] : gc_call list)
 
 let emit_call_gc gc =
-  emit_printf "%a:	bl	%a\n" femit_label gc.gc_lbl femit_symbol "caml_call_gc";
-  emit_printf "%a:	b	%a\n" femit_label gc.gc_frame_lbl femit_label gc.gc_return_lbl
+  DSL.labeled_ins gc.gc_lbl I.BL [| DSL.emit_symbol "caml_call_gc" |];
+  DSL.labeled_ins gc.gc_frame_lbl I.B [| DSL.emit_label gc.gc_return_lbl |]
 
 (* Record calls to local stack reallocation *)
 
