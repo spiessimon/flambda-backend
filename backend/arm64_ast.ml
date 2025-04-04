@@ -294,6 +294,8 @@ module Instruction_name = struct
     | LDRH
     | LDRSH
     | LDRSW
+    | LDP
+    | LDAR
     | STR
     | STRB
     | STRH
@@ -317,6 +319,8 @@ module Instruction_name = struct
     (* neon *)
     | MOV
     | MOVI
+    | MOVN
+    | MOVK
     | FMOV
     | FADD
     | FSUB
@@ -394,6 +398,8 @@ module Instruction_name = struct
     | LDRH -> "ldrh"
     | LDRSH -> "ldrsh"
     | LDRSW -> "ldrsw"
+    | LDP -> "ldp"
+    | LDAR -> "ldar"
     | STR -> "str"
     | STRB -> "strb"
     | STRH -> "strh"
@@ -417,6 +423,8 @@ module Instruction_name = struct
     (* neon *)
     | MOV -> "mov"
     | MOVI -> "movi"
+    | MOVN -> "movn"
+    | MOVK -> "movk"
     | FMOV -> "fmov"
     | FADD -> "fadd"
     | FSUB -> "fsub"
@@ -460,6 +468,8 @@ module Symbol = struct
     | GOT_PAGE_OFF
     | GOT
     | GOT_LOWER_TWELVE
+    | PAGE
+    | PAGE_OFF
 
   type t = string * int * reloc_directive option
 
@@ -473,7 +483,8 @@ module Symbol = struct
     | Some GOT_LOWER_TWELVE -> ":got_lo12:" ^ s
     | Some GOT_PAGE -> s ^ "@GOTPAGE"
     | Some GOT_PAGE_OFF -> s ^ "@GOTPAGEOFF"
-
+    | Some PAGE -> s ^ "@PAGE"
+    | Some PAGE_OFF -> s ^ "@PAGEOFF"
   let add_int_offset ofs s =
     if ofs > 0
     then s ^ "+" ^ Int.to_string ofs

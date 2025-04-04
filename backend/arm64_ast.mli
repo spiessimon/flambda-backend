@@ -75,6 +75,8 @@ module Symbol : sig
   | GOT_PAGE_OFF
   | GOT
   | GOT_LOWER_TWELVE
+  | PAGE
+  | PAGE_OFF
 
   val create: ?reloc:reloc_directive -> ?offset:int -> string -> t
 end
@@ -215,6 +217,8 @@ module Instruction_name : sig
     | LDRH
     | LDRSH
     | LDRSW
+    | LDP
+    | LDAR
     | STR
     | STRB
     | STRH
@@ -238,6 +242,8 @@ module Instruction_name : sig
     (* neon *)
     | MOV
     | MOVI
+    | MOVN
+    | MOVK
     | FMOV
     | FADD
     | FSUB

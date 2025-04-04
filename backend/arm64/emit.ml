@@ -159,7 +159,7 @@ module DSL : sig
 
   (* Output a stack reference *)
   val emit_stack : Reg.t -> Arm64_ast.Operand.t
-  val emit_label : label -> Arm64_ast.Operand.t
+  val emit_label : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> label -> Arm64_ast.Operand.t
   val emit_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
   val emit_immediate_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> string -> Arm64_ast.Operand.t
   val ins : I.t -> Arm64_ast.Operand.t array -> unit
@@ -254,9 +254,9 @@ end [@warning "-32"]  = struct
   let convert_label_representation (lbl: label) =
     label_prefix ^ Label.to_string lbl
 
-  let emit_label (s: label) =
+  let emit_label ?offset ?reloc (s: label) =
     let l = convert_label_representation s in
-    symbol (Arm64_ast.Symbol.create l)
+    symbol (Arm64_ast.Symbol.create ?offset ?reloc l)
 
   let emit_symbol ?offset ?reloc (s: string)  =
     let sym = convert_symbol_representation s in
@@ -570,9 +570,9 @@ let emit_stack_realloc () =
     (* Pass the desired frame size on the stack, since all of the
        argument-passing registers may be in use. *)
     DSL.ins I.MOV [| DSL.emit_reg reg_tmp1; DSL.imm sc_max_frame_size_in_bytes|];
-    emit_printf "    stp %a, x30, [sp, #-16]!\n" femit_reg reg_tmp1;
+    DSL.ins I.STP [| DSL.emit_reg reg_tmp1; DSL.emit_reg_fixed_x 30; DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |];
     DSL.ins I.BL [| DSL.emit_symbol "caml_call_realloc_stack" |];
-    emit_printf "    ldp %a, x30, [sp], #16\n" femit_reg reg_tmp1;
+    DSL.ins I.LDP [| DSL.emit_reg reg_tmp1; DSL.mem_post ~base:Arm64_ast.Reg.sp ~offset:16 |];
     DSL.ins I.B [| DSL.emit_label sc_return |]
 
 (* Names of various instructions *)
@@ -786,13 +786,13 @@ let emit_literals () =
 let emit_load_symbol_addr dst s =
   if macosx then begin
     DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol s ~reloc:GOT_PAGE |];
-    emit_printf "	ldr	%a, [%a, %a%@GOTPAGEOFF]\n" femit_reg dst femit_reg dst femit_symbol s
+    DSL.ins I.LDR [| DSL.emit_reg dst; DSL.emit_mem_symbol ~reloc:GOT_PAGE_OFF dst s |]
   end else if not !Clflags.dlcode then begin
     DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol s |];
     DSL.ins I.ADD [| DSL.emit_reg dst; DSL.emit_reg dst; DSL.emit_immediate_symbol ~reloc:LOWER_TWELVE s |]
   end else begin
     DSL.ins I.ADRP [| DSL.emit_reg dst; DSL.emit_symbol ~reloc:GOT s |];
-    emit_printf "	ldr	%a, [%a, #:got_lo12:%a]\n" femit_reg dst femit_reg dst femit_symbol s
+    DSL.ins I.LDR [| DSL.emit_reg dst; DSL.emit_mem_symbol ~reloc:GOT_LOWER_TWELVE dst s |]
   end
 
 (* The following functions are used for calculating the sizes of the
@@ -1171,11 +1171,11 @@ let emit_named_text_section func_name =
 
 let emit_load_literal dst lbl =
   if macosx then begin
-    emit_printf "	adrp	%a, %a%@PAGE\n" femit_reg reg_tmp1 femit_label lbl;
-    emit_printf "	ldr	%a, [%a, %a%@PAGEOFF]\n" femit_reg dst femit_reg reg_tmp1 femit_label lbl
+    DSL.ins I.ADRP [| DSL.emit_reg reg_tmp1; DSL.emit_label ~reloc:PAGE lbl |];
+    DSL.ins I.LDR [| DSL.emit_reg dst; DSL.emit_mem_label ~reloc:PAGE_OFF reg_tmp1 lbl |]
   end else begin
-    emit_printf "	adrp	%a, %a\n" femit_reg reg_tmp1 femit_label lbl;
-    emit_printf "	ldr	%a, [%a, #:lo12:%a]\n" femit_reg dst femit_reg reg_tmp1 femit_label lbl
+    DSL.ins I.ADRP [| DSL.emit_reg reg_tmp1; DSL.emit_label lbl |];
+    DSL.ins I.LDR [| DSL.emit_reg dst; DSL.emit_mem_label ~reloc:LOWER_TWELVE reg_tmp1 lbl|]
   end
 
 let move (src : Reg.t) (dst : Reg.t) =
@@ -1354,7 +1354,7 @@ let emit_instr i =
     | Lop (Const_float32 f) ->
         DSL.check_reg Float32 i.res.(0);
         if f = 0l then
-          emit_printf "	fmov	%a, wzr\n" femit_reg i.res.(0)
+          DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); DSL.reg_op Arm64_ast.Reg.wzr |]
         else if is_immediate_float32 f then
           emit_printf "	fmov	%a, #%.7f\n" femit_reg i.res.(0)  (Int32.float_of_bits f)
         else begin
@@ -1464,7 +1464,7 @@ let emit_instr i =
           if is_atomic then begin
             assert (addressing_mode = Iindexed 0);
             DSL.ins (I.DMB ISHLD) [| |];
-            emit_printf "	ldar	%a, [%a]\n" femit_reg dst femit_reg i.arg.(0)
+            DSL.ins I.LDAR [| DSL.emit_reg dst; DSL.emit_mem i.arg.(0) |]
           end else
             DSL.ins I.LDR [| DSL.emit_reg dst; DSL.emit_addressing addressing_mode base |]
         | Double ->
@@ -1709,7 +1709,7 @@ let emit_instr i =
     | Lswitch jumptbl ->
         let lbltbl = Cmm.new_label() in
         DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbltbl |];
-        emit_printf "	add	%a, %a, %a, lsl #2\n" femit_reg reg_tmp1 femit_reg reg_tmp1 femit_reg i.arg.(0);
+        DSL.ins I.ADD [| DSL.emit_reg reg_tmp1; DSL.emit_reg reg_tmp1; DSL.emit_reg i.arg.(0); DSL.emit_shift LSL 2 |];
         DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
         emit_printf "%a:" femit_label lbltbl;
         for j = 0 to Array.length jumptbl - 1 do
@@ -1734,11 +1734,11 @@ let emit_instr i =
     | Lpushtrap { lbl_handler; } ->
         DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbl_handler |];
         stack_offset := !stack_offset + 16;
-        emit_printf "	stp	%a, %a, [sp, -16]!\n" femit_reg reg_trap_ptr femit_reg reg_tmp1;
+        DSL.ins I.STP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem_pre ~base:Arm64_ast.Reg.sp ~offset:(-16) |];
         cfi_adjust_cfa_offset 16;
         DSL.ins I.MOV [| DSL.emit_reg reg_trap_ptr; DSL.sp |]
     | Lpoptrap ->
-        emit_printf "	ldr	%a, [sp], 16\n" femit_reg reg_trap_ptr;
+        DSL.ins I.LDR [| DSL.emit_reg reg_trap_ptr; DSL.mem_post ~base:Arm64_ast.Reg.sp ~offset:16 |];
         cfi_adjust_cfa_offset (-16);
         stack_offset := !stack_offset - 16
     | Lraise k ->
@@ -1754,7 +1754,7 @@ let emit_instr i =
           emit_printf "%a\n" frecord_frame (Reg.Set.empty, Dbg_raise i.dbg)
         | Lambda.Raise_notrace ->
           DSL.ins I.MOV [| DSL.sp; DSL.emit_reg reg_trap_ptr |];
-          emit_printf "	ldp	%a, %a, [sp], 16\n" femit_reg reg_trap_ptr femit_reg reg_tmp1;
+          DSL.ins I.LDP [| DSL.emit_reg reg_trap_ptr; DSL.emit_reg reg_tmp1; DSL.mem ~base:Arm64_ast.Reg.sp; DSL.imm 16 |];
           DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
       end
     | Lstackcheck { max_frame_size_bytes; } ->
