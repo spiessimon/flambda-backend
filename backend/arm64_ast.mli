@@ -264,7 +264,9 @@ module DSL : sig
   val immediate_symbol : Symbol.t -> Operand.t
 
   (* Note: Memory accesses are only allowed on X-registers and the stack pointer *)
-  val mem : base:Reg.t -> offset:int -> Operand.t
+  val mem: base:Reg.t -> Operand.t
+
+  val mem_offset : base:Reg.t -> offset:int -> Operand.t
 
   val mem_symbol : base:Reg.t -> symbol:Symbol.t -> Operand.t
 

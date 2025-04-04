@@ -127,6 +127,10 @@ module DSL : sig
 
   val translate_reg : Reg.t -> Arm64_ast.Reg.t
   val reg_op : Arm64_ast.Reg.t -> Arm64_ast.Operand.t
+  val mem : base:Arm64_ast.Reg.t -> Arm64_ast.Operand.t
+  val mem_offset : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
+  val mem_pre : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
+  val mem_post : base:Arm64_ast.Reg.t -> offset:int -> Arm64_ast.Operand.t
 
 
   val emit_reg : Reg.t -> Arm64_ast.Operand.t
@@ -139,10 +143,19 @@ module DSL : sig
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
   val imm : int -> Arm64_ast.Operand.t
   val sp: Arm64_ast.Operand.t
-  val mem_reg_offset : Reg.t -> int -> Arm64_ast.Operand.t
-  val mem_sp_offset : int -> Arm64_ast.Operand.t
   val xzr: Arm64_ast.Operand.t
+
+  (* translate registers before producing the operand *)
+  val emit_mem : Reg.t -> Arm64_ast.Operand.t
+  val emit_mem_offset : Reg.t -> int -> Arm64_ast.Operand.t
+  val emit_mem_pre : Reg.t -> int -> Arm64_ast.Operand.t
+  val emit_mem_post : Reg.t -> int -> Arm64_ast.Operand.t
+  val emit_mem_sp_offset : int -> Arm64_ast.Operand.t
   val emit_addressing : addressing_mode -> Reg.t -> Arm64_ast.Operand.t
+  val emit_mem_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> Reg.t -> string -> Arm64_ast.Operand.t
+  val emit_mem_label : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> Reg.t -> label -> Arm64_ast.Operand.t
+
+
   (* Output a stack reference *)
   val emit_stack : Reg.t -> Arm64_ast.Operand.t
   val emit_label : label -> Arm64_ast.Operand.t
@@ -219,12 +232,6 @@ end [@warning "-32"]  = struct
 
   let emit_reg_d reg = reg_d (reg_index reg)
 
-  let mem_reg_offset reg off =
-    mem ~base:(translate_reg reg) ~offset:off
-
-  let mem_sp_offset off =
-    mem ~base:Arm64_ast.Reg.sp ~offset:off
-
   (* FIXME: Is this using an array to increase sharing in the DSL? *)
   let emit_reg reg =
     let index = reg_index reg in
@@ -243,37 +250,65 @@ end [@warning "-32"]  = struct
   let convert_symbol_representation (s: string) =
     if macosx then "_" ^ Emitaux.symbol_to_string s else Emitaux.symbol_to_string s
 
-  let emit_symbol ?(offset=0) ?reloc (s: string)  =
-    let sym = convert_symbol_representation s in
-    symbol (Arm64_ast.Symbol.create ~offset ?reloc sym)
+  let convert_label_representation (lbl: label) =
+    label_prefix ^ Label.to_string lbl
 
-  let emit_immediate_symbol ?(offset=0) ?reloc (s: string)  =
+  let emit_label (s: label) =
+    let l = convert_label_representation s in
+    symbol (Arm64_ast.Symbol.create l)
+
+  let emit_symbol ?offset ?reloc (s: string)  =
     let sym = convert_symbol_representation s in
-    symbol (Arm64_ast.Symbol.create ~offset ?reloc sym)
+    symbol (Arm64_ast.Symbol.create ?offset ?reloc sym)
+
+  let emit_immediate_symbol ?offset ?reloc (s: string)  =
+    let sym = convert_symbol_representation s in
+    symbol (Arm64_ast.Symbol.create ?offset ?reloc sym)
+
+  let emit_mem r =
+    mem ~base:(translate_reg r)
+
+  let emit_mem_offset r ofs =
+    mem_offset ~base:(translate_reg r) ~offset:ofs
+
+  let emit_mem_pre r ofs =
+    mem_pre ~base:(translate_reg r) ~offset:ofs
+
+  let emit_mem_post r ofs =
+    mem_post ~base:(translate_reg r) ~offset:ofs
+
+  let emit_mem_sp_offset ofs =
+    mem_offset ~base:Arm64_ast.Reg.sp ~offset:ofs
 
   let emit_addressing addr r =
     match addr with
     | Iindexed ofs ->
-      mem ~base:(translate_reg r) ~offset:ofs
+      mem_offset ~base:(translate_reg r) ~offset:ofs
     | Ibased(s, ofs) ->
       assert (not !Clflags.dlcode);  (* see selection.ml *)
       let sym = Arm64_ast.Symbol.create ~reloc:LOWER_TWELVE ~offset:ofs (convert_symbol_representation s) in
       mem_symbol ~base:(translate_reg r) ~symbol:sym
 
+  let emit_mem_symbol ?offset ?reloc r s =
+    let sym = convert_symbol_representation s in
+    let base = translate_reg r in
+    mem_symbol ~base ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc sym)
+
+  let emit_mem_label ?offset ?reloc r lbl =
+    let sym = convert_label_representation lbl in
+    let base = translate_reg r in
+    mem_symbol ~base ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc sym)
+
   let emit_stack (r: t) =
     match r.loc with
     | Stack (Domainstate n) ->
         let ofs = n + Domainstate.(idx_of_field Domain_extra_params) * 8 in
-        mem ~base:(translate_reg reg_domain_state_ptr) ~offset:ofs
+        mem_offset ~base:(translate_reg reg_domain_state_ptr) ~offset:ofs
     | Stack ((Local _ | Incoming _ | Outgoing _) as s) ->
         let ofs = slot_offset s (Stack_class.of_machtype r.typ) in
-        mem_sp_offset ofs
+        emit_mem_sp_offset ofs
     | Reg _ | Unknown -> fatal_error "Emit.emit_stack"
 
-
-  let emit_label (s: label) =
-    let l = label_prefix ^ Label.to_string s in
-    symbol (Arm64_ast.Symbol.create l)
 
 
   let check_instr (register_behavior : Simd_proc.register_behavior) i =
@@ -663,7 +698,7 @@ let emit_stack_adjustment n =
 let output_epilogue f =
   let n = frame_size() in
   if !contains_calls then
-    DSL.ins I.LDR [| DSL.emit_reg_fixed_x 30; DSL.mem_sp_offset (n - 8)|];
+    DSL.ins I.LDR [| DSL.emit_reg_fixed_x 30; DSL.emit_mem_sp_offset (n - 8)|];
   if n > 0 then
     emit_stack_adjustment n;
   f();
@@ -1285,7 +1320,7 @@ let emit_instr i =
         emit_stack_adjustment (-n);
       if !contains_calls then begin
         cfi_offset ~reg:30 (* return address *) ~offset:(-8);
-        DSL.ins I.STR [| DSL.emit_reg_fixed_x 30; DSL.mem_sp_offset (n - 8) |];
+        DSL.ins I.STR [| DSL.emit_reg_fixed_x 30; DSL.emit_mem_sp_offset (n - 8) |];
       end
     | Lop(Intop_atomic _) ->
       (* Never generated; builtins are not yet translated to atomics *)

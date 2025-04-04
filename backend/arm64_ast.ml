@@ -561,6 +561,7 @@ module Operand = struct
   module Addressing_mode = struct
     (* CR gyorsh: only immediate offsets implemented. *)
     type t =
+      | Reg of Reg.t
       | Offset of Reg.t * Imm.t
       | SymbolOffset of Reg.t * Symbol.t
       | Pre of Reg.t * Imm.t
@@ -570,6 +571,7 @@ module Operand = struct
     let print ppf t =
       let open Format in
       match t with
+      | Reg r -> fprintf ppf "[%s]" (Reg.name r)
       | Offset (r, imm) -> fprintf ppf "[%s, %a]" (Reg.name r) Imm.print imm
       | SymbolOffset (r, s) -> fprintf ppf "[%s, #%a]" (Reg.name r) Symbol.print s
       | Pre (r, imm) -> fprintf ppf "[%s, %a]!" (Reg.name r) Imm.print imm
@@ -738,7 +740,9 @@ module DSL = struct
 
   let immediate_symbol (s: Symbol.t) = Operand.ImmSym s
 
-  let mem ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, offset)))
+  let mem ~base = Operand.(Mem (Addressing_mode.Reg base))
+
+  let mem_offset ~base ~offset = Operand.(Mem (Addressing_mode.Offset (base, offset)))
 
   let mem_symbol ~base ~symbol = Operand.(Mem (Addressing_mode.SymbolOffset (base, symbol)))
 
