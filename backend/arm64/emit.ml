@@ -1090,8 +1090,7 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
         DSL.ins I.B [| DSL.emit_label lbl_call_gc |];
         emit_printf "%a:\n" femit_label lbl
       end;
-      emit_printf "%a:" femit_label lbl_after_alloc;
-      DSL.ins I.ADD [| DSL.emit_reg i.res.(0); DSL.emit_reg reg_alloc_ptr; DSL.imm 8 |];
+      DSL.labeled_ins lbl_after_alloc I.ADD [| DSL.emit_reg i.res.(0); DSL.emit_reg reg_alloc_ptr; DSL.imm 8 |];
       call_gc_sites :=
         { gc_lbl = lbl_call_gc;
           gc_return_lbl = lbl_after_alloc;
@@ -1104,7 +1103,7 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
       | _  -> emit_intconst reg_x8 (Nativeint.of_int n);
               DSL.ins I.BL [| DSL.emit_symbol "caml_allocN" |]
       end;
-      emit_printf "%a:	add	%a, %a, #8\n" femit_label lbl_frame femit_reg i.res.(0) femit_reg reg_alloc_ptr
+      DSL.labeled_ins lbl_frame I.ADD [| DSL.emit_reg i.res.(0); DSL.emit_reg reg_alloc_ptr; DSL.imm 8 |]
     end
   end
 
@@ -1135,7 +1134,7 @@ let assembly_code_for_poll i ~far ~return_label =
         let lbl = Cmm.new_label () in
         DSL.ins (I.B_cond LS) [| DSL.emit_label lbl |];
         DSL.ins I.B [| DSL.emit_label return_label |];
-        emit_printf "%a:	b	%a\n" femit_label lbl femit_label lbl_call_gc
+        DSL.labeled_ins lbl I.B [| DSL.emit_label lbl_call_gc |]
   end;
   call_gc_sites :=
     { gc_lbl = lbl_call_gc;
