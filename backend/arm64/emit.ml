@@ -1581,12 +1581,12 @@ let emit_instr i =
         assert (i.arg.(0).loc = i.res.(0).loc)
     | Lop(Specific(Ishiftarith(op, shift))) ->
         let instr = (match op with
-                       Ishiftadd    -> "add"
-                     | Ishiftsub    -> "sub") in
-        emit_printf "	%a	%a, %a, %a" femit_string instr femit_reg i.res.(0) femit_reg i.arg.(0) femit_reg i.arg.(1);
-        if shift >= 0
-        then emit_printf ", lsl #%a\n" femit_int shift
-        else emit_printf ", asr #%a\n" femit_int (-shift)
+                       Ishiftadd    -> I.ADD
+                     | Ishiftsub    -> I.SUB) in
+        let shift = if shift >= 0
+          then DSL.emit_shift LSL shift
+          else DSL.emit_shift ASR (-shift) in
+        DSL.ins instr [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1); shift |]
     | Lop(Specific(Imuladd)) ->
       DSL.ins I.MADD [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0); DSL.emit_reg i.arg.(1); DSL.emit_reg i.arg.(2) |]
     | Lop(Specific(Imulsub)) ->
