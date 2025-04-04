@@ -229,10 +229,6 @@ end [@warning "-32"]  = struct
 
   let emit_reg_s reg = reg_s (reg_index reg)
 
-  let emit_reg_fixed_s i = reg_s i
-
-  let emit_reg_fixed_x i = reg_x i
-
   let emit_reg_d reg = reg_d (reg_index reg)
 
   (* FIXME: Is this using an array to increase sharing in the DSL? *)
