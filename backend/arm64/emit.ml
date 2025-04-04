@@ -155,6 +155,7 @@ module DSL : sig
   val emit_mem_symbol : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> Reg.t -> string -> Arm64_ast.Operand.t
   val emit_mem_label : ?offset:int -> ?reloc:Arm64_ast.Symbol.reloc_directive -> Reg.t -> label -> Arm64_ast.Operand.t
 
+  val emit_shift : Arm64_ast.Operand.Shift.Kind.t -> int ->  Arm64_ast.Operand.t
 
   (* Output a stack reference *)
   val emit_stack : Reg.t -> Arm64_ast.Operand.t
@@ -309,6 +310,8 @@ end [@warning "-32"]  = struct
         emit_mem_sp_offset ofs
     | Reg _ | Unknown -> fatal_error "Emit.emit_stack"
 
+  let emit_shift k s =
+    shift { kind=k; amount=s }
 
 
   let check_instr (register_behavior : Simd_proc.register_behavior) i =

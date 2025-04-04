@@ -750,6 +750,8 @@ module DSL = struct
 
   let mem_post ~base ~offset = Operand.(Mem (Addressing_mode.Post (base, offset)))
 
+  let shift shift = Operand.Shift shift
+
   let reg_v2s index =
     Operand.Reg (Reg.create (Reg_name.Neon (Vector V2S)) index)
 

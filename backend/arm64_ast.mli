@@ -79,6 +79,31 @@ module Symbol : sig
   val create: ?reloc:reloc_directive -> ?offset:int -> string -> t
 end
 
+module Operand : sig
+  type t
+
+
+  module Imm : sig
+    type t = int
+  end
+
+  module Shift : sig
+
+    module Kind : sig
+      type t =
+        | LSL
+        | ASR
+        | LSR
+    end
+
+    type t =
+      { kind : Kind.t;
+        amount : Imm.t
+      }
+
+  end
+end
+
 module Instruction_name : sig
   module Float_cond : sig
     type t =
@@ -122,6 +147,8 @@ module Instruction_name : sig
       | X
       | N
   end
+
+
 
   module Memory_barrier : sig
     type t =
@@ -245,9 +272,6 @@ module Instruction_name : sig
     | ADDV
 end
 
-module Operand : sig
-  type t
-end
 
 module DSL : sig
 
@@ -262,6 +286,8 @@ module DSL : sig
   val symbol : Symbol.t -> Operand.t
 
   val immediate_symbol : Symbol.t -> Operand.t
+
+  val shift: Operand.Shift.t -> Operand.t
 
   (* Note: Memory accesses are only allowed on X-registers and the stack pointer *)
   val mem: base:Reg.t -> Operand.t
