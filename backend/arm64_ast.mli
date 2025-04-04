@@ -244,6 +244,7 @@ module Instruction_name : sig
     | MOVI
     | MOVN
     | MOVK
+    | MOVZ
     | FMOV
     | FADD
     | FSUB
@@ -285,6 +286,10 @@ module DSL : sig
 
   val imm : int -> Operand.t
 
+  val imm_float : float -> Operand.t
+
+  val imm_nativeint : nativeint -> Operand.t
+
   (* ARM symbol operand; string must be converted to the OS specific
      representation first *)
   (* An ARM symbol can be used for both labels and symbols from the symbol
@@ -305,6 +310,12 @@ module DSL : sig
   val mem_pre : base:Reg.t -> offset:int -> Operand.t
 
   val mem_post : base:Reg.t -> offset:int -> Operand.t
+
+  (* CR sspies: probably these should be part of the instruction name instead *)
+  val cond : Instruction_name.Cond.t -> Operand.t
+
+  (* CR sspies: probably these should be part of the instruction name instead *)
+  val float_cond : Instruction_name.Float_cond.t -> Operand.t
 
   (* The functions below are shorthands for composing [reg_op] and
      the respective function from [Reg] *)
