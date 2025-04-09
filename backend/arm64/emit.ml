@@ -33,6 +33,9 @@ open Emitaux
 
 module I = Arm64_ast.Instruction_name
 
+module D = Asm_targets.Asm_directives_new
+(* module S = Asm_targets.Asm_section *)
+
 (* Tradeoff between code size and code speed *)
 
 let fastcode_flag = ref true
@@ -1956,8 +1959,17 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
 
 (* Beginning / end of an assembly file *)
 
+
 let begin_assembly _unix =
   reset_debug_info();
+  Asm_targets.Asm_label.initialize ~new_label:(fun () ->
+    Cmm.new_label () |> Label.to_int);
+(* move this after dwarf helper init, because it initializes the section mechanism *)
+  D.initialize ~big_endian:Arch.big_endian ~emit:(fun d ->
+    let b = Buffer.create 80 in
+    D.Directive.print b d;
+    Buffer.add_string b "\n";
+    Buffer.output_buffer !output_channel b);
   emit_printf "	.file	\"\"\n";  (* PR#7037 *)
   let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
   emit_printf "	.data\n";
@@ -1973,13 +1985,14 @@ let begin_assembly _unix =
      shared_startup__code_{begin,end} (e.g. tests/lib-dynlink-pr4839).
    *)
   if macosx then begin
-    DSL.ins I.NOP [| |];
-    emit_printf "	.align	3\n"
+    D.align ~bytes:8;
+    DSL.ins I.NOP [| |]
   end;
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
   Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives
     ~code_begin:lbl_begin ~code_end:lbl_end
     ~file_emitter
+
 
 let end_assembly () =
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
@@ -1988,11 +2001,11 @@ let end_assembly () =
   emit_printf "%a:\n" femit_symbol lbl_end;
   let lbl_end = Cmm_helpers.make_symbol "data_end" in
   emit_printf "	.data\n";
-  emit_printf "	.quad	0\n";  (* PR#6329 *)
+  D.int64 (Int64.of_int 0);  (* PR#6329 *)
   emit_printf "	.globl	%a\n" femit_symbol lbl_end;
   emit_printf "%a:\n" femit_symbol lbl_end;
-  emit_printf "	.quad	0\n";
-  emit_printf "	.align	3\n";  (* #7887 *)
+  D.int64 (Int64.of_int 0);
+  D.align ~bytes:8;  (* #7887 *)
   let lbl = Cmm_helpers.make_symbol "frametable" in
   emit_printf "	.globl	%a\n" femit_symbol lbl;
   emit_printf "%a:\n" femit_symbol lbl;
@@ -2003,15 +2016,20 @@ let end_assembly () =
       efa_data_label = (fun lbl ->
                        emit_symbol_type femit_label lbl "object";
                        emit_printf "	.quad	%a\n" femit_label lbl);
-      efa_8 = (fun n -> emit_printf "	.byte	%a\n" femit_int n);
-      efa_16 = (fun n -> emit_printf "	.short	%a\n" femit_int n);
-      efa_32 = (fun n -> emit_printf "	.long	%a\n" femit_int32 n);
-      efa_word = (fun n -> emit_printf "	.quad	%a\n" femit_int n);
-      efa_align = (fun n -> emit_printf "	.align	%a\n" femit_int(Misc.log2 n));
+      (* [efa_8] is not part of x86 with new directives *)
+      efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
+      (* [efa_16] mirrors x86 with new directives *)
+      efa_16 = (fun n -> D.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
+      (* [efa_32] mirrors x86 with new directives *)
+      efa_32 = (fun n -> D.uint32 (Numbers.Uint32.of_nonnegative_int32_exn n));
+      (* [efa_word] mirrors x86 with new directives *)
+      efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
+      (* [efa_align] mirrors x86 with new directives *)
+      efa_align = (fun bytes -> D.align ~bytes);
       efa_label_rel = (fun lbl ofs ->
                            emit_printf "	.long	%a - . + %a\n" femit_label lbl femit_int32 ofs);
       efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
-      efa_string = (fun s -> emit_string_directive "	.asciz	" s) };
+      efa_string = (fun s -> D.string (s ^ "\000")) };
   emit_symbol_type femit_symbol lbl "object";
   emit_symbol_size lbl;
   if not !Flambda_backend_flags.internal_assembler then

@@ -674,7 +674,7 @@ let initialize ~big_endian ~(emit : Directive.t -> unit) =
   big_endian_ref := Some big_endian;
   emit_ref := Some emit;
   reset ();
-  (match TS.assembler () with
+  match TS.assembler () with
   | MASM | MacOS -> ()
   | GAS_like ->
     (* CR mshinwell: Is this really the case? Surely some of the DIEs would have
@@ -696,14 +696,12 @@ let initialize ~big_endian ~(emit : Directive.t -> unit) =
           (* if Clflags.debug_thing Debug_dwarf_functions && dwarf_supported ()
              then switch_to_section section *)
           ())
-      (Asm_section.all_sections_in_order ()));
-  (* Stop dsymutil complaining about empty __debug_line sections (produces bogus
-     error "line table parameters mismatch") by making sure such sections are
-     never empty. *)
-  file ~file_num:1 ~file_name:"none" ();
-  (* also PR#7037 *)
-  loc ~file_num:1 ~line:1 ~col:1;
-  switch_to_section Asm_section.Text
+      (Asm_section.all_sections_in_order ())
+(* Stop dsymutil complaining about empty __debug_line sections (produces bogus
+   error "line table parameters mismatch") by making sure such sections are
+   never empty. *)
+(* file ~file_num:1 ~file_name:"none" (); (* also PR#7037 *) loc ~file_num:1
+   ~line:1 ~col:1; switch_to_section Asm_section.Text *)
 
 let file ~file_num ~file_name = file ~file_num ~file_name ()
 
