@@ -1817,20 +1817,30 @@ let emit_item (d : Cmm.data_item) =
       emit_printf "	.globl	%a\n" femit_symbol s.sym_name;
     end;
     emit_printf "%a:\n" femit_symbol s.sym_name
-  | Cint8 n -> emit_printf "	.byte	%a\n" femit_int n
-  | Cint16 n -> emit_printf "	.short	%a\n" femit_int n
-  | Cint32 n -> emit_printf "	.long	%a\n" femit_nativeint n
-  | Cint n -> emit_printf "	.quad	%a\n" femit_nativeint n
-  | Csingle f -> emit_float32_directive ".long" (Int32.bits_of_float f)
-  | Cdouble f -> emit_float64_directive ".quad" (Int64.bits_of_float f)
+  (* [Cint8] mirrors x86 with new directives *)
+  | Cint8 n -> D.int8 (Numbers.Int8.of_int_exn n)
+  (* [Cint16] mirrors x86 with new directives *)
+  | Cint16 n -> D.int16 (Numbers.Int16.of_int_exn n)
+  (* [Cint32] mirrors x86 with new directives *)
+  | Cint32 n -> D.int32 (Nativeint.to_int32 n)
+  (* [Cint] mirrors x86 with new directives *)
+  | Cint n -> D.targetint (Targetint.of_int64 (Int64.of_nativeint n))
+  (* [Csingle] mirrors x86 with new directives *)
+  | Csingle f -> D.float32 f
+  (* [Cdouble] mirrors x86 with new directives *)
+  | Cdouble f -> D.float64 f
+  (* [Cdouble] missing from x86 with new directives *)
   | Cvec128 { high; low; } ->
-     emit_float64_directive ".quad" low;
-     emit_float64_directive ".quad" high;
+     D.float64_from_bits low;
+     D.float64_from_bits high;
   | Csymbol_address s -> emit_printf "	.quad	%a\n" femit_symbol s.sym_name
   | Csymbol_offset (s, o) -> emit_printf "	.quad	%a+%a\n" femit_symbol s.sym_name femit_int o
-  | Cstring s -> emit_string_directive "	.ascii  " s
-  | Cskip n -> if n > 0 then emit_printf "	.space	%a\n" femit_int n
-  | Calign n -> emit_printf "	.align	%a\n" femit_int(Misc.log2 n)
+  (* [Cstring] mirrors x86 with new directives  *)
+  | Cstring s -> D.string s
+  (* [Cskip] mirrors x86 with new directives  *)
+  | Cskip bytes -> if bytes > 0 then D.space ~bytes
+  (* [Calign] mirrors x86 with new directives *)
+  | Calign bytes -> D.align ~bytes
 
 let data l =
   emit_printf "	.data\n";
@@ -1840,7 +1850,7 @@ let data l =
 let emit_line str = emit_string (str ^ "\n")
 
 let file_emitter ~file_num ~file_name =
-  emit_line (Printf.sprintf ".file %d %S" file_num file_name)
+  D.file ~file_num ~file_name
 
 let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
   module Asm_targets.Asm_directives.Make(struct
@@ -1885,7 +1895,7 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) = (
 
       let loc ~file_num ~line ~col ?discriminator () =
         ignore discriminator;
-        emit_line (Printf.sprintf ".loc %d %d %d" file_num line col)
+        D.loc ~file_num ~line ~col
 
       let comment str =
         emit_line (Printf.sprintf "; %s" str)
