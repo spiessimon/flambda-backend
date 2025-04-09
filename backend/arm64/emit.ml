@@ -1985,8 +1985,8 @@ let begin_assembly _unix =
      shared_startup__code_{begin,end} (e.g. tests/lib-dynlink-pr4839).
    *)
   if macosx then begin
-    D.align ~bytes:8;
-    DSL.ins I.NOP [| |]
+    DSL.ins I.NOP [| |];
+    D.align ~bytes:8
   end;
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
   Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives
