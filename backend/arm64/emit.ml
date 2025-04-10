@@ -2030,8 +2030,9 @@ let end_assembly () =
       efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
       (* [efa_16] mirrors x86 with new directives *)
       efa_16 = (fun n -> D.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
-      (* [efa_32] mirrors x86 with new directives *)
-      efa_32 = (fun n -> D.uint32 (Numbers.Uint32.of_nonnegative_int32_exn n));
+      (* [efa_32] does not mirror x86 with new directives *)
+      (* CR sspies: for some reason, we can get negative numbers here *)
+      efa_32 = (fun n -> D.int32 n);
       (* [efa_word] mirrors x86 with new directives *)
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
       (* [efa_align] mirrors x86 with new directives *)
