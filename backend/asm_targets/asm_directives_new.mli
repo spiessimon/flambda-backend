@@ -23,6 +23,7 @@
 (* CR-someday mshinwell: Use this module throughout the backends as per the
    original GPR. *)
 
+(* CR sspies: Unlike in the description stated below, we **do not** emit a label at the moment for better backwards compatibility. This will need to change for debugging. *)
 (** Emit subsequent directives to the given section.  If this function
     has not been called before on the particular section, a label
     declaration will be emitted after declaring the section.

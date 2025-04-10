@@ -594,18 +594,19 @@ let switch_to_section section =
       sections_seen := section :: !sections_seen;
       true)
   in
-  match !current_section_ref with
+  (* match !current_section_ref with
   | Some section' when Asm_section.equal section section' ->
     assert (not first_occurrence);
     ()
-  | _ ->
+  | _ -> *)
     current_section_ref := Some section;
     let ({ names; flags; args } : Asm_section.flags_for_section) =
       Asm_section.flags section ~first_occurrence
     in
-    if not first_occurrence then new_line ();
-    emit (Section { names; flags; args });
-    if first_occurrence then define_label (Asm_label.for_section section)
+    (* if not first_occurrence then new_line (); *)
+    emit (Section { names; flags; args })
+    (* CR sspies: For better backwards compatibility, we **do not** emit a label at the moment. This will need to change for debugging. *)
+    (* if first_occurrence then define_label (Asm_label.for_section section) *)
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })

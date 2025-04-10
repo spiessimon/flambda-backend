@@ -1266,7 +1266,7 @@ let emit_named_text_section func_name =
   then
     emit_printf "\t.section .text.caml.%a,%a,%%progbits\n" femit_symbol
       func_name femit_string_literal "ax"
-  else emit_printf "\t.text\n"
+  else D.text ()
 
 (* Emit code to load an emitted literal *)
 
@@ -2072,7 +2072,7 @@ let fundecl fundecl =
   prologue_required := fundecl.fun_prologue_required;
   contains_calls := fundecl.fun_contains_calls;
   emit_named_text_section !function_name;
-  emit_printf "\t.align\t3\n";
+  D.align ~bytes:8;
   emit_printf "\t.globl\t%a\n" femit_symbol fundecl.fun_name;
   emit_symbol_type femit_symbol fundecl.fun_name "function";
   emit_printf "%a:\n" femit_symbol fundecl.fun_name;
@@ -2134,8 +2134,8 @@ let emit_item (d : Cmm.data_item) =
   | Calign bytes -> D.align ~bytes
 
 let data l =
-  emit_printf "\t.data\n";
-  emit_printf "\t.align  3\n";
+  D.data ();
+  D.align ~bytes:8;
   List.iter emit_item l
 
 let emit_line str = emit_string (str ^ "\n")
@@ -2196,8 +2196,8 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let section ?delayed:_ name flags args =
         match name, flags, args with
-        | [".data"], _, _ -> emit_line "\t.data"
-        | [".text"], _, _ -> emit_line "\t.text"
+        | [".data"], _, _ -> D.data ()
+        | [".text"], _, _ -> D.text ()
         | name, flags, args ->
           emit_string (Printf.sprintf "\t.section %s" (String.concat "," name));
           (match flags with
@@ -2208,9 +2208,9 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
           | _ -> emit_string (Printf.sprintf ",%s" (String.concat "," args)));
           emit_string "\n"
 
-      let text () = emit_line "\t.text"
+      let text () = D.text ()
 
-      let new_line () = emit_line ""
+      let new_line () = D.new_line ()
 
       let global sym = emit_line (Printf.sprintf "\t.globl %s" sym)
 
@@ -2260,7 +2260,7 @@ let begin_assembly _unix =
   emit_printf "\t.file\t\"\"\n";
   (* PR#7037 *)
   let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
-  emit_printf "\t.data\n";
+  D.data ();
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
   emit_printf "%a:\n" femit_symbol lbl_begin;
   let lbl_begin = Cmm_helpers.make_symbol "code_begin" in
@@ -2285,7 +2285,7 @@ let end_assembly () =
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
   emit_printf "%a:\n" femit_symbol lbl_end;
   let lbl_end = Cmm_helpers.make_symbol "data_end" in
-  emit_printf "\t.data\n";
+  D.data ();
   D.int64 (Int64.of_int 0);
   (* PR#6329 *)
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
