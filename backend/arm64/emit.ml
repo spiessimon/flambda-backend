@@ -2259,14 +2259,16 @@ let begin_assembly _unix =
       Buffer.output_buffer !output_channel b);
   emit_printf "\t.file\t\"\"\n";
   (* PR#7037 *)
-  let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
+  let lbl_begin_data = Cmm_helpers.make_symbol "data_begin" in
+  let lbl_begin_data_sym = Asm_targets.Asm_symbol.create lbl_begin_data in
   D.data ();
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
-  emit_printf "%a:\n" femit_symbol lbl_begin;
-  let lbl_begin = Cmm_helpers.make_symbol "code_begin" in
-  emit_named_text_section lbl_begin;
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
-  emit_printf "%a:\n" femit_symbol lbl_begin;
+  D.global lbl_begin_data_sym;
+  D.define_data_symbol lbl_begin_data_sym;
+  let lbl_begin_code = Cmm_helpers.make_symbol "code_begin" in
+  let lbl_begin_code_sym = Asm_targets.Asm_symbol.create lbl_begin_code in
+  emit_named_text_section lbl_begin_code;
+  D.global lbl_begin_code_sym;
+  D.define_function_symbol lbl_begin_code_sym;
   (* we need to pad here to avoid collision for the unwind test between the
      code_begin symbol and the first function. (See also #4690) Alignment is
      needed to avoid linker warnings for shared_startup__code_{begin,end} (e.g.
@@ -2276,26 +2278,30 @@ let begin_assembly _unix =
     DSL.ins I.NOP [||];
     D.align ~bytes:8);
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives ~code_begin:lbl_begin
+  Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives ~code_begin:lbl_begin_code
     ~code_end:lbl_end ~file_emitter
 
 let end_assembly () =
-  let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  emit_named_text_section lbl_end;
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
-  emit_printf "%a:\n" femit_symbol lbl_end;
-  let lbl_end = Cmm_helpers.make_symbol "data_end" in
+  let lbl_end_code = Cmm_helpers.make_symbol "code_end" in
+  let lbl_end_code_sym = Asm_targets.Asm_symbol.create lbl_end_code in
+  emit_named_text_section lbl_end_code;
+  D.global lbl_end_code_sym;
+  D.define_function_symbol lbl_end_code_sym;
+  let lbl_end_data = Cmm_helpers.make_symbol "data_end" in
+  let lbl_end_data_sym = Asm_targets.Asm_symbol.create lbl_end_data in
   D.data ();
   D.int64 (Int64.of_int 0);
   (* PR#6329 *)
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
-  emit_printf "%a:\n" femit_symbol lbl_end;
+  D.global lbl_end_data_sym;
+  D.define_data_symbol lbl_end_data_sym;
   D.int64 (Int64.of_int 0);
   D.align ~bytes:8;
   (* #7887 *)
-  let lbl = Cmm_helpers.make_symbol "frametable" in
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl;
-  emit_printf "%a:\n" femit_symbol lbl;
+  let lbl_frametable = Cmm_helpers.make_symbol "frametable" in
+  let lbl_frametable_sym =
+    Asm_targets.Asm_symbol.create lbl_frametable in
+  D.global lbl_frametable_sym;
+  D.define_data_symbol lbl_frametable_sym;
   emit_frames
     { efa_code_label =
         (fun lbl ->
@@ -2322,8 +2328,8 @@ let end_assembly () =
       efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
       efa_string = (fun s -> D.string (s ^ "\000"))
     };
-  emit_symbol_type femit_symbol lbl "object";
-  emit_symbol_size lbl;
+  emit_symbol_type femit_symbol lbl_frametable "object";
+  emit_symbol_size lbl_frametable;
   if not !Flambda_backend_flags.internal_assembler
   then Emitaux.Dwarf_helpers.emit_dwarf ();
   match Config.system with
