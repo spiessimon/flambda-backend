@@ -812,8 +812,11 @@ let emit_literals p align emit_literal =
   then (
     if macosx
     then
-      emit_printf "\t.section\t__TEXT,__literal%a,%abyte_literals\n" femit_int
-        align femit_int align;
+      (* CR sspies: Revisit this definition. *)
+      D.switch_to_section_raw
+        ~names:["__TEXT"; "__literal" ^ Int.to_string align]
+        ~flags:None
+        ~args:[Int.to_string align ^ "byte_literals"];
     (* CR sspies: This used to be [.balign], but we turn it into [.align]. Adjust main first. *)
     D.balign ~bytes:align;
     List.iter emit_literal !p;
@@ -1267,8 +1270,13 @@ let assembly_code_for_poll i ~far ~return_label =
 let emit_named_text_section func_name =
   if !Clflags.function_sections
   then
-    emit_printf "\t.section .text.caml.%a,%a,%%progbits\n" femit_symbol
-      func_name femit_string_literal "ax"
+    (* CR sspies: FIXME: This code is untested. *)
+    let sym = Asm_targets.Asm_symbol.create func_name in
+    let sec_name = ".text.caml." ^ Asm_targets.Asm_symbol.encode sym in
+      D.switch_to_section_raw
+        ~names:[sec_name]
+        ~flags:(Some "\"ax\"")
+        ~args:["%progbits"]
   else D.text ()
 
 (* Emit code to load an emitted literal *)
@@ -2231,14 +2239,7 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
         | [".data"], _, _ -> D.data ()
         | [".text"], _, _ -> D.text ()
         | name, flags, args ->
-          emit_string (Printf.sprintf "\t.section %s" (String.concat "," name));
-          (match flags with
-          | None -> ()
-          | Some flags -> emit_string (Printf.sprintf ",%S" flags));
-          (match args with
-          | [] -> ()
-          | _ -> emit_string (Printf.sprintf ",%s" (String.concat "," args)));
-          emit_string "\n"
+          D.switch_to_section_raw ~names:name ~flags ~args
 
       let text () = D.text ()
 
@@ -2369,5 +2370,8 @@ let end_assembly () =
   match Config.system with
   | "linux" ->
     (* Mark stack as non-executable *)
-    emit_printf "\t.section\t.note.GNU-stack,\"\",%%progbits\n"
+    D.switch_to_section_raw
+    ~names:[".note.GNU-stack"]
+    ~flags:(Some "\"\"")
+    ~args:["%progbits"]
   | _ -> ()
