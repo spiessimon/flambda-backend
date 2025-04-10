@@ -810,6 +810,13 @@ let vec128_literal f = add_literal vec128_literals f
 let emit_literals p align emit_literal =
   if !p <> []
   then (
+    (* The following two instructions are changed from main. Adjust main first:
+        -       .section        __TEXT,__literal8,8byte_literals
+        -       .balign 8
+        +       .section __TEXT,__literal8,8byte_literals
+        +       .align  3
+    *)
+
     if macosx
     then
       (* CR sspies: Revisit this definition. *)
@@ -817,7 +824,7 @@ let emit_literals p align emit_literal =
         ~names:["__TEXT"; "__literal" ^ Int.to_string align]
         ~flags:None
         ~args:[Int.to_string align ^ "byte_literals"];
-    (* CR sspies: This used to be [.balign], but we turn it into [.align]. Adjust main first. *)
+    (* CR sspies: This used to be [.balign], but we turn it into [.align]. *)
     D.balign ~bytes:align;
     List.iter emit_literal !p;
     p := [])
