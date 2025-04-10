@@ -52,6 +52,14 @@ let big_endian () =
 
 let bprintf = Printf.bprintf
 
+type symbol_type =
+  | FUNC
+  | GNU_IFUNC
+  | OBJECT
+  | TLS
+  | COMMON
+  | NOTYPE
+
 module Directive = struct
   module Constant = struct
     type t =
@@ -205,7 +213,7 @@ module Directive = struct
           comment : string option
         }
     | Space of { bytes : int }
-    | Type of string * string
+    | Type of string * symbol_type
     | Uleb128 of
         { constant : Constant.t;
           comment : string option
@@ -336,6 +344,14 @@ module Directive = struct
       (* We use the "STT" forms when they are supported as they are unambiguous
          across platforms (cf. https://sourceware.org/binutils/docs/as/Type.html
          ). *)
+      let typ = match typ with
+        | FUNC -> "STT_FUNC"
+        | GNU_IFUNC -> "STT_GNU_IFUNC"
+        | OBJECT -> "STT_OBJECT"
+        | TLS -> "STT_TLS"
+        | COMMON -> "STT_COMMON"
+        | NOTYPE -> "STT_NOTYPE"
+      in
       bprintf buf "\t.type %s %s" s typ
     | Uleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
@@ -497,7 +513,7 @@ let private_extern symbol = emit (Private_extern (Asm_symbol.encode symbol))
 
 let size symbol cst = emit (Size (Asm_symbol.encode symbol, lower_expr cst))
 
-let type_ symbol ~type_ = emit (Type (Asm_symbol.encode symbol, type_))
+let type_ symbol ~type_ = emit (Type (symbol, type_))
 
 let sleb128 ?comment i =
   emit (Sleb128 { constant = Directive.Constant.Signed_int i; comment })
@@ -717,7 +733,7 @@ let define_data_symbol symbol =
   (* check_symbol_for_definition_in_current_section symbol; *)
   emit (New_label (Asm_symbol.encode symbol, Machine_width_data));
   match TS.assembler (), TS.windows () with
-  | GAS_like, false -> type_ symbol ~type_:"STT_OBJECT"
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:OBJECT
   | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
 (* CR mshinwell: Rename to [define_text_symbol]? *)
@@ -727,8 +743,19 @@ let define_function_symbol symbol =
   (* CR mshinwell: This shouldn't be called "New_label" *)
   emit (New_label (Asm_symbol.encode symbol, Code));
   match TS.assembler (), TS.windows () with
-  | GAS_like, false -> type_ symbol ~type_:"STT_FUNC"
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:FUNC
   | GAS_like, true | MacOS, _ | MASM, _ -> ()
+
+  let type_symbol symbol ~ty =
+    match TS.assembler (), TS.windows () with
+    | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:ty
+    | GAS_like, true | MacOS, _ | MASM, _ -> ()
+
+  let type_label label ~ty =
+    match TS.assembler (), TS.windows () with
+    | GAS_like, false -> type_ (Asm_label.encode label) ~type_:ty
+    | GAS_like, true | MacOS, _ | MASM, _ -> ()
+
 
 let symbol ?comment sym = const_machine_width ?comment (Symbol sym)
 

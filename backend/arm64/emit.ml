@@ -75,13 +75,6 @@ let femit_symbol out s =
   if macosx then femit_string out "_";
   Emitaux.femit_symbol out s
 
-(* Object types *)
-
-let emit_symbol_type emit_lbl_or_sym lbl_or_sym ty =
-  if not macosx
-  then
-    emit_printf "\t.type\t%a, %%%a\n" emit_lbl_or_sym lbl_or_sym femit_string ty
-
 let emit_symbol_size sym =
   (* CR sspies: This is untested, but I think correct. *)
   let sym = Asm_targets.Asm_symbol.create sym in D.size sym
@@ -2119,7 +2112,7 @@ let fundecl fundecl =
   D.align ~bytes:8;
   let func_sym = Asm_targets.Asm_symbol.create fundecl.fun_name in
   D.global func_sym;
-  emit_symbol_type femit_symbol fundecl.fun_name "function";
+  D.type_symbol func_sym ~ty:FUNC;
   D.define_function_symbol func_sym;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc ();
@@ -2137,7 +2130,7 @@ let fundecl fundecl =
     let fun_end_label = label_to_asm_label fun_end_label Text in
     D.define_label fun_end_label);
   cfi_endproc ();
-  emit_symbol_type femit_symbol fundecl.fun_name "function";
+  D.type_symbol func_sym ~ty:FUNC;
   emit_symbol_size fundecl.fun_name;
   emit_literals ()
 
@@ -2349,11 +2342,13 @@ let end_assembly () =
   emit_frames
     { efa_code_label =
         (fun lbl ->
-          emit_symbol_type femit_label lbl "function";
+          let asm_lbl = label_to_asm_label lbl Text in
+          D.type_label asm_lbl ~ty:FUNC;
           emit_printf "\t.quad\t%a\n" femit_label lbl);
       efa_data_label =
         (fun lbl ->
-          emit_symbol_type femit_label lbl "object";
+          let asm_lbl = label_to_asm_label lbl Data in
+          D.type_label asm_lbl ~ty:OBJECT;
           emit_printf "\t.quad\t%a\n" femit_label lbl);
       (* [efa_8] is not part of x86 with new directives *)
       efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
@@ -2374,7 +2369,7 @@ let end_assembly () =
       (* CR sspies: We used to use [.asciz] here. Adjust main first. *)
       efa_string = (fun s -> D.string (s ^ "\000"))
     };
-  emit_symbol_type femit_symbol lbl_frametable "object";
+  D.type_symbol lbl_frametable_sym ~ty:OBJECT;
   emit_symbol_size lbl_frametable;
   if not !Flambda_backend_flags.internal_assembler
   then Emitaux.Dwarf_helpers.emit_dwarf ();

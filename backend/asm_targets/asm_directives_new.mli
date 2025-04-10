@@ -200,6 +200,18 @@ val define_label : Asm_label.t -> unit
 (** Emit a machine-width reference to the given label. *)
 val label : ?comment:string -> Asm_label.t -> unit
 
+type symbol_type =
+  | FUNC
+  | GNU_IFUNC
+  | OBJECT
+  | TLS
+  | COMMON
+  | NOTYPE
+
+val type_symbol : Asm_symbol.t -> ty:symbol_type -> unit
+
+val type_label : Asm_label.t -> ty:symbol_type -> unit
+
 (** Emit a machine-width reference to the address formed by adding the
     given byte offset to the address of the given symbol.  The symbol may be
     in a compilation unit and/or section different from the current one. *)
@@ -359,7 +371,7 @@ module Directive : sig
           comment : string option
         }
     | Space of { bytes : int }
-    | Type of string * string
+    | Type of string * symbol_type
     | Uleb128 of
         { constant : Constant.t;
           comment : string option
