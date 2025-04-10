@@ -666,7 +666,7 @@ let reset () =
   current_section_ref := None;
   temp_var_counter := 0
 
-let file ?file_num ~file_name () =
+let file ~file_num ~file_name () =
   (* gas can silently emit corrupted line tables if a .file directive contains a
      number but an empty filename. *)
   let file_name =

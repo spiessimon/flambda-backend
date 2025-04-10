@@ -83,8 +83,8 @@ let emit_symbol_type emit_lbl_or_sym lbl_or_sym ty =
     emit_printf "\t.type\t%a, %%%a\n" emit_lbl_or_sym lbl_or_sym femit_string ty
 
 let emit_symbol_size sym =
-  if not macosx
-  then emit_printf "\t.size\t%a, .-%a\n" femit_symbol sym femit_symbol sym
+  (* CR sspies: This is untested, but I think correct. *)
+  let sym = Asm_targets.Asm_symbol.create sym in D.size sym
 
 (* Likewise, but with the 32-bit name of the register *)
 
@@ -2117,9 +2117,10 @@ let fundecl fundecl =
   contains_calls := fundecl.fun_contains_calls;
   emit_named_text_section !function_name;
   D.align ~bytes:8;
-  emit_printf "\t.globl\t%a\n" femit_symbol fundecl.fun_name;
+  let func_sym = Asm_targets.Asm_symbol.create fundecl.fun_name in
+  D.global func_sym;
   emit_symbol_type femit_symbol fundecl.fun_name "function";
-  emit_printf "%a:\n" femit_symbol fundecl.fun_name;
+  D.define_function_symbol func_sym;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc ();
   let num_call_gc = num_call_gc_points fundecl.fun_body in
@@ -2132,7 +2133,9 @@ let fundecl fundecl =
   assert (List.length !call_gc_sites = num_call_gc);
   (match fun_end_label with
   | None -> ()
-  | Some fun_end_label -> emit_printf "%a:\n" femit_label fun_end_label);
+  | Some fun_end_label ->
+    let fun_end_label = label_to_asm_label fun_end_label Text in
+    D.define_label fun_end_label);
   cfi_endproc ();
   emit_symbol_type femit_symbol fundecl.fun_name "function";
   emit_symbol_size fundecl.fun_name;
@@ -2187,7 +2190,7 @@ let data l =
 
 let emit_line str = emit_string (str ^ "\n")
 
-let file_emitter ~file_num ~file_name = D.file ~file_num ~file_name
+let file_emitter ~file_num ~file_name = D.file ~file_num:(Some file_num) ~file_name
 
 let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
   (module Asm_targets.Asm_directives.Make (struct
@@ -2297,7 +2300,8 @@ let begin_assembly _unix =
       D.Directive.print b d;
       Buffer.add_string b "\n";
       Buffer.output_buffer !output_channel b);
-  emit_printf "\t.file\t\"\"\n";
+  (* CR sspies: Probably we want to emit a file number here. *)
+  D.file ~file_num:None ~file_name:"";
   (* PR#7037 *)
   let lbl_begin_data = Cmm_helpers.make_symbol "data_begin" in
   let lbl_begin_data_sym = Asm_targets.Asm_symbol.create lbl_begin_data in

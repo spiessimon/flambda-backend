@@ -119,7 +119,7 @@ val emit_cached_strings : unit -> unit
 val comment : string -> unit
 
 (** Assign a file number to a filename. *)
-val file : file_num:int -> file_name:string -> unit
+val file : file_num:int option -> file_name:string -> unit
 
 (** Mark the source location of the current assembly position. *)
 val loc : file_num:int -> line:int -> col:int -> unit
