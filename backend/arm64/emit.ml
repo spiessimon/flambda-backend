@@ -814,7 +814,8 @@ let emit_literals p align emit_literal =
     then
       emit_printf "\t.section\t__TEXT,__literal%a,%abyte_literals\n" femit_int
         align femit_int align;
-    emit_printf "\t.balign\t%a\n" femit_int align;
+    (* CR sspies: This used to be [.balign], but we turn it into [.align]. Adjust main first. *)
+    D.balign ~bytes:align;
     List.iter emit_literal !p;
     p := [])
 
@@ -2357,7 +2358,7 @@ let end_assembly () =
       efa_label_rel =
         (fun lbl ofs ->
           emit_printf "\t.long\t%a - . + %a\n" femit_label lbl femit_int32 ofs);
-      efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
+      efa_def_label = (fun lbl -> let lbl = label_to_asm_label lbl Data in D.define_label lbl);
       (* CR sspies: We used to use [.asciz] here. Adjust main first. *)
       efa_string = (fun s -> D.string (s ^ "\000"))
     };

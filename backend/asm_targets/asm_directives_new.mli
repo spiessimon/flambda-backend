@@ -154,6 +154,10 @@ val mark_stack_non_executable : unit -> unit
 (** Leave as much space as is required to achieve the given alignment. *)
 val align : bytes:int -> unit
 
+(** Consistent way across platforms to achieve a specific alignment.
+    The bytes argument should be a power of two. *)
+val balign : bytes:int -> unit
+
 (** Emit a directive giving the displacement between the given symbol and
     the current position.  This should only be used to state sizes of
     blocks (e.g. functions) emitted immediately prior into the assembly stream.

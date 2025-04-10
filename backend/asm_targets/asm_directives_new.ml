@@ -455,6 +455,9 @@ let section ~names ~flags ~args = emit (Section { names; flags; args })
 
 let align ~bytes = emit (Align { bytes })
 
+(* We turn [balign] it into [align], since we do the correct resolution for align.  *)
+let balign ~bytes = emit (Align { bytes })
+
 let should_generate_cfi () =
   (* We generate CFI info even if we're not generating any other debugging
      information. This is in fact necessary on macOS, where it may be expected
