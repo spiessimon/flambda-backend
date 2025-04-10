@@ -658,6 +658,7 @@ let temp_var_counter = ref 0
 let reset () =
   cached_strings := Cached_string.Map.empty;
   sections_seen := [];
+  current_section_ref := None;
   temp_var_counter := 0
 
 let file ?file_num ~file_name () =
