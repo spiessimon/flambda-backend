@@ -594,6 +594,7 @@ let switch_to_section section =
       sections_seen := section :: !sections_seen;
       true)
   in
+  (* CR sspies: Eventually drop repeat labels if we are currently in this section. *)
   (* match !current_section_ref with
   | Some section' when Asm_section.equal section section' ->
     assert (not first_occurrence);

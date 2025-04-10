@@ -819,13 +819,14 @@ let emit_literals p align emit_literal =
     p := [])
 
 let emit_float_literal (f, lbl) =
+  (* CR sspies: We used to not print a new line here. Adjust main first. *)
   D.define_label lbl;
-  emit_float64_directive ".quad" f
+  D.float64_from_bits f
 
 let emit_vec128_literal (({ high; low } : Cmm.vec128_bits), lbl) =
   D.define_label lbl;
-  emit_float64_directive ".quad" low;
-  emit_float64_directive ".quad" high
+  D.float64_from_bits low;
+  D.float64_from_bits high
 
 let emit_literals () =
   emit_literals float_literals size_float emit_float_literal;
@@ -1984,6 +1985,7 @@ let emit_instr i =
          DSL.emit_shift LSL 2
       |];
     DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
+    (* CR sspies: We used to not emit a new line after the label. Adjust main first.*)
     D.define_label lbltbl;
     for j = 0 to Array.length jumptbl - 1 do
       let lbl = label_to_asm_label jumptbl.(j) Text in
@@ -2052,6 +2054,7 @@ let emit_instr i =
     emit_addimm reg_tmp1 reg_tmp1 f;
     DSL.ins I.CMP [| DSL.sp; DSL.emit_reg reg_tmp1 |];
     DSL.ins (I.B_cond CC) [| DSL.emit_label overflow |];
+    (* CR sspies: We used to not emit a new line after the label. Adjust main first.*)
     D.define_label ret;
     stack_realloc
       := Some
@@ -2124,14 +2127,16 @@ let fundecl fundecl =
 let emit_item (d : Cmm.data_item) =
   match d with
   | Cdefine_symbol s ->
+    let s_sym = Asm_targets.Asm_symbol.create s.sym_name in
     if !Clflags.dlcode || s.sym_global = Cmm.Global
     then
       (* GOT relocations against non-global symbols don't seem to work properly:
          GOT entries are not created for the symbols and the relocations
          evaluate to random other GOT entries. For the moment force all symbols
          to be global. *)
-      emit_printf "\t.globl\t%a\n" femit_symbol s.sym_name;
-    emit_printf "%a:\n" femit_symbol s.sym_name
+      D.global s_sym;
+    (* CR sspies: Are these always function symbols? *)
+    D.define_function_symbol s_sym
   (* [Cint8] mirrors x86 with new directives *)
   | Cint8 n -> D.int8 (Numbers.Int8.of_int_exn n)
   (* [Cint16] mirrors x86 with new directives *)
@@ -2160,6 +2165,7 @@ let emit_item (d : Cmm.data_item) =
 
 let data l =
   D.data ();
+  (* CR sspies: This used to be emitted with spaces. Change main first. *)
   D.align ~bytes:8;
   List.iter emit_item l
 
@@ -2342,6 +2348,7 @@ let end_assembly () =
       efa_16 = (fun n -> D.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
       (* [efa_32] does not mirror x86 with new directives *)
       (* CR sspies: for some reason, we can get negative numbers here *)
+      (* CR sspies: We used to use hex numbers here. Adjust main first. *)
       efa_32 = (fun n -> D.int32 n);
       (* [efa_word] mirrors x86 with new directives *)
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
@@ -2351,6 +2358,7 @@ let end_assembly () =
         (fun lbl ofs ->
           emit_printf "\t.long\t%a - . + %a\n" femit_label lbl femit_int32 ofs);
       efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
+      (* CR sspies: We used to use [.asciz] here. Adjust main first. *)
       efa_string = (fun s -> D.string (s ^ "\000"))
     };
   emit_symbol_type femit_symbol lbl_frametable "object";
