@@ -57,23 +57,13 @@ let reg_stack_arg_end = phys_reg Int 18 (* x21 *)
 
 (* Output a label *)
 
-let label_prefix = if macosx then "L" else ".L"
-
-
 let label_to_asm_label (l: label) (s: S.t) : L.t =
   L.create_int s (Label.to_int l)
-
-let femit_label out lbl =
-  femit_string out label_prefix;
-  femit_string out (Label.to_string lbl)
 
 (* Symbols *)
 
 (* CR sdolan: Support local symbol definitions & references on arm64 *)
 
-let femit_symbol out s =
-  if macosx then femit_string out "_";
-  Emitaux.femit_symbol out s
 
 let emit_symbol_size sym =
   (* CR sspies: This is untested, but I think correct. *)
@@ -2165,9 +2155,8 @@ let emit_item (d : Cmm.data_item) =
   | Cvec128 { high; low } ->
     D.float64_from_bits low;
     D.float64_from_bits high
-  | Csymbol_address s -> emit_printf "\t.quad\t%a\n" femit_symbol s.sym_name
-  | Csymbol_offset (s, o) ->
-    emit_printf "\t.quad\t%a+%a\n" femit_symbol s.sym_name femit_int o
+  | Csymbol_address s -> D.symbol (Asm_targets.Asm_symbol.create s.sym_name)
+  | Csymbol_offset (s, o) -> D.symbol_plus_offset (Asm_targets.Asm_symbol.create s.sym_name) ~offset_in_bytes:(Targetint.of_int o)
   (* [Cstring] mirrors x86 with new directives *)
   | Cstring s -> D.string s
   (* [Cskip] mirrors x86 with new directives *)
@@ -2344,12 +2333,12 @@ let end_assembly () =
         (fun lbl ->
           let asm_lbl = label_to_asm_label lbl Text in
           D.type_label asm_lbl ~ty:FUNC;
-          emit_printf "\t.quad\t%a\n" femit_label lbl);
+          D.label asm_lbl);
       efa_data_label =
         (fun lbl ->
           let asm_lbl = label_to_asm_label lbl Data in
           D.type_label asm_lbl ~ty:OBJECT;
-          emit_printf "\t.quad\t%a\n" femit_label lbl);
+          D.label asm_lbl);
       (* [efa_8] is not part of x86 with new directives *)
       efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
       (* [efa_16] mirrors x86 with new directives *)
@@ -2362,9 +2351,12 @@ let end_assembly () =
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
       (* [efa_align] mirrors x86 with new directives *)
       efa_align = (fun bytes -> D.align ~bytes);
+      (* [efa_label_rel] differs from x86 in that we output the expression directly *)
       efa_label_rel =
         (fun lbl ofs ->
-          emit_printf "\t.long\t%a - . + %a\n" femit_label lbl femit_int32 ofs);
+          let lbl = label_to_asm_label lbl Data in
+          let ofs = Targetint.of_int32 ofs in
+          D.between_this_and_label_offset_32bit_expr ~upper:lbl ~offset_upper:ofs);
       efa_def_label = (fun lbl -> let lbl = label_to_asm_label lbl Data in D.define_label lbl);
       (* CR sspies: We used to use [.asciz] here. Adjust main first. *)
       efa_string = (fun s -> D.string (s ^ "\000"))

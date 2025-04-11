@@ -888,6 +888,22 @@ let between_this_and_label_offset_32bit ~upper ~offset_upper =
   let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
   const (force_assembly_time_constant expr) Thirty_two
 
+
+let between_this_and_label_offset_32bit_expr ~upper ~offset_upper =
+    let upper_section = Asm_label.section upper in
+    (match !current_section_ref with
+    | None -> not_initialized ()
+    | Some this_section ->
+      if not (Asm_section.equal upper_section this_section)
+      then
+        Misc.fatal_errorf
+          "Label %a in section %a is not in the current section %a"
+          Asm_label.print upper Asm_section.print upper_section Asm_section.print
+          this_section);
+    let offset_upper = Targetint.to_int64 offset_upper in
+    let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
+    const expr Thirty_two
+
 let const_with_width ~width constant =
   match width with
   | Dwarf_flags.Thirty_two -> const constant Thirty_two

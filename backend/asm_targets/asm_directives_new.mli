@@ -263,6 +263,9 @@ val between_symbol_in_current_unit_and_label_offset :
 val between_this_and_label_offset_32bit :
   upper:Asm_label.t -> offset_upper:Targetint.t -> unit
 
+val between_this_and_label_offset_32bit_expr :
+  upper:Asm_label.t -> offset_upper:Targetint.t -> unit
+
 (** Emit an offset into a DWARF section given a label identifying the place
     within such section. *)
 val offset_into_dwarf_section_label :
