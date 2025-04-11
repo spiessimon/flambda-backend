@@ -2191,30 +2191,25 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
     let debugging_comments_in_asm_files = !Flambda_backend_flags.dasm_comments
 
     module D = struct
-      type constant =
-        | Int64 of Int64.t
-        | Label of string
-        | Add of constant * constant
-        | Sub of constant * constant
+      type constant = D.Directive.Constant.t
 
-      let rec string_of_constant const =
-        match const with
-        | Int64 n -> Int64.to_string n
-        | Label s -> s
-        | Add (c1, c2) ->
-          Printf.sprintf "(%s + %s)" (string_of_constant c1)
-            (string_of_constant c2)
-        | Sub (c1, c2) ->
-          Printf.sprintf "(%s - %s)" (string_of_constant c1)
-            (string_of_constant c2)
+      let const_int64 num = D.Directive.Constant.Signed_int num
 
-      let const_int64 num = Int64 num
+      let const_label str = D.Directive.Constant.Named_thing str
 
-      let const_label str = Label str
+      let const_add c1 c2 = D.Directive.Constant.Add (c1, c2)
 
-      let const_add c1 c2 = Add (c1, c2)
+      let const_sub c1 c2 = D.Directive.Constant.Sub (c1, c2)
 
-      let const_sub c1 c2 = Sub (c1, c2)
+      (* CR sspies: The functions depending on [emit_line_with_buf] below break abstractions.
+         This is intensional at the moment, because this is only the first step of getting rid of the
+         first-class module entirely. *)
+      let emit_line_with_buf f =
+        let buf = Buffer.create 80 in
+        f buf;
+        Buffer.add_string buf "\n";
+        Buffer.output_buffer !output_channel buf
+
 
       type data_type =
         | NONE
@@ -2228,11 +2223,12 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
         ignore discriminator;
         D.loc ~file_num ~line ~col ?discriminator ()
 
-      let comment str = emit_line (Printf.sprintf "; %s" str)
+      let comment str = D.comment str
 
       let label ?data_type str =
         let _ = data_type in
-        emit_line (Printf.sprintf "%s:" str)
+        emit_line_with_buf (fun buf ->
+          D.Directive.print buf (New_label (str, Code)))
 
       let section ?delayed:_ name flags args =
         match name, flags, args with
@@ -2245,35 +2241,43 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let new_line () = D.new_line ()
 
-      let global sym = emit_line (Printf.sprintf "\t.globl %s" sym)
+      let emit_constant const size =
+        emit_line_with_buf (fun buf ->
+           D.Directive.print buf (Const { constant = (D.Directive.Constant_with_width.create const size); comment = None }))
+
+      let global sym = emit_line_with_buf (fun buf -> D.Directive.print buf (Global sym))
 
       let protected sym =
-        if not macosx then emit_line (Printf.sprintf "\t.protected %s" sym)
+        if not macosx then
+          emit_line_with_buf (fun buf -> D.Directive.print buf (Protected sym))
 
-      let type_ sym typ_ = emit_line (Printf.sprintf "\t.type %s,%s" sym typ_)
+      let type_ sym typ_ =
+        let typ_: D.symbol_type = (match typ_ with
+          | "@function" -> FUNC
+          | "@object" -> OBJECT
+          | _ -> Misc.fatal_error "Unsupported type")
+        in
+          emit_line_with_buf (fun buf ->
+            D.Directive.print buf (Type (sym, typ_)))
 
-      let byte const =
-        emit_line (Printf.sprintf "\t.byte %s" (string_of_constant const))
+      let byte const = emit_constant const Eight
 
-      let word const =
-        emit_line (Printf.sprintf "\t.short %s" (string_of_constant const))
+      let word const = emit_constant const Sixteen
 
-      let long const =
-        emit_line (Printf.sprintf "\t.long %s" (string_of_constant const))
+      let long const = emit_constant const Thirty_two
 
-      let qword const =
-        emit_line (Printf.sprintf "\t.quad %s" (string_of_constant const))
+      let qword const = emit_constant const Sixty_four
 
-      let bytes str = emit_line (Printf.sprintf "\t.ascii %S" str)
+      let bytes str = D.string str
 
-      let uleb128 const =
-        emit_line (Printf.sprintf "\t.uleb128 %s" (string_of_constant const))
+      let uleb128 const = emit_line_with_buf (fun buf ->
+        D.Directive.print buf (Uleb128 { constant = const; comment = None }))
 
-      let sleb128 const =
-        emit_line (Printf.sprintf "\t.sleb128 %s" (string_of_constant const))
+      let sleb128 const = emit_line_with_buf (fun buf ->
+        D.Directive.print buf (Sleb128 { constant = const; comment = None }))
 
-      let direct_assignment var const =
-        emit_line (Printf.sprintf "\t.set %s,%s" var (string_of_constant const))
+      let direct_assignment var const = emit_line_with_buf (fun buf ->
+        D.Directive.print buf (Direct_assignment (var, const)))
     end
   end))
 

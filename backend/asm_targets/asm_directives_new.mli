@@ -184,6 +184,9 @@ val global : Asm_symbol.t -> unit
 (** Emit a machine-width reference to the given symbol. *)
 val symbol : ?comment:string -> Asm_symbol.t -> unit
 
+(** Emit a protected directive for the given symbol. *)
+val protected : Asm_symbol.t -> unit
+
 (** Mark a symbol as "private extern" (see assembler documentation for
     details). *)
 val private_extern : Asm_symbol.t -> unit
@@ -288,7 +291,9 @@ val offset_into_dwarf_section_symbol :
 
 module Directive : sig
   module Constant : sig
-    type t = private
+
+      (* CR sspies: make this private again once the first-class module has been removed *)
+    type t =
       | Signed_int of Int64.t
       | Unsigned_int of Numbers.Uint64.t
       | This
@@ -309,16 +314,20 @@ module Directive : sig
 
     val constant : t -> Constant.t
 
-    type width_in_bytes = private
+    (* CR sspies: make this private again once the first-class module has been removed *)
+    type width_in_bytes =
       | Eight
       | Sixteen
       | Thirty_two
       | Sixty_four
 
     val width_in_bytes : t -> width_in_bytes
+
+    val create: Constant.t -> width_in_bytes -> t
   end
 
-  type thing_after_label = private
+  (* CR sspies: make this private again once the first-class module has been removed *)
+  type thing_after_label =
     | Code
     | Machine_width_data
 
@@ -329,7 +338,8 @@ module Directive : sig
       Symbols that occur in values of type [t] are encoded as [string]s and
       have had all necessary prefixing, mangling, escaping and suffixing
       applied. *)
-  type t = private
+  (* CR sspies: make this private again once the first-class module has been removed *)
+  type t =
     | Align of { bytes : int }
     | Bytes of
         { str : string;
@@ -380,6 +390,7 @@ module Directive : sig
         { constant : Constant.t;
           comment : string option
         }
+    | Protected of string
 
   (** Translate the given directive to textual form.  This produces output
       suitable for either gas or MASM as appropriate. *)

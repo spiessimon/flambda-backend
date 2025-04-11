@@ -219,6 +219,7 @@ module Directive = struct
         { constant : Constant.t;
           comment : string option
         }
+    | Protected of string
 
   let bprintf = Printf.bprintf
 
@@ -367,6 +368,8 @@ module Directive = struct
       | _ ->
         Misc.fatal_error
           "Cannot emit [Direct_assignment] except on macOS-like assemblers")
+    | Protected s ->
+      bprintf buf "\t.protected\t%s" s
 
   let print_masm buf t =
     let unsupported name =
@@ -423,6 +426,7 @@ module Directive = struct
     | Type _ -> unsupported "Type"
     | Uleb128 _ -> unsupported "Uleb128"
     | Direct_assignment _ -> unsupported "Direct_assignment"
+    | Protected _ -> unsupported "Protected"
 
   let print b t =
     match TS.assembler () with
@@ -525,6 +529,8 @@ let sleb128 ?comment i =
 
 let uleb128 ?comment i =
   emit (Uleb128 { constant = Directive.Constant.Unsigned_int i; comment })
+
+let protected symbol = emit (Protected (Asm_symbol.encode symbol))
 
 let direct_assignment var cst = emit (Direct_assignment (var, lower_expr cst))
 
