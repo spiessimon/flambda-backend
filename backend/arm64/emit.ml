@@ -57,17 +57,17 @@ let reg_stack_arg_end = phys_reg Int 18 (* x21 *)
 
 (* Output a label *)
 
-let label_to_asm_label (l: label) (s: S.t) : L.t =
+let label_to_asm_label (l : label) (s : S.t) : L.t =
   L.create_int s (Label.to_int l)
 
 (* Symbols *)
 
 (* CR sdolan: Support local symbol definitions & references on arm64 *)
 
-
 let emit_symbol_size sym =
   (* CR sspies: This is untested, but I think correct. *)
-  let sym = Asm_targets.Asm_symbol.create sym in D.size sym
+  let sym = Asm_targets.Asm_symbol.create sym in
+  D.size sym
 
 (* Likewise, but with the 32-bit name of the register *)
 
@@ -344,7 +344,8 @@ end [@warning "-32"] = struct
 
   let emit_mem_label ?offset ?reloc r lbl =
     let base = translate_reg r in
-    mem_symbol ~base ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc (L.encode lbl))
+    mem_symbol ~base
+      ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc (L.encode lbl))
 
   let emit_stack (r : Reg.t) =
     match r.loc with
@@ -408,7 +409,8 @@ end [@warning "-32"] = struct
   let ins name ops = print_ins name ops |> Emitaux.emit_string
 
   let labeled_ins lbl name ops =
-    (* CR sspies: We differ here from the main branch by printing an additional new line. Adjust main first. *)
+    (* CR sspies: We differ here from the main branch by printing an additional
+       new line. Adjust main first. *)
     D.define_label lbl;
     print_ins name ops |> Emitaux.emit_string
 
@@ -576,12 +578,12 @@ type local_realloc_call =
 
 let local_realloc_sites = ref ([] : local_realloc_call list)
 
-
 let emit_debug_info ?discriminator dbg =
   ignore discriminator;
   Emitaux.emit_debug_info_gen dbg
     (fun ~file_num ~file_name -> D.file ~file_num:(Some file_num) ~file_name)
-    (fun ~file_num ~line ~col ?discriminator () -> D.loc ~file_num ~line ~col ?discriminator ())
+    (fun ~file_num ~line ~col ?discriminator () ->
+      D.loc ~file_num ~line ~col ?discriminator ())
 
 let emit_local_realloc lr =
   D.define_label lr.lr_lbl;
@@ -1194,7 +1196,7 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
       (if not far
       then DSL.ins (I.B_cond CC) [| DSL.emit_label lbl_call_gc |]
       else
-        let lbl = label_to_asm_label  (Cmm.new_label ()) Text in
+        let lbl = label_to_asm_label (Cmm.new_label ()) Text in
         DSL.ins (I.B_cond CS) [| DSL.emit_label lbl |];
         DSL.ins I.B [| DSL.emit_label lbl_call_gc |];
         D.define_label lbl);
@@ -1221,7 +1223,9 @@ let assembly_code_for_poll i ~far ~return_label =
   let lbl_frame = record_frame_label i.live (Dbg_alloc []) in
   let lbl_call_gc = label_to_asm_label (Cmm.new_label ()) Text in
   let lbl_after_poll =
-    match return_label with None -> label_to_asm_label (Cmm.new_label ()) Text | Some lbl -> lbl
+    match return_label with
+    | None -> label_to_asm_label (Cmm.new_label ()) Text
+    | Some lbl -> lbl
   in
   let offset = Domainstate.(idx_of_field Domain_young_limit) * 8 in
   DSL.ins I.LDR
@@ -1243,7 +1247,7 @@ let assembly_code_for_poll i ~far ~return_label =
     | None ->
       DSL.ins (I.B_cond HI) [| DSL.emit_label lbl_after_poll |];
       DSL.ins I.B [| DSL.emit_label lbl_call_gc |];
-      D.define_label lbl_after_poll;
+      D.define_label lbl_after_poll
     | Some return_label ->
       let lbl = label_to_asm_label (Cmm.new_label ()) Text in
       DSL.ins (I.B_cond LS) [| DSL.emit_label lbl |];
@@ -1264,10 +1268,8 @@ let emit_named_text_section func_name =
     (* CR sspies: FIXME: This code is untested. *)
     let sym = Asm_targets.Asm_symbol.create func_name in
     let sec_name = ".text.caml." ^ Asm_targets.Asm_symbol.encode sym in
-      D.switch_to_section_raw
-        ~names:[sec_name]
-        ~flags:(Some "ax")
-        ~args:["%progbits"]
+    D.switch_to_section_raw ~names:[sec_name] ~flags:(Some "ax")
+      ~args:["%progbits"]
   else D.text ()
 
 (* Emit code to load an emitted literal *)
@@ -1932,10 +1934,12 @@ let emit_instr i =
     (* CR sspies: This changes the semantics. Before everything was emitted. *)
     Misc.fatal_errorf "Emitting into section %s is not supported." s
   | Lbranch lbl ->
-    let lbl = label_to_asm_label lbl Text in (* we can only branch to the text section *)
+    let lbl = label_to_asm_label lbl Text in
+    (* we can only branch to the text section *)
     DSL.ins I.B [| DSL.emit_label lbl |]
   | Lcondbranch (tst, lbl) -> (
-    let lbl = label_to_asm_label lbl Text in (* we can only branch to the text section *)
+    let lbl = label_to_asm_label lbl Text in
+    (* we can only branch to the text section *)
     match tst with
     | Itruetest ->
       DSL.ins I.CBNZ [| DSL.emit_reg i.arg.(0); DSL.emit_label lbl |]
@@ -1962,21 +1966,25 @@ let emit_instr i =
     (match lbl0 with
     | None -> ()
     | Some lbl ->
-      let lbl = label_to_asm_label lbl Text in (* we can only branch to the text section *)
+      let lbl = label_to_asm_label lbl Text in
+      (* we can only branch to the text section *)
       DSL.ins (I.B_cond LT) [| DSL.emit_label lbl |]);
     (match lbl1 with
     | None -> ()
     | Some lbl ->
-      let lbl = label_to_asm_label lbl Text in (* we can only branch to the text section *)
+      let lbl = label_to_asm_label lbl Text in
+      (* we can only branch to the text section *)
       DSL.ins (I.B_cond EQ) [| DSL.emit_label lbl |]);
     match lbl2 with
     | None -> ()
     | Some lbl ->
-      let lbl = label_to_asm_label lbl Text in (* we can only branch to the text section *)
+      let lbl = label_to_asm_label lbl Text in
+      (* we can only branch to the text section *)
       DSL.ins (I.B_cond GT) [| DSL.emit_label lbl |])
   | Lswitch jumptbl ->
     let lbltbl = Cmm.new_label () in
-    let lbltbl = label_to_asm_label lbltbl Text in (* we can only branch to the text section *)
+    let lbltbl = label_to_asm_label lbltbl Text in
+    (* we can only branch to the text section *)
     DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbltbl |];
     DSL.ins I.ADD
       [| DSL.emit_reg reg_tmp1;
@@ -1985,7 +1993,8 @@ let emit_instr i =
          DSL.emit_shift LSL 2
       |];
     DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
-    (* CR sspies: We used to not emit a new line after the label. Adjust main first.*)
+    (* CR sspies: We used to not emit a new line after the label. Adjust main
+       first.*)
     D.define_label lbltbl;
     for j = 0 to Array.length jumptbl - 1 do
       let lbl = label_to_asm_label jumptbl.(j) Text in
@@ -2054,7 +2063,8 @@ let emit_instr i =
     emit_addimm reg_tmp1 reg_tmp1 f;
     DSL.ins I.CMP [| DSL.sp; DSL.emit_reg reg_tmp1 |];
     DSL.ins (I.B_cond CC) [| DSL.emit_label overflow |];
-    (* CR sspies: We used to not emit a new line after the label. Adjust main first.*)
+    (* CR sspies: We used to not emit a new line after the label. Adjust main
+       first.*)
     D.define_label ret;
     stack_realloc
       := Some
@@ -2089,7 +2099,10 @@ let fundecl fundecl =
   in
   function_name := fundecl.fun_name;
   fastcode_flag := fundecl.fun_fast;
-  tailrec_entry_point := Option.map (fun lbl -> label_to_asm_label lbl Text) fundecl.fun_tailrec_entry_point_label;
+  tailrec_entry_point
+    := Option.map
+         (fun lbl -> label_to_asm_label lbl Text)
+         fundecl.fun_tailrec_entry_point_label;
   float_literals := [];
   stack_offset := 0;
   call_gc_sites := [];
@@ -2157,7 +2170,10 @@ let emit_item (d : Cmm.data_item) =
     D.float64_from_bits low;
     D.float64_from_bits high
   | Csymbol_address s -> D.symbol (Asm_targets.Asm_symbol.create s.sym_name)
-  | Csymbol_offset (s, o) -> D.symbol_plus_offset (Asm_targets.Asm_symbol.create s.sym_name) ~offset_in_bytes:(Targetint.of_int o)
+  | Csymbol_offset (s, o) ->
+    D.symbol_plus_offset
+      (Asm_targets.Asm_symbol.create s.sym_name)
+      ~offset_in_bytes:(Targetint.of_int o)
   (* [Cstring] mirrors x86 with new directives *)
   | Cstring s -> D.string s
   (* [Cskip] mirrors x86 with new directives *)
@@ -2173,7 +2189,8 @@ let data l =
 
 let emit_line str = emit_string (str ^ "\n")
 
-let file_emitter ~file_num ~file_name = D.file ~file_num:(Some file_num) ~file_name
+let file_emitter ~file_num ~file_name =
+  D.file ~file_num:(Some file_num) ~file_name
 
 let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
   (module Asm_targets.Asm_directives.Make (struct
@@ -2194,15 +2211,14 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let const_sub c1 c2 = D.Directive.Constant.Sub (c1, c2)
 
-      (* CR sspies: The functions depending on [emit_line_with_buf] below break abstractions.
-         This is intensional at the moment, because this is only the first step of getting rid of the
-         first-class module entirely. *)
+      (* CR sspies: The functions depending on [emit_line_with_buf] below break
+         abstractions. This is intensional at the moment, because this is only
+         the first step of getting rid of the first-class module entirely. *)
       let emit_line_with_buf f =
         let buf = Buffer.create 80 in
         f buf;
         Buffer.add_string buf "\n";
         Buffer.output_buffer !output_channel buf
-
 
       type data_type =
         | NONE
@@ -2221,14 +2237,13 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
       let label ?data_type str =
         let _ = data_type in
         emit_line_with_buf (fun buf ->
-          D.Directive.print buf (New_label (str, Code)))
+            D.Directive.print buf (New_label (str, Code)))
 
       let section ?delayed:_ name flags args =
         match name, flags, args with
         | [".data"], _, _ -> D.data ()
         | [".text"], _, _ -> D.text ()
-        | name, flags, args ->
-          D.switch_to_section_raw ~names:name ~flags ~args
+        | name, flags, args -> D.switch_to_section_raw ~names:name ~flags ~args
 
       let text () = D.text ()
 
@@ -2236,22 +2251,28 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let emit_constant const size =
         emit_line_with_buf (fun buf ->
-           D.Directive.print buf (Const { constant = (D.Directive.Constant_with_width.create const size); comment = None }))
+            D.Directive.print buf
+              (Const
+                 { constant = D.Directive.Constant_with_width.create const size;
+                   comment = None
+                 }))
 
-      let global sym = emit_line_with_buf (fun buf -> D.Directive.print buf (Global sym))
+      let global sym =
+        emit_line_with_buf (fun buf -> D.Directive.print buf (Global sym))
 
       let protected sym =
-        if not macosx then
+        if not macosx
+        then
           emit_line_with_buf (fun buf -> D.Directive.print buf (Protected sym))
 
       let type_ sym typ_ =
-        let typ_: D.symbol_type = (match typ_ with
+        let typ_ : D.symbol_type =
+          match typ_ with
           | "@function" -> FUNC
           | "@object" -> OBJECT
-          | _ -> Misc.fatal_error "Unsupported type")
+          | _ -> Misc.fatal_error "Unsupported type"
         in
-          emit_line_with_buf (fun buf ->
-            D.Directive.print buf (Type (sym, typ_)))
+        emit_line_with_buf (fun buf -> D.Directive.print buf (Type (sym, typ_)))
 
       let byte const = emit_constant const Eight
 
@@ -2263,14 +2284,17 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let bytes str = D.string str
 
-      let uleb128 const = emit_line_with_buf (fun buf ->
-        D.Directive.print buf (Uleb128 { constant = const; comment = None }))
+      let uleb128 const =
+        emit_line_with_buf (fun buf ->
+            D.Directive.print buf (Uleb128 { constant = const; comment = None }))
 
-      let sleb128 const = emit_line_with_buf (fun buf ->
-        D.Directive.print buf (Sleb128 { constant = const; comment = None }))
+      let sleb128 const =
+        emit_line_with_buf (fun buf ->
+            D.Directive.print buf (Sleb128 { constant = const; comment = None }))
 
-      let direct_assignment var const = emit_line_with_buf (fun buf ->
-        D.Directive.print buf (Direct_assignment (var, const)))
+      let direct_assignment var const =
+        emit_line_with_buf (fun buf ->
+            D.Directive.print buf (Direct_assignment (var, const)))
     end
   end))
 
@@ -2309,8 +2333,8 @@ let begin_assembly _unix =
     DSL.ins I.NOP [||];
     D.align ~bytes:8);
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives ~code_begin:lbl_begin_code
-    ~code_end:lbl_end ~file_emitter
+  Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives
+    ~code_begin:lbl_begin_code ~code_end:lbl_end ~file_emitter
 
 let end_assembly () =
   let lbl_end_code = Cmm_helpers.make_symbol "code_end" in
@@ -2329,8 +2353,7 @@ let end_assembly () =
   D.align ~bytes:8;
   (* #7887 *)
   let lbl_frametable = Cmm_helpers.make_symbol "frametable" in
-  let lbl_frametable_sym =
-    Asm_targets.Asm_symbol.create lbl_frametable in
+  let lbl_frametable_sym = Asm_targets.Asm_symbol.create lbl_frametable in
   D.global lbl_frametable_sym;
   D.define_data_symbol lbl_frametable_sym;
   emit_frames
@@ -2356,13 +2379,18 @@ let end_assembly () =
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
       (* [efa_align] mirrors x86 with new directives *)
       efa_align = (fun bytes -> D.align ~bytes);
-      (* [efa_label_rel] differs from x86 in that we output the expression directly *)
+      (* [efa_label_rel] differs from x86 in that we output the expression
+         directly *)
       efa_label_rel =
         (fun lbl ofs ->
           let lbl = label_to_asm_label lbl Data in
           let ofs = Targetint.of_int32 ofs in
-          D.between_this_and_label_offset_32bit_expr ~upper:lbl ~offset_upper:ofs);
-      efa_def_label = (fun lbl -> let lbl = label_to_asm_label lbl Data in D.define_label lbl);
+          D.between_this_and_label_offset_32bit_expr ~upper:lbl
+            ~offset_upper:ofs);
+      efa_def_label =
+        (fun lbl ->
+          let lbl = label_to_asm_label lbl Data in
+          D.define_label lbl);
       (* CR sspies: We used to use [.asciz] here. Adjust main first. *)
       efa_string = (fun s -> D.string (s ^ "\000"))
     };
@@ -2373,8 +2401,6 @@ let end_assembly () =
   match Config.system with
   | "linux" ->
     (* Mark stack as non-executable *)
-    D.switch_to_section_raw
-    ~names:[".note.GNU-stack"]
-    ~flags:(Some "")
-    ~args:["%progbits"]
+    D.switch_to_section_raw ~names:[".note.GNU-stack"] ~flags:(Some "")
+      ~args:["%progbits"]
   | _ -> ()

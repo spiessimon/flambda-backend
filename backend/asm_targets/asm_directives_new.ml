@@ -74,8 +74,18 @@ module Directive = struct
       match t with
       | (Named_thing _ | Signed_int _ | Unsigned_int _ | This) as c ->
         print_subterm ~hex_on_unix_like buf c
-      | Add (c1, c2) -> bprintf buf "%a + %a" (print_subterm ~hex_on_unix_like) c1 (print_subterm ~hex_on_unix_like) c2
-      | Sub (c1, c2) -> bprintf buf "%a - %a" (print_subterm ~hex_on_unix_like) c1 (print_subterm ~hex_on_unix_like) c2
+      | Add (c1, c2) ->
+        bprintf buf "%a + %a"
+          (print_subterm ~hex_on_unix_like)
+          c1
+          (print_subterm ~hex_on_unix_like)
+          c2
+      | Sub (c1, c2) ->
+        bprintf buf "%a - %a"
+          (print_subterm ~hex_on_unix_like)
+          c1
+          (print_subterm ~hex_on_unix_like)
+          c2
 
     and print_subterm ~hex_on_unix_like buf t =
       match t with
@@ -90,7 +100,10 @@ module Directive = struct
            ".sleb128" directives do not end up with hex arguments (since this
            denotes a variable-length encoding it would not be clear where the
            sign bit is). *)
-        | MacOS | GAS_like -> if hex_on_unix_like then bprintf buf "0x%Lx" n else bprintf buf "%Ld" n
+        | MacOS | GAS_like ->
+          if hex_on_unix_like
+          then bprintf buf "0x%Lx" n
+          else bprintf buf "%Ld" n
         | MASM ->
           if n >= -0x8000_0000L && n <= 0x7fff_ffffL
           then Buffer.add_string buf (Int64.to_string n)
@@ -100,9 +113,17 @@ module Directive = struct
            unsigned hex representation. *)
         print_subterm ~hex_on_unix_like buf (Signed_int (Uint64.to_int64 n))
       | Add (c1, c2) ->
-        bprintf buf "(%a + %a)" (print_subterm ~hex_on_unix_like) c1 (print_subterm ~hex_on_unix_like) c2
+        bprintf buf "(%a + %a)"
+          (print_subterm ~hex_on_unix_like)
+          c1
+          (print_subterm ~hex_on_unix_like)
+          c2
       | Sub (c1, c2) ->
-        bprintf buf "(%a - %a)" (print_subterm ~hex_on_unix_like) c1 (print_subterm ~hex_on_unix_like) c2
+        bprintf buf "(%a - %a)"
+          (print_subterm ~hex_on_unix_like)
+          c1
+          (print_subterm ~hex_on_unix_like)
+          c2
 
     let rec evaluate t =
       let ( >>= ) = Stdlib.Option.bind in
@@ -295,7 +316,8 @@ module Directive = struct
         | Sixty_four -> "quad"
       in
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.%s\t%a%s" directive (Constant.print ~hex_on_unix_like:true)
+      bprintf buf "\t.%s\t%a%s" directive
+        (Constant.print ~hex_on_unix_like:true)
         (Constant_with_width.constant constant)
         comment
     | Bytes { str; comment } ->
@@ -339,17 +361,22 @@ module Directive = struct
         | Some dis -> bprintf buf "\tdiscriminator %d" dis
       in
       (* PR#7726: Location.none uses column -1, breaks LLVM assembler *)
-      bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col print_discriminator discriminator
+      bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col
+        print_discriminator discriminator
     | Private_extern s -> bprintf buf "\t.private_extern %s" s
-    | Size (s, c) -> bprintf buf "\t.size %s,%a" s (Constant.print ~hex_on_unix_like:true) c
+    | Size (s, c) ->
+      bprintf buf "\t.size %s,%a" s (Constant.print ~hex_on_unix_like:true) c
     | Sleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.sleb128 %a%s" (Constant.print ~hex_on_unix_like:false) constant comment
+      bprintf buf "\t.sleb128 %a%s"
+        (Constant.print ~hex_on_unix_like:false)
+        constant comment
     | Type (s, typ) ->
       (* We use the "STT" forms when they are supported as they are unambiguous
          across platforms (cf. https://sourceware.org/binutils/docs/as/Type.html
          ). *)
-      let typ = match typ with
+      let typ =
+        match typ with
         | FUNC -> "STT_FUNC"
         | GNU_IFUNC -> "STT_GNU_IFUNC"
         | OBJECT -> "STT_OBJECT"
@@ -360,15 +387,17 @@ module Directive = struct
       bprintf buf "\t.type %s %s" s typ
     | Uleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.uleb128 %a%s" (Constant.print ~hex_on_unix_like:false) constant comment
+      bprintf buf "\t.uleb128 %a%s"
+        (Constant.print ~hex_on_unix_like:false)
+        constant comment
     | Direct_assignment (var, const) -> (
       match TS.assembler () with
-      | MacOS -> bprintf buf "%s = %a" var (Constant.print ~hex_on_unix_like:true) const
+      | MacOS ->
+        bprintf buf "%s = %a" var (Constant.print ~hex_on_unix_like:true) const
       | _ ->
         Misc.fatal_error
           "Cannot emit [Direct_assignment] except on macOS-like assemblers")
-    | Protected s ->
-      bprintf buf "\t.protected\t%s" s
+    | Protected s -> bprintf buf "\t.protected\t%s" s
 
   let print_masm buf t =
     let unsupported name =
@@ -397,7 +426,8 @@ module Directive = struct
         | Sixty_four -> "QWORD"
       in
       let comment = masm_comment_opt comment in
-      bprintf buf "\t%s\t%a%s" directive (Constant.print ~hex_on_unix_like:true)
+      bprintf buf "\t%s\t%a%s" directive
+        (Constant.print ~hex_on_unix_like:true)
         (Constant_with_width.constant constant)
         comment
     | Global s -> bprintf buf "\tPUBLIC\t%s" s
@@ -480,7 +510,8 @@ let section ~names ~flags ~args = emit (Section { names; flags; args })
 
 let align ~bytes = emit (Align { bytes })
 
-(* We turn [balign] it into [align], since we do the correct resolution for align.  *)
+(* We turn [balign] it into [align], since we do the correct resolution for
+   align. *)
 let balign ~bytes = emit (Align { bytes })
 
 let should_generate_cfi () =
@@ -507,7 +538,8 @@ let cfi_startproc () = if should_generate_cfi () then emit Cfi_startproc
 
 let comment text = if !Clflags.keep_asm_file then emit (Comment text)
 
-let loc ~file_num ~line ~col ?discriminator () = emit_non_masm (Loc { file_num; line; col; discriminator })
+let loc ~file_num ~line ~col ?discriminator () =
+  emit_non_masm (Loc { file_num; line; col; discriminator })
 
 let space ~bytes = emit (Space { bytes })
 
@@ -624,20 +656,19 @@ let switch_to_section section =
       sections_seen := section :: !sections_seen;
       true)
   in
-  (* CR sspies: Eventually drop repeat labels if we are currently in this section. *)
-  (* match !current_section_ref with
-  | Some section' when Asm_section.equal section section' ->
-    assert (not first_occurrence);
-    ()
-  | _ -> *)
-    current_section_ref := Some section;
-    let ({ names; flags; args } : Asm_section.flags_for_section) =
-      Asm_section.flags section ~first_occurrence
-    in
-    (* if not first_occurrence then new_line (); *)
-    emit (Section { names; flags; args })
-    (* CR sspies: For better backwards compatibility, we **do not** emit a label at the moment. This will need to change for debugging. *)
-    (* if first_occurrence then define_label (Asm_label.for_section section) *)
+  (* CR sspies: Eventually drop repeat labels if we are currently in this
+     section. *)
+  (* match !current_section_ref with | Some section' when Asm_section.equal
+     section section' -> assert (not first_occurrence); () | _ -> *)
+  current_section_ref := Some section;
+  let ({ names; flags; args } : Asm_section.flags_for_section) =
+    Asm_section.flags section ~first_occurrence
+  in
+  (* if not first_occurrence then new_line (); *)
+  emit (Section { names; flags; args })
+(* CR sspies: For better backwards compatibility, we **do not** emit a label at
+   the moment. This will need to change for debugging. *)
+(* if first_occurrence then define_label (Asm_label.for_section section) *)
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })
@@ -756,16 +787,15 @@ let define_function_symbol symbol =
   | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:FUNC
   | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
-  let type_symbol symbol ~ty =
-    match TS.assembler (), TS.windows () with
-    | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:ty
-    | GAS_like, true | MacOS, _ | MASM, _ -> ()
+let type_symbol symbol ~ty =
+  match TS.assembler (), TS.windows () with
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:ty
+  | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
-  let type_label label ~ty =
-    match TS.assembler (), TS.windows () with
-    | GAS_like, false -> type_ (Asm_label.encode label) ~type_:ty
-    | GAS_like, true | MacOS, _ | MASM, _ -> ()
-
+let type_label label ~ty =
+  match TS.assembler (), TS.windows () with
+  | GAS_like, false -> type_ (Asm_label.encode label) ~type_:ty
+  | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
 let symbol ?comment sym = const_machine_width ?comment (Symbol sym)
 
@@ -898,21 +928,20 @@ let between_this_and_label_offset_32bit ~upper ~offset_upper =
   let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
   const (force_assembly_time_constant expr) Thirty_two
 
-
 let between_this_and_label_offset_32bit_expr ~upper ~offset_upper =
-    let upper_section = Asm_label.section upper in
-    (match !current_section_ref with
-    | None -> not_initialized ()
-    | Some this_section ->
-      if not (Asm_section.equal upper_section this_section)
-      then
-        Misc.fatal_errorf
-          "Label %a in section %a is not in the current section %a"
-          Asm_label.print upper Asm_section.print upper_section Asm_section.print
-          this_section);
-    let offset_upper = Targetint.to_int64 offset_upper in
-    let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
-    const expr Thirty_two
+  let upper_section = Asm_label.section upper in
+  (match !current_section_ref with
+  | None -> not_initialized ()
+  | Some this_section ->
+    if not (Asm_section.equal upper_section this_section)
+    then
+      Misc.fatal_errorf
+        "Label %a in section %a is not in the current section %a"
+        Asm_label.print upper Asm_section.print upper_section Asm_section.print
+        this_section);
+  let offset_upper = Targetint.to_int64 offset_upper in
+  let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
+  const expr Thirty_two
 
 let const_with_width ~width constant =
   match width with

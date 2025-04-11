@@ -23,7 +23,10 @@
 (* CR-someday mshinwell: Use this module throughout the backends as per the
    original GPR. *)
 
-(* CR sspies: Unlike in the description stated below, we **do not** emit a label at the moment for better backwards compatibility. This will need to change for debugging. *)
+(* CR sspies: Unlike in the description stated below, we **do not** emit a label
+   at the moment for better backwards compatibility. This will need to change
+   for debugging. *)
+
 (** Emit subsequent directives to the given section.  If this function
     has not been called before on the particular section, a label
     declaration will be emitted after declaring the section.
@@ -122,7 +125,8 @@ val comment : string -> unit
 val file : file_num:int option -> file_name:string -> unit
 
 (** Mark the source location of the current assembly position. *)
-val loc : file_num:int -> line:int -> col:int -> ?discriminator:int -> unit -> unit
+val loc :
+  file_num:int -> line:int -> col:int -> ?discriminator:int -> unit -> unit
 
 (** Emit a blank line. *)
 val new_line : unit -> unit
@@ -291,8 +295,8 @@ val offset_into_dwarf_section_symbol :
 
 module Directive : sig
   module Constant : sig
-
-      (* CR sspies: make this private again once the first-class module has been removed *)
+    (* CR sspies: make this private again once the first-class module has been
+       removed *)
     type t =
       | Signed_int of Int64.t
       | Unsigned_int of Numbers.Uint64.t
@@ -314,7 +318,8 @@ module Directive : sig
 
     val constant : t -> Constant.t
 
-    (* CR sspies: make this private again once the first-class module has been removed *)
+    (* CR sspies: make this private again once the first-class module has been
+       removed *)
     type width_in_bytes =
       | Eight
       | Sixteen
@@ -323,22 +328,25 @@ module Directive : sig
 
     val width_in_bytes : t -> width_in_bytes
 
-    val create: Constant.t -> width_in_bytes -> t
+    val create : Constant.t -> width_in_bytes -> t
   end
 
-  (* CR sspies: make this private again once the first-class module has been removed *)
+  (* CR sspies: make this private again once the first-class module has been
+     removed *)
   type thing_after_label =
     | Code
     | Machine_width_data
 
   type comment = private string
 
+  (* CR sspies: make this private again once the first-class module has been
+     removed *)
+
   (** Internal representation of directives.  Only needed if writing a custom
       assembler or printer instead of using [print], below.
       Symbols that occur in values of type [t] are encoded as [string]s and
       have had all necessary prefixing, mangling, escaping and suffixing
       applied. *)
-  (* CR sspies: make this private again once the first-class module has been removed *)
   type t =
     | Align of { bytes : int }
     | Bytes of
@@ -369,7 +377,7 @@ module Directive : sig
         { file_num : int;
           line : int;
           col : int;
-          discriminator: int option
+          discriminator : int option
         }
     | New_label of string * thing_after_label
     | New_line
