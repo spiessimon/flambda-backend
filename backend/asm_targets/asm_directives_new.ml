@@ -197,7 +197,8 @@ module Directive = struct
     | Loc of
         { file_num : int;
           line : int;
-          col : int
+          col : int;
+          discriminator : int option
         }
     | New_label of string * thing_after_label
     | New_line
@@ -330,11 +331,15 @@ module Directive = struct
       bprintf buf "\t.file\t%d\t\"%s\"" file_num
         (string_of_string_literal filename)
     | Indirect_symbol s -> bprintf buf "\t.indirect_symbol %s" s
-    | Loc { file_num; line; col } ->
+    | Loc { file_num; line; col; discriminator } ->
+      let print_col buf col = if col >= 0 then bprintf buf "\t%d" col else () in
+      let print_discriminator buf dis =
+        match dis with
+        | None -> ()
+        | Some dis -> bprintf buf "\tdiscriminator %d" dis
+      in
       (* PR#7726: Location.none uses column -1, breaks LLVM assembler *)
-      if col >= 0
-      then bprintf buf "\t.loc\t%d\t%d\t%d" file_num line col
-      else bprintf buf "\t.loc\t%d\t%d" file_num line
+      bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col print_discriminator discriminator
     | Private_extern s -> bprintf buf "\t.private_extern %s" s
     | Size (s, c) -> bprintf buf "\t.size %s,%a" s (Constant.print ~hex_on_unix_like:true) c
     | Sleb128 { constant; comment } ->
@@ -499,7 +504,7 @@ let cfi_startproc () = if should_generate_cfi () then emit Cfi_startproc
 
 let comment text = if !Clflags.keep_asm_file then emit (Comment text)
 
-let loc ~file_num ~line ~col = emit_non_masm (Loc { file_num; line; col })
+let loc ~file_num ~line ~col ?discriminator () = emit_non_masm (Loc { file_num; line; col; discriminator })
 
 let space ~bytes = emit (Space { bytes })
 

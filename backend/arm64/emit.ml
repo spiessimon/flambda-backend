@@ -576,9 +576,16 @@ type local_realloc_call =
 
 let local_realloc_sites = ref ([] : local_realloc_call list)
 
+
+let emit_debug_info ?discriminator dbg =
+  ignore discriminator;
+  Emitaux.emit_debug_info_gen dbg
+    (fun ~file_num ~file_name -> D.file ~file_num:(Some file_num) ~file_name)
+    (fun ~file_num ~line ~col ?discriminator () -> D.loc ~file_num ~line ~col ?discriminator ())
+
 let emit_local_realloc lr =
   D.define_label lr.lr_lbl;
-  emit_printf "\t%a\n" (femit_debug_info ~discriminator:0) lr.lr_dbg;
+  emit_debug_info ~discriminator:0 lr.lr_dbg;
   DSL.ins I.BL [| DSL.emit_symbol "caml_call_local_realloc" |];
   DSL.ins I.B [| DSL.emit_label lr.lr_return_lbl |]
 
@@ -2219,7 +2226,7 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
 
       let loc ~file_num ~line ~col ?discriminator () =
         ignore discriminator;
-        D.loc ~file_num ~line ~col
+        D.loc ~file_num ~line ~col ?discriminator ()
 
       let comment str = emit_line (Printf.sprintf "; %s" str)
 
