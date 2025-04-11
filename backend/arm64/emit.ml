@@ -1266,7 +1266,7 @@ let emit_named_text_section func_name =
     let sec_name = ".text.caml." ^ Asm_targets.Asm_symbol.encode sym in
       D.switch_to_section_raw
         ~names:[sec_name]
-        ~flags:(Some "\"ax\"")
+        ~flags:(Some "ax")
         ~args:["%progbits"]
   else D.text ()
 
@@ -2375,6 +2375,6 @@ let end_assembly () =
     (* Mark stack as non-executable *)
     D.switch_to_section_raw
     ~names:[".note.GNU-stack"]
-    ~flags:(Some "\"\"")
+    ~flags:(Some "")
     ~args:["%progbits"]
   | _ -> ()

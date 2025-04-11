@@ -311,7 +311,6 @@ module Directive = struct
     | Section { names = [".text"]; _ } -> bprintf buf "\t.text"
     | Section { names; flags; args } -> (
       bprintf buf "\t.section %s" (String.concat "," names);
-      (* CR sspies: Currently we add quotes around the flags on the outside. Should this be on the inside? *)
       (match flags with None -> () | Some flags -> bprintf buf ",%S" flags);
       match args with
       | [] -> ()
