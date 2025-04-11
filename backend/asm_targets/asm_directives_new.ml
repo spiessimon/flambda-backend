@@ -287,16 +287,15 @@ module Directive = struct
     let l = String.length s in
     if l = 0
     then ()
-    else if l < 80
-    then (
-      bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal s))
     else
+      (* We first print the string 80 characters at a time. *)
       let i = ref 0 in
-      while !i < l do
-        let n = min (l - !i) 80 in
-        bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal (String.sub s !i n));
-        i := !i + n
-      done
+      while l - !i > 80 do
+        bprintf buf "\t.ascii\t\"%s\"\n" (string_of_string_literal (String.sub s !i 80));
+        i := !i + 80
+      done;
+      (* Then we print the remainder. We do not append a new line, because every directive ends with a new line. *)
+      bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal (String.sub s !i (l - !i)))
 
   let print_gas buf t =
     let gas_comment_opt comment_opt =
