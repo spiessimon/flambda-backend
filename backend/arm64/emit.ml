@@ -408,7 +408,8 @@ end [@warning "-32"] = struct
   let ins name ops = print_ins name ops |> Emitaux.emit_string
 
   let labeled_ins lbl name ops =
-    Emitaux.emit_printf "%s:" (L.encode lbl);
+    (* CR sspies: We differ here from the main branch by printing an additional new line. Adjust main first. *)
+    D.define_label lbl;
     print_ins name ops |> Emitaux.emit_string
 
   let ins_cond name cond ops =
