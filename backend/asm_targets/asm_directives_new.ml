@@ -281,6 +281,23 @@ module Directive = struct
       if !pos >= 16 then pos := 0
     done
 
+  (* CR sspies: This code is based on [emit_string_directive] in [emitaux.ml].
+     We break up the string into smaller chunks. *)
+  let print_ascii_string_gas buf s =
+    let l = String.length s in
+    if l = 0
+    then ()
+    else if l < 80
+    then (
+      bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal s))
+    else
+      let i = ref 0 in
+      while !i < l do
+        let n = min (l - !i) 80 in
+        bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal (String.sub s !i n));
+        i := !i + n
+      done
+
   let print_gas buf t =
     let gas_comment_opt comment_opt =
       if not (emit_comments ())
@@ -323,7 +340,7 @@ module Directive = struct
     | Bytes { str; comment } ->
       (match TS.system (), TS.architecture () with
       | Solaris, _ | _, POWER -> buf_bytes_directive buf ~directive:".byte" str
-      | _ -> bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal str));
+      | _ -> print_ascii_string_gas buf str);
       bprintf buf "%s" (gas_comment_opt comment)
     | Comment s -> bprintf buf "\t\t\t/* %s */" s
     | Global s -> bprintf buf "\t.globl\t%s" s
