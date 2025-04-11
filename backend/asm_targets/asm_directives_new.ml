@@ -571,7 +571,7 @@ let float32 f =
     if !Clflags.keep_asm_file then Some (Printf.sprintf "%.12f" f) else None
   in
   let f_int32 = Int64.of_int32 (Int32.bits_of_float f) in
-  const ?comment (Signed_int f_int32) Sixty_four
+  const ?comment (Signed_int f_int32) Thirty_two
 
 let float64_core f f_int64 =
   match TS.machine_width () with
