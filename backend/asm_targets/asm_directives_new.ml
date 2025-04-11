@@ -70,24 +70,14 @@ module Directive = struct
       | Add of t * t
       | Sub of t * t
 
-    let rec print ~hex_on_unix_like buf t =
+    let rec print buf t =
       match t with
       | (Named_thing _ | Signed_int _ | Unsigned_int _ | This) as c ->
-        print_subterm ~hex_on_unix_like buf c
-      | Add (c1, c2) ->
-        bprintf buf "%a + %a"
-          (print_subterm ~hex_on_unix_like)
-          c1
-          (print_subterm ~hex_on_unix_like)
-          c2
-      | Sub (c1, c2) ->
-        bprintf buf "%a - %a"
-          (print_subterm ~hex_on_unix_like)
-          c1
-          (print_subterm ~hex_on_unix_like)
-          c2
+        print_subterm buf c
+      | Add (c1, c2) -> bprintf buf "%a + %a" print_subterm c1 print_subterm c2
+      | Sub (c1, c2) -> bprintf buf "%a - %a" print_subterm c1 print_subterm c2
 
-    and print_subterm ~hex_on_unix_like buf t =
+    and print_subterm buf t =
       match t with
       | This -> (
         match TS.assembler () with
@@ -100,10 +90,7 @@ module Directive = struct
            ".sleb128" directives do not end up with hex arguments (since this
            denotes a variable-length encoding it would not be clear where the
            sign bit is). *)
-        | MacOS | GAS_like ->
-          if hex_on_unix_like
-          then bprintf buf "0x%Lx" n
-          else bprintf buf "%Ld" n
+        | MacOS | GAS_like -> bprintf buf "%Ld" n
         | MASM ->
           if n >= -0x8000_0000L && n <= 0x7fff_ffffL
           then Buffer.add_string buf (Int64.to_string n)
@@ -111,19 +98,11 @@ module Directive = struct
       | Unsigned_int n ->
         (* We can use the printer for [Signed_int] since we always print as an
            unsigned hex representation. *)
-        print_subterm ~hex_on_unix_like buf (Signed_int (Uint64.to_int64 n))
+        print_subterm buf (Signed_int (Uint64.to_int64 n))
       | Add (c1, c2) ->
-        bprintf buf "(%a + %a)"
-          (print_subterm ~hex_on_unix_like)
-          c1
-          (print_subterm ~hex_on_unix_like)
-          c2
+        bprintf buf "(%a + %a)" print_subterm c1 print_subterm c2
       | Sub (c1, c2) ->
-        bprintf buf "(%a - %a)"
-          (print_subterm ~hex_on_unix_like)
-          c1
-          (print_subterm ~hex_on_unix_like)
-          c2
+        bprintf buf "(%a - %a)" print_subterm c1 print_subterm c2
 
     let rec evaluate t =
       let ( >>= ) = Stdlib.Option.bind in
@@ -291,11 +270,14 @@ module Directive = struct
       (* We first print the string 80 characters at a time. *)
       let i = ref 0 in
       while l - !i > 80 do
-        bprintf buf "\t.ascii\t\"%s\"\n" (string_of_string_literal (String.sub s !i 80));
+        bprintf buf "\t.ascii\t\"%s\"\n"
+          (string_of_string_literal (String.sub s !i 80));
         i := !i + 80
       done;
-      (* Then we print the remainder. We do not append a new line, because every directive ends with a new line. *)
-      bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal (String.sub s !i (l - !i)))
+      (* Then we print the remainder. We do not append a new line, because every
+         directive ends with a new line. *)
+      bprintf buf "\t.ascii\t\"%s\""
+        (string_of_string_literal (String.sub s !i (l - !i)))
 
   let print_gas buf t =
     let gas_comment_opt comment_opt =
@@ -332,8 +314,7 @@ module Directive = struct
         | Sixty_four -> "quad"
       in
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.%s\t%a%s" directive
-        (Constant.print ~hex_on_unix_like:true)
+      bprintf buf "\t.%s\t%a%s" directive Constant.print
         (Constant_with_width.constant constant)
         comment
     | Bytes { str; comment } ->
@@ -380,13 +361,10 @@ module Directive = struct
       bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col
         print_discriminator discriminator
     | Private_extern s -> bprintf buf "\t.private_extern %s" s
-    | Size (s, c) ->
-      bprintf buf "\t.size %s,%a" s (Constant.print ~hex_on_unix_like:true) c
+    | Size (s, c) -> bprintf buf "\t.size %s,%a" s Constant.print c
     | Sleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.sleb128 %a%s"
-        (Constant.print ~hex_on_unix_like:false)
-        constant comment
+      bprintf buf "\t.sleb128 %a%s" Constant.print constant comment
     | Type (s, typ) ->
       (* We use the "STT" forms when they are supported as they are unambiguous
          across platforms (cf. https://sourceware.org/binutils/docs/as/Type.html
@@ -403,13 +381,10 @@ module Directive = struct
       bprintf buf "\t.type %s %s" s typ
     | Uleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
-      bprintf buf "\t.uleb128 %a%s"
-        (Constant.print ~hex_on_unix_like:false)
-        constant comment
+      bprintf buf "\t.uleb128 %a%s" Constant.print constant comment
     | Direct_assignment (var, const) -> (
       match TS.assembler () with
-      | MacOS ->
-        bprintf buf "%s = %a" var (Constant.print ~hex_on_unix_like:true) const
+      | MacOS -> bprintf buf "%s = %a" var Constant.print const
       | _ ->
         Misc.fatal_error
           "Cannot emit [Direct_assignment] except on macOS-like assemblers")
@@ -442,8 +417,7 @@ module Directive = struct
         | Sixty_four -> "QWORD"
       in
       let comment = masm_comment_opt comment in
-      bprintf buf "\t%s\t%a%s" directive
-        (Constant.print ~hex_on_unix_like:true)
+      bprintf buf "\t%s\t%a%s" directive Constant.print
         (Constant_with_width.constant constant)
         comment
     | Global s -> bprintf buf "\tPUBLIC\t%s" s

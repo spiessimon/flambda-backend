@@ -533,7 +533,6 @@ type gc_call =
     gc_frame_lbl : L.t } (* Label of frame descriptor *)
 [@@ocamlformat "disable"]
 
-
 let call_gc_sites = ref ([] : gc_call list)
 
 let emit_call_gc gc =
