@@ -801,13 +801,6 @@ let vec128_literal f = add_literal vec128_literals f
 let emit_literals p align emit_literal =
   if !p <> []
   then (
-    (* The following two instructions are changed from main. Adjust main first:
-        -       .section        __TEXT,__literal8,8byte_literals
-        -       .balign 8
-        +       .section __TEXT,__literal8,8byte_literals
-        +       .align  3
-    *)
-
     if macosx
     then
       (* CR sspies: Revisit this definition. *)
