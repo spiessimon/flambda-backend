@@ -36,6 +36,11 @@ open X86_dsl
 module String = Misc.Stdlib.String
 module Int = Numbers.Int
 
+
+(* The code for the new directives. *)
+module ND = Asm_targets.Asm_directives_new
+
+
 (* [Branch_relaxation] is not used in this file, but is required by
    emit.ml files for certain other targets; the reference here ensures
    that when releases are being prepared the .depend files are correct
@@ -2305,9 +2310,6 @@ let reset_all () =
 
 
 
-  module ND = Asm_targets.Asm_directives_new
-
-
   let rec to_x86_constant (c: ND.Directive.Constant.t) : constant =
     match c with
     | Signed_int i -> Const i
@@ -2365,6 +2367,11 @@ let reset_all () =
 
 let begin_assembly unix =
   reset_all ();
+  (* CR sspies: There is some duplication in the label initialization currently, but it is initialized to the same code at the moment. *)
+  Asm_targets.Asm_label.initialize ~new_label:(fun () -> Cmm.new_label () |> Label.to_int);
+  ND.initialize ~big_endian:Arch.big_endian
+  (* As a first step, we emit by calling the corresponding x86 emit directives. *)
+  ~emit: (fun d -> directive (to_x86_directive d));
 
   if !Flambda_backend_flags.internal_assembler &&
      !Emitaux.binary_backend_available then
