@@ -594,18 +594,19 @@ let switch_to_section section =
       sections_seen := section :: !sections_seen;
       true)
   in
-  match !current_section_ref with
-  | Some section' when Asm_section.equal section section' ->
-    assert (not first_occurrence);
-    ()
-  | _ ->
-    current_section_ref := Some section;
-    let ({ names; flags; args } : Asm_section.flags_for_section) =
-      Asm_section.flags section ~first_occurrence
-    in
-    if not first_occurrence then new_line ();
-    emit (Section { names; flags; args });
-    if first_occurrence then define_label (Asm_label.for_section section)
+  (* CR sspies: Eventually drop repeat labels if we are currently in this
+     section. *)
+  (* match !current_section_ref with | Some section' when Asm_section.equal
+     section section' -> assert (not first_occurrence); () | _ -> *)
+  current_section_ref := Some section;
+  let ({ names; flags; args } : Asm_section.flags_for_section) =
+    Asm_section.flags section ~first_occurrence
+  in
+  (* if not first_occurrence then new_line (); *)
+  emit (Section { names; flags; args })
+(* CR sspies: For better backwards compatibility, we **do not** emit a label at
+   the moment. This will need to change for debugging. *)
+(* if first_occurrence then define_label (Asm_label.for_section section) *)
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })
@@ -657,6 +658,7 @@ let temp_var_counter = ref 0
 let reset () =
   cached_strings := Cached_string.Map.empty;
   sections_seen := [];
+  current_section_ref := None;
   temp_var_counter := 0
 
 let file ?file_num ~file_name () =
@@ -674,15 +676,12 @@ let initialize ~big_endian ~(emit : Directive.t -> unit) =
   big_endian_ref := Some big_endian;
   emit_ref := Some emit;
   reset ();
-  (match TS.assembler () with
-  | MASM | MacOS -> ()
-  | GAS_like ->
-    (* CR mshinwell: Is this really the case? Surely some of the DIEs would have
-       gone wrong if this were the case. Maybe it only applies across
-       sections. *)
-    (* Forward label references are illegal in gas. Just put them in for all
-       assemblers, they won't harm. *)
-    List.iter
+  match TS.assembler () with MASM | MacOS -> () | GAS_like -> ()
+(* CR mshinwell: Is this really the case? Surely some of the DIEs would have
+   gone wrong if this were the case. Maybe it only applies across sections. *)
+(* Forward label references are illegal in gas. Just put them in for all
+   assemblers, they won't harm. *)
+(*= List.iter
       (fun (section : Asm_section.t) ->
         match section with
         | Text | Data | Read_only_data | Eight_byte_literals
@@ -696,14 +695,12 @@ let initialize ~big_endian ~(emit : Directive.t -> unit) =
           (* if Clflags.debug_thing Debug_dwarf_functions && dwarf_supported ()
              then switch_to_section section *)
           ())
-      (Asm_section.all_sections_in_order ()));
-  (* Stop dsymutil complaining about empty __debug_line sections (produces bogus
-     error "line table parameters mismatch") by making sure such sections are
-     never empty. *)
-  file ~file_num:1 ~file_name:"none" ();
-  (* also PR#7037 *)
-  loc ~file_num:1 ~line:1 ~col:1;
-  switch_to_section Asm_section.Text
+      (Asm_section.all_sections_in_order ()) *)
+(* Stop dsymutil complaining about empty __debug_line sections (produces bogus
+   error "line table parameters mismatch") by making sure such sections are
+   never empty. *)
+(* file ~file_num:1 ~file_name:"none" (); (* also PR#7037 *) loc ~file_num:1
+   ~line:1 ~col:1; switch_to_section Asm_section.Text *)
 
 let file ~file_num ~file_name = file ~file_num ~file_name ()
 
