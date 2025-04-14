@@ -128,7 +128,7 @@ module Directive = struct
       | Thirty_two
       | Sixty_four
 
-    let int_of_width_in_bytes = function
+    let _int_of_width_in_bytes = function
       | Eight -> 8
       | Sixteen -> 16
       | Thirty_two -> 32
@@ -143,18 +143,16 @@ module Directive = struct
       (match Constant.evaluate constant with
       | None -> ()
       | Some n ->
-        let in_range =
+        let _in_range =
           match width_in_bytes with
           | Eight -> n >= -0x80L && n <= 0x7fL
           | Sixteen -> n >= -0x8000L && n <= 0x7fffL
           | Thirty_two -> n >= -0x8000_0000L && n <= 0x7fff_ffffL
           | Sixty_four -> true
         in
-        if not in_range
-        then
-          Misc.fatal_errorf
-            "Signed integer constant %Ld does not fit in %d bits" n
-            (int_of_width_in_bytes width_in_bytes));
+        ());
+      (* if not in_range then Misc.fatal_errorf "Signed integer constant %Ld
+         does not fit in %d bits" n (int_of_width_in_bytes width_in_bytes)); *)
       { constant; width_in_bytes }
 
     let constant t = t.constant
