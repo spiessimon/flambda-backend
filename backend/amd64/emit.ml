@@ -683,6 +683,8 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
         match typ_ with
         | "@function" -> FUNC
         | "@object" -> OBJECT
+        | "STT_OBJECT" -> OBJECT
+        | "STT_FUNC" -> FUNC
         | _ -> Misc.fatal_error "Unsupported type"
       in
       emit_directive (Type (sym, typ_))
