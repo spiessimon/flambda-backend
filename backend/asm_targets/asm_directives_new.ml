@@ -351,13 +351,15 @@ module Directive = struct
         (string_of_string_literal filename)
     | Indirect_symbol s -> bprintf buf "\t.indirect_symbol %s" s
     | Loc { file_num; line; col; discriminator } ->
-      let print_col buf col = if col >= 0 then bprintf buf "\t%d" col else () in
+      (* PR#7726: Location.none uses column -1, breaks LLVM assembler *)
+      (* If we don't set the optional column field, debug_line program gets the
+      column value from the previous .loc directive. *)
+      let print_col buf col = if col >= 0 then bprintf buf "\t%d" col else bprintf buf "\t0" in
       let print_discriminator buf dis =
         match dis with
         | None -> ()
         | Some dis -> bprintf buf "\tdiscriminator %d" dis
       in
-      (* PR#7726: Location.none uses column -1, breaks LLVM assembler *)
       bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col
         print_discriminator discriminator
     | Private_extern s -> bprintf buf "\t.private_extern %s" s
