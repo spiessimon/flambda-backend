@@ -2303,6 +2303,66 @@ let reset_all () =
   float_constants := [];
   all_functions := []
 
+
+
+  module ND = Asm_targets.Asm_directives_new
+
+
+  let rec to_x86_constant (c: ND.Directive.Constant.t) : constant =
+    match c with
+    | Signed_int i -> Const i
+    (* CR sspies: Is this cast safe? Seems to be just the identity. *)
+    | Unsigned_int i -> Const (Numbers.Uint64.to_int64 i)
+    | This -> ConstThis
+    | Named_thing s -> ConstLabel s (* both seem to be printed directly to the buffer without any conversion*)
+    | Add (c1, c2) -> ConstAdd (to_x86_constant c1, to_x86_constant c2)
+    | Sub (c1, c2) -> ConstSub (to_x86_constant c1, to_x86_constant c2)
+
+
+  let to_x86_constant_with_width (c: ND.Directive.Constant_with_width.t) : asm_line =
+    let width = ND.Directive.Constant_with_width.width_in_bytes c in
+    let const = ND.Directive.Constant_with_width.constant c in
+    let const = to_x86_constant const in
+    match width with
+    | Eight -> Byte const
+    | Sixteen -> Short const
+    | Thirty_two -> Long const
+    | Sixty_four -> Quad const
+
+  let to_x86_directive (dir: ND.Directive.t) : asm_line =
+    match dir with
+    | Align { bytes } -> Align (false, bytes) (* The data field is currently ignored by both assembler backends. The bytes field is only converted to the final value when printing. *)
+    | Bytes { str; comment } -> Bytes str (* We are dropping the comment here. The bytes directive never uses comments on x86.*)
+    | Comment s -> Comment s
+    | Const { constant; comment } -> to_x86_constant_with_width constant
+      (* We are dropping the comment here. The constant directives never use comments on x86. *)
+    | Direct_assignment (s, c) -> Direct_assignment (s, to_x86_constant c)
+    | File { file_num = None; filename } -> Misc.fatal_error "file directive must always carry a number on x86"
+    | File { file_num = Some file_num; filename } -> File (file_num, filename)
+    | Global s -> Global s
+    | Indirect_symbol s -> Indirect_symbol s
+    | Loc { file_num; line; col } ->
+      (* Behavior differs for negative column values. x86 will not output anything, but new directives will output 0. *)
+      Loc { file_num; line; col; discriminator = None }
+    | New_label (s, _typ) -> NewLabel (s, NONE) (* typ is ignored on x86 and in the new directives*)
+    | New_line -> NewLine
+    | Private_extern s -> Private_extern s
+    | Section { names; flags; args } -> Section (names, flags, args, false) (* delayed for this directive is always ignored in GAS printing, and section is not supported in binary emitter. In MASM, it only supports .text and .data. *)
+
+    | Size (s, c) -> Size (s, to_x86_constant c)
+    | Sleb128 { constant; comment } -> Sleb128 (to_x86_constant constant) (* We are dropping the comment here. The sleb128 directive never uses comments on x86.*)
+    | Space { bytes } -> Space bytes
+    | Type _ -> Misc.fatal_error "The type directive is not yet implemented for the new x86 assembler"
+    | Uleb128 { constant; comment } -> Uleb128 (to_x86_constant constant) (* We are dropping the comment here. The uleb128 directive never uses comments on x86.*)
+
+    | Cfi_adjust_cfa_offset n -> Cfi_adjust_cfa_offset n
+    | Cfi_def_cfa_offset n -> Cfi_def_cfa_offset n
+    | Cfi_endproc -> Cfi_endproc
+    | Cfi_offset { reg; offset } -> Cfi_offset (reg, offset)
+    | Cfi_startproc -> Cfi_startproc
+
+
+
 let begin_assembly unix =
   reset_all ();
 
@@ -2658,6 +2718,8 @@ let emit_probe_notes () =
   match !probes with
   | [] -> ()
   | _ -> emit_probe_notes0 ()
+
+
 
 let emit_trap_notes () =
   (* Don't emit trap notes on windows and macos systems *)

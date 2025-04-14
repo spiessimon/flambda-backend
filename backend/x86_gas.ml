@@ -469,7 +469,10 @@ let print_line b = function
       (match system with
       | S_solaris -> bprintf b "\t.value\t%a" cst n
       | _ -> bprintf b "\t.word\t%a" cst n)
-
+  | Short n ->
+    (match system with
+    | S_solaris -> bprintf b "\t.value\t%a" cst n
+    | _ -> bprintf b "\t.short\t%a" cst n)
   | Uleb128 n -> bprintf b "\t.uleb128\t%a" cst n
   | Sleb128 n -> bprintf b "\t.sleb128\t%a" cst n
 
@@ -481,6 +484,7 @@ let print_line b = function
   | Cfi_restore_state -> bprintf b "\t.cfi_restore_state"
   | Cfi_def_cfa_register reg -> bprintf b "\t.cfi_def_cfa_register %%%s" reg
   | Cfi_def_cfa_offset n -> bprintf b "\t.cfi_def_cfa_offset %d" n
+  | Cfi_offset (reg, n) -> bprintf b "\t.cfi_offset %d, %d" reg n
   | File (file_num, file_name) ->
       bprintf b "\t.file\t%d\t\"%s\""
         file_num (X86_proc.string_of_string_literal file_name)

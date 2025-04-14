@@ -267,8 +267,9 @@ val offset_into_dwarf_section_symbol :
   unit
 
 module Directive : sig
+  (* CR sspies: Make this private again. *)
   module Constant : sig
-    type t = private
+    type t =
       | Signed_int of Int64.t
       | Unsigned_int of Numbers.Uint64.t
       | This
@@ -302,14 +303,17 @@ module Directive : sig
     | Code
     | Machine_width_data
 
-  type comment = private string
+  (* CR sspies: Make this private again. *)
+  type comment = string
+
+  (* CR sspies: Make this private again. *)
 
   (** Internal representation of directives.  Only needed if writing a custom
       assembler or printer instead of using [print], below.
       Symbols that occur in values of type [t] are encoded as [string]s and
       have had all necessary prefixing, mangling, escaping and suffixing
       applied. *)
-  type t = private
+  type t =
     | Align of { bytes : int }
     | Bytes of
         { str : string;

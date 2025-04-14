@@ -2158,6 +2158,10 @@ let assemble_line b loc ins =
     | Word cst ->
         record_local_reloc b (RelocConstant (cst, B16));
         buf_int16L b 0L
+    | Short (Const n) -> buf_int16L b n
+    | Short cst ->
+        record_local_reloc b (RelocConstant (cst, B16));
+        buf_int16L b 0L
     | Byte (Const n) -> buf_int8L b n
     | Byte cst ->
         record_local_reloc b (RelocConstant (cst, B8));
@@ -2176,6 +2180,7 @@ let assemble_line b loc ins =
     | Cfi_restore_state -> ()
     | Cfi_def_cfa_register _ -> ()
     | Cfi_def_cfa_offset _ -> ()
+    | Cfi_offset _ -> ()
     | File _ -> ()
     | Loc _ -> ()
     | Private_extern _ -> assert false

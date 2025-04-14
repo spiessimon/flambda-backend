@@ -424,6 +424,7 @@ let print_line b = function
   | Section _ -> assert false
   | Space n -> bprintf b "\tBYTE\t%d DUP (?)" n
   | Word n -> bprintf b "\tWORD\t%a" cst n
+  | Short n -> bprintf b "\tWORD\t%a" cst n
   | Sleb128 _ | Uleb128 _ ->
     Misc.fatal_error "Sleb128 and Uleb128 unsupported for MASM"
 
@@ -440,6 +441,7 @@ let print_line b = function
   | Cfi_def_cfa_offset _
   | Cfi_remember_state
   | Cfi_restore_state
+  | Cfi_offset _
   | File _
   | Indirect_symbol _
   | Loc _
