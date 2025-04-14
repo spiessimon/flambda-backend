@@ -2362,6 +2362,7 @@ let reset_all () =
     | Cfi_endproc -> Cfi_endproc
     | Cfi_offset { reg; offset } -> Cfi_offset (reg, offset)
     | Cfi_startproc -> Cfi_startproc
+    | Protected s -> Protected s
 
 
 

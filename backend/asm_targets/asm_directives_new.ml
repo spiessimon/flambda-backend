@@ -52,6 +52,14 @@ let big_endian () =
 
 let bprintf = Printf.bprintf
 
+type symbol_type =
+  | FUNC
+  | GNU_IFUNC
+  | OBJECT
+  | TLS
+  | COMMON
+  | NOTYPE
+
 module Directive = struct
   module Constant = struct
     type t =
@@ -189,7 +197,8 @@ module Directive = struct
     | Loc of
         { file_num : int;
           line : int;
-          col : int
+          col : int;
+          discriminator : int option
         }
     | New_label of string * thing_after_label
     | New_line
@@ -205,11 +214,12 @@ module Directive = struct
           comment : string option
         }
     | Space of { bytes : int }
-    | Type of string * string
+    | Type of string * symbol_type
     | Uleb128 of
         { constant : Constant.t;
           comment : string option
         }
+    | Protected of string
 
   let bprintf = Printf.bprintf
 
@@ -249,6 +259,25 @@ module Directive = struct
       incr pos;
       if !pos >= 16 then pos := 0
     done
+
+  (* CR sspies: This code is based on [emit_string_directive] in [emitaux.ml].
+     We break up the string into smaller chunks. *)
+  let print_ascii_string_gas buf s =
+    let l = String.length s in
+    if l = 0
+    then ()
+    else
+      (* We first print the string 80 characters at a time. *)
+      let i = ref 0 in
+      while l - !i > 80 do
+        bprintf buf "\t.ascii\t\"%s\"\n"
+          (string_of_string_literal (String.sub s !i 80));
+        i := !i + 80
+      done;
+      (* Then we print the remainder. We do not append a new line, because every
+         directive ends with a new line. *)
+      bprintf buf "\t.ascii\t\"%s\""
+        (string_of_string_literal (String.sub s !i (l - !i)))
 
   let print_gas buf t =
     let gas_comment_opt comment_opt =
@@ -291,7 +320,7 @@ module Directive = struct
     | Bytes { str; comment } ->
       (match TS.system (), TS.architecture () with
       | Solaris, _ | _, POWER -> buf_bytes_directive buf ~directive:".byte" str
-      | _ -> bprintf buf "\t.ascii\t\"%s\"" (string_of_string_literal str));
+      | _ -> print_ascii_string_gas buf str);
       bprintf buf "%s" (gas_comment_opt comment)
     | Comment s -> bprintf buf "\t\t\t/* %s */" s
     | Global s -> bprintf buf "\t.globl\t%s" s
@@ -321,11 +350,20 @@ module Directive = struct
       bprintf buf "\t.file\t%d\t\"%s\"" file_num
         (string_of_string_literal filename)
     | Indirect_symbol s -> bprintf buf "\t.indirect_symbol %s" s
-    | Loc { file_num; line; col } ->
+    | Loc { file_num; line; col; discriminator } ->
       (* PR#7726: Location.none uses column -1, breaks LLVM assembler *)
-      if col >= 0
-      then bprintf buf "\t.loc\t%d\t%d\t%d" file_num line col
-      else bprintf buf "\t.loc\t%d\t%d" file_num line
+      (* If we don't set the optional column field, debug_line program gets the
+         column value from the previous .loc directive. *)
+      let print_col buf col =
+        if col >= 0 then bprintf buf "\t%d" col else bprintf buf "\t0"
+      in
+      let print_discriminator buf dis =
+        match dis with
+        | None -> ()
+        | Some dis -> bprintf buf "\tdiscriminator %d" dis
+      in
+      bprintf buf "\t.loc\t%d\t%d%a%a" file_num line print_col col
+        print_discriminator discriminator
     | Private_extern s -> bprintf buf "\t.private_extern %s" s
     | Size (s, c) -> bprintf buf "\t.size %s,%a" s Constant.print c
     | Sleb128 { constant; comment } ->
@@ -335,6 +373,15 @@ module Directive = struct
       (* We use the "STT" forms when they are supported as they are unambiguous
          across platforms (cf. https://sourceware.org/binutils/docs/as/Type.html
          ). *)
+      let typ =
+        match typ with
+        | FUNC -> "STT_FUNC"
+        | GNU_IFUNC -> "STT_GNU_IFUNC"
+        | OBJECT -> "STT_OBJECT"
+        | TLS -> "STT_TLS"
+        | COMMON -> "STT_COMMON"
+        | NOTYPE -> "STT_NOTYPE"
+      in
       bprintf buf "\t.type %s %s" s typ
     | Uleb128 { constant; comment } ->
       let comment = gas_comment_opt comment in
@@ -345,6 +392,7 @@ module Directive = struct
       | _ ->
         Misc.fatal_error
           "Cannot emit [Direct_assignment] except on macOS-like assemblers")
+    | Protected s -> bprintf buf "\t.protected\t%s" s
 
   let print_masm buf t =
     let unsupported name =
@@ -401,6 +449,7 @@ module Directive = struct
     | Type _ -> unsupported "Type"
     | Uleb128 _ -> unsupported "Uleb128"
     | Direct_assignment _ -> unsupported "Direct_assignment"
+    | Protected _ -> unsupported "Protected"
 
   let print b t =
     match TS.assembler () with
@@ -455,6 +504,10 @@ let section ~names ~flags ~args = emit (Section { names; flags; args })
 
 let align ~bytes = emit (Align { bytes })
 
+(* We turn [balign] it into [align], since we do the correct resolution for
+   align. *)
+let balign ~bytes = emit (Align { bytes })
+
 let should_generate_cfi () =
   (* We generate CFI info even if we're not generating any other debugging
      information. This is in fact necessary on macOS, where it may be expected
@@ -479,7 +532,8 @@ let cfi_startproc () = if should_generate_cfi () then emit Cfi_startproc
 
 let comment text = if !Clflags.keep_asm_file then emit (Comment text)
 
-let loc ~file_num ~line ~col = emit_non_masm (Loc { file_num; line; col })
+let loc ~file_num ~line ~col ?discriminator () =
+  emit_non_masm (Loc { file_num; line; col; discriminator })
 
 let space ~bytes = emit (Space { bytes })
 
@@ -493,13 +547,15 @@ let private_extern symbol = emit (Private_extern (Asm_symbol.encode symbol))
 
 let size symbol cst = emit (Size (Asm_symbol.encode symbol, lower_expr cst))
 
-let type_ symbol ~type_ = emit (Type (Asm_symbol.encode symbol, type_))
+let type_ symbol ~type_ = emit (Type (symbol, type_))
 
 let sleb128 ?comment i =
   emit (Sleb128 { constant = Directive.Constant.Signed_int i; comment })
 
 let uleb128 ?comment i =
   emit (Uleb128 { constant = Directive.Constant.Unsigned_int i; comment })
+
+let protected symbol = emit (Protected (Asm_symbol.encode symbol))
 
 let direct_assignment var cst = emit (Direct_assignment (var, lower_expr cst))
 
@@ -519,7 +575,7 @@ let float32 f =
     if !Clflags.keep_asm_file then Some (Printf.sprintf "%.12f" f) else None
   in
   let f_int32 = Int64.of_int32 (Int32.bits_of_float f) in
-  const ?comment (Signed_int f_int32) Sixty_four
+  const ?comment (Signed_int f_int32) Thirty_two
 
 let float64_core f f_int64 =
   match TS.machine_width () with
@@ -661,7 +717,7 @@ let reset () =
   current_section_ref := None;
   temp_var_counter := 0
 
-let file ?file_num ~file_name () =
+let file ~file_num ~file_name () =
   (* gas can silently emit corrupted line tables if a .file directive contains a
      number but an empty filename. *)
   let file_name =
@@ -709,7 +765,7 @@ let define_data_symbol symbol =
   (* check_symbol_for_definition_in_current_section symbol; *)
   emit (New_label (Asm_symbol.encode symbol, Machine_width_data));
   match TS.assembler (), TS.windows () with
-  | GAS_like, false -> type_ symbol ~type_:"STT_OBJECT"
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:OBJECT
   | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
 (* CR mshinwell: Rename to [define_text_symbol]? *)
@@ -719,7 +775,17 @@ let define_function_symbol symbol =
   (* CR mshinwell: This shouldn't be called "New_label" *)
   emit (New_label (Asm_symbol.encode symbol, Code));
   match TS.assembler (), TS.windows () with
-  | GAS_like, false -> type_ symbol ~type_:"STT_FUNC"
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:FUNC
+  | GAS_like, true | MacOS, _ | MASM, _ -> ()
+
+let type_symbol symbol ~ty =
+  match TS.assembler (), TS.windows () with
+  | GAS_like, false -> type_ (Asm_symbol.encode symbol) ~type_:ty
+  | GAS_like, true | MacOS, _ | MASM, _ -> ()
+
+let type_label label ~ty =
+  match TS.assembler (), TS.windows () with
+  | GAS_like, false -> type_ (Asm_label.encode label) ~type_:ty
   | GAS_like, true | MacOS, _ | MASM, _ -> ()
 
 let symbol ?comment sym = const_machine_width ?comment (Symbol sym)
@@ -852,6 +918,21 @@ let between_this_and_label_offset_32bit ~upper ~offset_upper =
   let offset_upper = Targetint.to_int64 offset_upper in
   let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
   const (force_assembly_time_constant expr) Thirty_two
+
+let between_this_and_label_offset_32bit_expr ~upper ~offset_upper =
+  let upper_section = Asm_label.section upper in
+  (match !current_section_ref with
+  | None -> not_initialized ()
+  | Some this_section ->
+    if not (Asm_section.equal upper_section this_section)
+    then
+      Misc.fatal_errorf
+        "Label %a in section %a is not in the current section %a"
+        Asm_label.print upper Asm_section.print upper_section Asm_section.print
+        this_section);
+  let offset_upper = Targetint.to_int64 offset_upper in
+  let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
+  const expr Thirty_two
 
 let const_with_width ~width constant =
   match width with
