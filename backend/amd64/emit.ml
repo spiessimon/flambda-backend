@@ -95,7 +95,15 @@ let to_x86_directive (dir: ND.Directive.t) : asm_line =
   | Size (s, c) -> Size (s, to_x86_constant c)
   | Sleb128 { constant; comment } -> Sleb128 (to_x86_constant constant) (* We are dropping the comment here. The sleb128 directive never uses comments on x86.*)
   | Space { bytes } -> Space bytes
-  | Type _ -> Misc.fatal_error "The type directive is not yet implemented for the new x86 assembler"
+  | Type (n, st) ->
+    let typ = match st with
+    | FUNC -> "STT_FUNC"
+    | GNU_IFUNC -> "STT_GNU_IFUNC"
+    | OBJECT -> "STT_OBJECT"
+    | TLS -> "STT_TLS"
+    | COMMON -> "STT_COMMON"
+    | NOTYPE -> "STT_NOTYPE" in
+    Type (n, typ)
   | Uleb128 { constant; comment } -> Uleb128 (to_x86_constant constant) (* We are dropping the comment here. The uleb128 directive never uses comments on x86.*)
 
   | Cfi_adjust_cfa_offset n -> Cfi_adjust_cfa_offset n
