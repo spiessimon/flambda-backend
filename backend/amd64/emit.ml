@@ -84,9 +84,9 @@ let to_x86_directive (dir: ND.Directive.t) : asm_line =
   | File { file_num = Some file_num; filename } -> File (file_num, filename)
   | Global s -> Global s
   | Indirect_symbol s -> Indirect_symbol s
-  | Loc { file_num; line; col } ->
+  | Loc { file_num; line; col; discriminator } ->
     (* Behavior differs for negative column values. x86 will not output anything, but new directives will output 0. *)
-    Loc { file_num; line; col; discriminator = None }
+    Loc { file_num; line; col; discriminator }
   | New_label (s, _typ) -> NewLabel (s, NONE) (* typ is ignored on x86 and in the new directives*)
   | New_line -> NewLine
   | Private_extern s -> Private_extern s
