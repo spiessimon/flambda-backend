@@ -15,6 +15,7 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 open Asm_targets
+module A = Asm_directives_new
 
 type t =
   { name : Asm_label.t;
@@ -52,7 +53,6 @@ let compare_increasing_vma t1 t2 =
   | _ -> failwith "Range_list.compare on empty range list(s)"
 
 let emit ~asm_directives t =
-  let module A = (val asm_directives : Asm_directives.S) in
   A.new_line ();
   A.comment "Range list:";
   A.define_label t.name;

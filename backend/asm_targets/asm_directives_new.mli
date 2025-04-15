@@ -207,6 +207,10 @@ val define_label : Asm_label.t -> unit
 (** Emit a machine-width reference to the given label. *)
 val label : ?comment:string -> Asm_label.t -> unit
 
+(** Emit a machine-width reference to the given label plus an offset. *)
+val label_plus_offset :
+  ?comment:string -> Asm_label.t -> offset_in_bytes:Targetint.t -> unit
+
 type symbol_type =
   | FUNC
   | GNU_IFUNC
@@ -290,7 +294,16 @@ val offset_into_dwarf_section_symbol :
   ?comment:string ->
   Asm_section.dwarf_section ->
   Asm_symbol.t ->
-  width:Target_system.machine_width ->
+  width:Dwarf_flags.dwarf_format ->
+  unit
+
+val between_labels_64_bit_with_offsets :
+  ?comment:string ->
+  upper:Asm_label.t ->
+  upper_offset:Targetint.t ->
+  lower:Asm_label.t ->
+  lower_offset:Targetint.t ->
+  unit ->
   unit
 
 module Directive : sig

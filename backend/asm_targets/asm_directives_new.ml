@@ -618,6 +618,11 @@ let size ?size_of symbol =
 
 let label ?comment label = const_machine_width ?comment (Label label)
 
+let label_plus_offset ?comment lab ~offset_in_bytes =
+  let offset_in_bytes = Targetint.to_int64 offset_in_bytes in
+  let lab = const_label lab in
+  const_machine_width ?comment (const_add lab (const_int64 offset_in_bytes))
+
 let define_label label =
   let lbl_section = Asm_label.section label in
   let this_section =
@@ -969,7 +974,7 @@ let offset_into_dwarf_section_label ?comment:_comment ~width section upper =
   const_with_width ~width expr
 
 let offset_into_dwarf_section_symbol ?comment section upper
-    ~(width : TS.machine_width) =
+    ~(width : Dwarf_flags.dwarf_format) =
   (* CR sspies: add check test that the upper section is DWARF section*)
   (* The macOS assembler doesn't seem to allow "distance to undefined symbol
      from start of given section". As such we do not allow this function to be
@@ -1002,3 +1007,15 @@ let offset_into_dwarf_section_symbol ?comment section upper
              (Asm_section.to_string (DWARF section)))
   in
   const ?comment expr width
+
+let between_labels_64_bit_with_offsets ?comment:_comment ~upper ~upper_offset
+    ~lower ~lower_offset () =
+  Option.iter comment _comment;
+  let upper_offset = Targetint.to_int64 upper_offset in
+  let lower_offset = Targetint.to_int64 lower_offset in
+  let expr =
+    const_sub
+      (const_add (const_label upper) (const_int64 upper_offset))
+      (const_add (const_label lower) (const_int64 lower_offset))
+  in
+  const_machine_width (force_assembly_time_constant expr)

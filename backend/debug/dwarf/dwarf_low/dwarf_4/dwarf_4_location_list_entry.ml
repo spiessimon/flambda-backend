@@ -15,6 +15,7 @@
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
 open Asm_targets
+module A = Asm_directives_new
 
 module Location_list_entry = struct
   type t =
@@ -77,7 +78,6 @@ module Location_list_entry = struct
     + Single_location_description.size t.expr
 
   let emit ~asm_directives t =
-    let module A = (val asm_directives : Asm_directives.S) in
     Dwarf_value.emit ~asm_directives (beginning_value t);
     Dwarf_value.emit ~asm_directives (ending_value t);
     A.int16 ~comment:"expression size" (expr_size t);
@@ -129,7 +129,6 @@ let size = function
     Base_address_selection_entry.size entry
 
 let emit ~asm_directives t =
-  let module A = (val asm_directives : Asm_directives.S) in
   match t with
   | Location_list_entry entry ->
     A.new_line ();
