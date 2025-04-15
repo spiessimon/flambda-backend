@@ -68,7 +68,8 @@ let to_x86_constant_with_width (c: ND.Directive.Constant_with_width.t) : asm_lin
   let const = to_x86_constant const in
   match width with
   | Eight -> Byte const
-  | Sixteen -> Short const
+  (* on x86 Word is 2 bytes; warning this is not the same on Arm *)
+  | Sixteen -> Word const
   | Thirty_two -> Long const
   | Sixty_four -> Quad const
 

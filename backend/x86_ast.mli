@@ -431,7 +431,6 @@ type asm_line =
   | Space of int
   | Uleb128 of constant
   | Word of constant
-  | Short of constant
 
   (* masm only (the gas emitter will fail on them) *)
   | External of string * data_type

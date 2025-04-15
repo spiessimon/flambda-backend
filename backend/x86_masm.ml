@@ -424,7 +424,6 @@ let print_line b = function
   | Section _ -> assert false
   | Space n -> bprintf b "\tBYTE\t%d DUP (?)" n
   | Word n -> bprintf b "\tWORD\t%a" cst n
-  | Short n -> bprintf b "\tWORD\t%a" cst n
   | Sleb128 _ | Uleb128 _ ->
     Misc.fatal_error "Sleb128 and Uleb128 unsupported for MASM"
 

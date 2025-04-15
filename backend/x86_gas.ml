@@ -469,10 +469,6 @@ let print_line b = function
       (match system with
       | S_solaris -> bprintf b "\t.value\t%a" cst n
       | _ -> bprintf b "\t.word\t%a" cst n)
-  | Short n ->
-    (match system with
-    | S_solaris -> bprintf b "\t.value\t%a" cst n
-    | _ -> bprintf b "\t.short\t%a" cst n)
   | Uleb128 n -> bprintf b "\t.uleb128\t%a" cst n
   | Sleb128 n -> bprintf b "\t.sleb128\t%a" cst n
 
