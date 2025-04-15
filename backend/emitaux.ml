@@ -569,7 +569,7 @@ module Dwarf_helpers = struct
       let code_end = Asm_targets.Asm_symbol.create code_end in
       dwarf
         := Some
-             (Dwarf.create ~sourcefile ~unit_name ~asm_directives
+             (Dwarf.create ~sourcefile ~unit_name
                 ~get_file_id:(get_file_num ~file_emitter)
                 ~code_begin ~code_end)
 

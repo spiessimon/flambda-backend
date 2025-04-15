@@ -101,7 +101,7 @@ let width_as_int64 () =
 let size t =
   match t with Thirty_two _ -> Thirty_two 4l | Sixty_four _ -> Sixty_four 8L
 
-let emit ~asm_directives:_ ?comment t =
+let emit ?comment t =
   match t with
   | Thirty_two i -> A.int32 ?comment i
   | Sixty_four i -> A.int64 ?comment i

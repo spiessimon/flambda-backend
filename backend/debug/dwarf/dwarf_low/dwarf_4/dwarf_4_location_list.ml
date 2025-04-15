@@ -54,14 +54,12 @@ let compare_increasing_vma t1 t2 =
     Dwarf_4_location_list_entry.compare_ascending_vma t1_entry t2_entry
   | _ -> failwith "Location_list.compare on empty location list(s)"
 
-let emit ~asm_directives t =
+let emit t =
   A.new_line ();
   A.comment "Location list:";
   A.define_label t.name;
-  List.iter
-    (fun entry -> Dwarf_4_location_list_entry.emit ~asm_directives entry)
-    t.entries;
+  List.iter (fun entry -> Dwarf_4_location_list_entry.emit entry) t.entries;
   (* DWARF-4 spec, section 2.6.2. *)
   let end_marker = end_marker () in
-  Dwarf_value.emit ~asm_directives end_marker;
-  Dwarf_value.emit ~asm_directives end_marker
+  Dwarf_value.emit end_marker;
+  Dwarf_value.emit end_marker

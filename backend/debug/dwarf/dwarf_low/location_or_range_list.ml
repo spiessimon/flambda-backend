@@ -32,8 +32,8 @@ module Make (Entry : Location_or_range_list_entry.S) = struct
       (fun size entry -> Dwarf_int.add size (Entry.size entry))
       (Dwarf_int.zero ()) t
 
-  let emit ~asm_directives t =
+  let emit t =
     A.comment "Start of list:";
     A.new_line ();
-    List.iter (fun entry -> Entry.emit ~asm_directives entry) (List.rev t)
+    List.iter (fun entry -> Entry.emit entry) (List.rev t)
 end
