@@ -98,7 +98,8 @@ let to_x86_directive (dir: ND.Directive.t) : asm_line list =
   | Section { names; flags; args } -> [Section (names, flags, args, false)] (* delayed for this directive is always ignored in GAS printing, and section is not supported in binary emitter. In MASM, it only supports .text and .data. *)
 
   | Size (s, c) -> [Size (s, to_x86_constant c)]
-  | Sleb128 { constant; comment } -> [Sleb128 (to_x86_constant constant)] (* We are dropping the comment here. The sleb128 directive never uses comments on x86.*)
+  | Sleb128 { constant; comment } ->
+    comment_lines comment @ [Sleb128 (to_x86_constant constant)]
   | Space { bytes } -> [Space bytes]
   | Type (n, st) ->
     let typ = match st with
@@ -109,7 +110,8 @@ let to_x86_directive (dir: ND.Directive.t) : asm_line list =
     | COMMON -> "STT_COMMON"
     | NOTYPE -> "STT_NOTYPE" in
     [Type (n, typ)]
-  | Uleb128 { constant; comment } -> [Uleb128 (to_x86_constant constant)] (* We are dropping the comment here. The uleb128 directive never uses comments on x86.*)
+  | Uleb128 { constant; comment } ->
+    comment_lines comment @ [Uleb128 (to_x86_constant constant)]
 
   | Cfi_adjust_cfa_offset n -> [Cfi_adjust_cfa_offset n]
   | Cfi_def_cfa_offset n -> [Cfi_def_cfa_offset n]
