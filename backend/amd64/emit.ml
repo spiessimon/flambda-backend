@@ -73,29 +73,33 @@ let to_x86_constant_with_width (c: ND.Directive.Constant_with_width.t) : asm_lin
   | Thirty_two -> Long const
   | Sixty_four -> Quad const
 
-let to_x86_directive (dir: ND.Directive.t) : asm_line =
+let to_x86_directive (dir: ND.Directive.t) : asm_line list =
+  let comment_lines comment = Option.to_list (Option.map (fun s -> Comment s) comment) in
   match dir with
-  | Align { bytes } -> Align (false, bytes) (* The data field is currently ignored by both assembler backends. The bytes field is only converted to the final value when printing. *)
-  | Bytes { str; comment } -> Bytes str (* We are dropping the comment here. The bytes directive never uses comments on x86.*)
-  | Comment s -> Comment s
-  | Const { constant; comment } -> to_x86_constant_with_width constant
-    (* We are dropping the comment here. The constant directives never use comments on x86. *)
-  | Direct_assignment (s, c) -> Direct_assignment (s, to_x86_constant c)
+  | Align { bytes } -> [Align (false, bytes)] (* The data field is currently ignored by both assembler backends. The bytes field is only converted to the final value when printing. *)
+  | Bytes { str; comment } ->
+    comment_lines comment @ [Bytes str]
+  | Comment s -> [Comment s]
+  | Const { constant; comment } ->
+    comment_lines comment @ [to_x86_constant_with_width constant]
+  | Direct_assignment (s, c) ->
+    [Direct_assignment (s, to_x86_constant c)]
   | File { file_num = None; filename } -> Misc.fatal_error "file directive must always carry a number on x86"
-  | File { file_num = Some file_num; filename } -> File (file_num, filename)
-  | Global s -> Global s
-  | Indirect_symbol s -> Indirect_symbol s
+  | File { file_num = Some file_num; filename } -> [File (file_num, filename)]
+  | Global s -> [Global s]
+  | Indirect_symbol s -> [Indirect_symbol s]
   | Loc { file_num; line; col; discriminator } ->
     (* Behavior differs for negative column values. x86 will not output anything, but new directives will output 0. *)
-    Loc { file_num; line; col; discriminator }
-  | New_label (s, _typ) -> NewLabel (s, NONE) (* typ is ignored on x86 and in the new directives*)
-  | New_line -> NewLine
-  | Private_extern s -> Private_extern s
-  | Section { names; flags; args } -> Section (names, flags, args, false) (* delayed for this directive is always ignored in GAS printing, and section is not supported in binary emitter. In MASM, it only supports .text and .data. *)
+    [Loc { file_num; line; col; discriminator }]
+  | New_label (s, _typ) ->
+    [NewLabel (s, NONE)] (* typ is ignored on x86 and in the new directives*)
+  | New_line -> [NewLine]
+  | Private_extern s -> [Private_extern s]
+  | Section { names; flags; args } -> [Section (names, flags, args, false)] (* delayed for this directive is always ignored in GAS printing, and section is not supported in binary emitter. In MASM, it only supports .text and .data. *)
 
-  | Size (s, c) -> Size (s, to_x86_constant c)
-  | Sleb128 { constant; comment } -> Sleb128 (to_x86_constant constant) (* We are dropping the comment here. The sleb128 directive never uses comments on x86.*)
-  | Space { bytes } -> Space bytes
+  | Size (s, c) -> [Size (s, to_x86_constant c)]
+  | Sleb128 { constant; comment } -> [Sleb128 (to_x86_constant constant)] (* We are dropping the comment here. The sleb128 directive never uses comments on x86.*)
+  | Space { bytes } -> [Space bytes]
   | Type (n, st) ->
     let typ = match st with
     | FUNC -> "STT_FUNC"
@@ -104,15 +108,15 @@ let to_x86_directive (dir: ND.Directive.t) : asm_line =
     | TLS -> "STT_TLS"
     | COMMON -> "STT_COMMON"
     | NOTYPE -> "STT_NOTYPE" in
-    Type (n, typ)
-  | Uleb128 { constant; comment } -> Uleb128 (to_x86_constant constant) (* We are dropping the comment here. The uleb128 directive never uses comments on x86.*)
+    [Type (n, typ)]
+  | Uleb128 { constant; comment } -> [Uleb128 (to_x86_constant constant)] (* We are dropping the comment here. The uleb128 directive never uses comments on x86.*)
 
-  | Cfi_adjust_cfa_offset n -> Cfi_adjust_cfa_offset n
-  | Cfi_def_cfa_offset n -> Cfi_def_cfa_offset n
-  | Cfi_endproc -> Cfi_endproc
-  | Cfi_offset { reg; offset } -> Cfi_offset (reg, offset)
-  | Cfi_startproc -> Cfi_startproc
-  | Protected s -> Protected s
+  | Cfi_adjust_cfa_offset n -> [Cfi_adjust_cfa_offset n]
+  | Cfi_def_cfa_offset n -> [Cfi_def_cfa_offset n]
+  | Cfi_endproc -> [Cfi_endproc]
+  | Cfi_offset { reg; offset } -> [Cfi_offset (reg, offset)]
+  | Cfi_startproc -> [Cfi_startproc]
+  | Protected s -> [Protected s]
 
 
 
@@ -643,7 +647,7 @@ let build_asm_directives () : (module Asm_targets.Asm_directives_intf.S) =
       abstractions. This is intensional at the moment, because this is only
       the first step of getting rid of the first-class module entirely. *)
     let emit_directive d =
-      directive (to_x86_directive d)
+      List.iter directive (to_x86_directive d)
 
     type data_type =
       | NONE
@@ -2446,7 +2450,7 @@ let begin_assembly unix =
   Asm_targets.Asm_label.initialize ~new_label:(fun () -> Cmm.new_label () |> Label.to_int);
   ND.initialize ~big_endian:Arch.big_endian
   (* As a first step, we emit by calling the corresponding x86 emit directives. *)
-  ~emit: (fun d -> directive (to_x86_directive d));
+  ~emit: (fun d -> List.iter directive (to_x86_directive d));
 
   if !Flambda_backend_flags.internal_assembler &&
      !Emitaux.binary_backend_available then
