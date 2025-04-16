@@ -2454,7 +2454,7 @@ let begin_assembly unix =
 
   let code_begin = Cmm_helpers.make_symbol "code_begin" in
   let code_end = Cmm_helpers.make_symbol "code_end" in
-  Emitaux.Dwarf_helpers.begin_dwarf ~build_asm_directives ~code_begin ~code_end
+  Emitaux.Dwarf_helpers.begin_dwarf ~code_begin ~code_end
     ~file_emitter:D.file;
 
   if is_win64 system then begin

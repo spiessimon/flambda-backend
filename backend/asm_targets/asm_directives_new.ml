@@ -645,7 +645,7 @@ let new_line () = if !Clflags.keep_asm_file then emit New_line
 
 let sections_seen = ref []
 
-let switch_to_section section =
+let switch_to_section ?(emit_label_for_first_occurrence = false) section =
   let first_occurrence =
     if List.mem section !sections_seen
     then false
@@ -662,10 +662,9 @@ let switch_to_section section =
     Asm_section.flags section ~first_occurrence
   in
   (* if not first_occurrence then new_line (); *)
-  emit (Section { names; flags; args })
-(* CR sspies: For better backwards compatibility, we **do not** emit a label at
-   the moment. This will need to change for debugging. *)
-(* if first_occurrence then define_label (Asm_label.for_section section) *)
+  emit (Section { names; flags; args });
+  if first_occurrence && emit_label_for_first_occurrence
+  then define_label (Asm_label.for_section section)
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })
@@ -734,32 +733,25 @@ let file ~file_num ~file_name () =
 let initialize ~big_endian ~(emit : Directive.t -> unit) =
   big_endian_ref := Some big_endian;
   emit_ref := Some emit;
-  reset ();
-  match TS.assembler () with MASM | MacOS -> () | GAS_like -> ()
-(* CR mshinwell: Is this really the case? Surely some of the DIEs would have
-   gone wrong if this were the case. Maybe it only applies across sections. *)
-(* Forward label references are illegal in gas. Just put them in for all
-   assemblers, they won't harm. *)
-(*= List.iter
-      (fun (section : Asm_section.t) ->
-        match section with
-        | Text | Data | Read_only_data | Eight_byte_literals
-        | Sixteen_byte_literals | Jump_tables ->
-          switch_to_section section
-        | DWARF _ ->
-          (* All of the other settings that require these DWARF sections imply
-             [Debug_dwarf_functions]; see clflags.ml. *)
-          (* CR sspies: enable this again when there is more debugging
-             support. *)
-          (* if Clflags.debug_thing Debug_dwarf_functions && dwarf_supported ()
-             then switch_to_section section *)
-          ())
-      (Asm_section.all_sections_in_order ()) *)
-(* Stop dsymutil complaining about empty __debug_line sections (produces bogus
-   error "line table parameters mismatch") by making sure such sections are
-   never empty. *)
-(* file ~file_num:1 ~file_name:"none" (); (* also PR#7037 *) loc ~file_num:1
-   ~line:1 ~col:1; switch_to_section Asm_section.Text *)
+  reset ()
+
+(* CR sspies: The header code is copied and adjusted from [initialize] of the
+   old asm directives. *)
+let debug_header ~get_file_num () =
+  (* Forward label references are illegal on some assemblers/platforms. To avoid
+     errors, emit the beginning of all dwarf sections in advance. *)
+  (match TS.assembler () with
+  | MASM -> ()
+  | MacOS | GAS_like ->
+    List.iter
+      (switch_to_section ~emit_label_for_first_occurrence:true)
+      (Asm_section.dwarf_sections_in_order ()));
+  (* Stop dsymutil complaining about empty __debug_line sections (produces bogus
+     error "line table parameters mismatch") by making sure such sections are
+     never empty. *)
+  let file_num = get_file_num "none" in
+  loc ~file_num ~line:1 ~col:1 ();
+  text ()
 
 let file ~file_num ~file_name = file ~file_num ~file_name ()
 

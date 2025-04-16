@@ -35,7 +35,8 @@
     DWARF) to places that are currently at the start of these sections
     get relocated correctly when those places become not at the start
     (e.g. during linking). *)
-val switch_to_section : Asm_section.t -> unit
+val switch_to_section :
+  ?emit_label_for_first_occurrence:bool -> Asm_section.t -> unit
 
 (** Emit subsequent directives to the given section, where the section must
     not be one of those in type [section] (see above).  The section is
@@ -424,9 +425,11 @@ end
     [big_endian] should always be [Arch.big_endian].
     Calling the functions in this module will cause directives to be passed
     to the given [emit] function (a typical implementation of which will just
-    call [Directive.print] on its parameter).
-    This function switches to the text section. *)
+    call [Directive.print] on its parameter).*)
 val initialize : big_endian:bool -> emit:(Directive.t -> unit) -> unit
+
+(** Emit a header at the start of the file to make all assemblers happy.*)
+val debug_header : get_file_num:(string -> int) -> unit -> unit
 
 (** Reinitialize the emitter before compiling a different source file. *)
 val reset : unit -> unit
