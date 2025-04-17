@@ -38,7 +38,7 @@ let size t =
       Dwarf_int.add size (Dwarf_4_location_list.size loc_list))
     (Dwarf_int.zero ()) !t
 
-let emit ~asm_directives t =
+let emit t =
   List.iter
-    (fun loc_list -> Dwarf_4_location_list.emit ~asm_directives loc_list)
+    (fun loc_list -> Dwarf_4_location_list.emit loc_list)
     (List.rev !t)

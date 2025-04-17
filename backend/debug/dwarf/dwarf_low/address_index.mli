@@ -16,8 +16,6 @@
 
 [@@@ocaml.warning "+a-4-30-40-41-42"]
 
-open Asm_targets
-
 type t
 
 val zero : t
@@ -29,6 +27,6 @@ include Identifiable.S with type t := t
 val size : t -> Dwarf_int.t
 
 val emit :
-  asm_directives:(module Asm_directives.S) -> ?comment:string -> t -> unit
+  ?comment:string -> t -> unit
 
 module Pair : Identifiable.S with type t = t * t

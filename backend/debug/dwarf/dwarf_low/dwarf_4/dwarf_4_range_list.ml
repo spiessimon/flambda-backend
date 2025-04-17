@@ -53,14 +53,14 @@ let compare_increasing_vma t1 t2 =
     Dwarf_4_range_list_entry.compare_ascending_vma t1_entry t2_entry
   | _ -> failwith "Range_list.compare on empty range list(s)"
 
-let emit ~asm_directives t =
+let emit t =
   A.new_line ();
   A.comment "Range list:";
   A.define_label t.name;
   List.iter
-    (fun entry -> Dwarf_4_range_list_entry.emit ~asm_directives entry)
+    (fun entry -> Dwarf_4_range_list_entry.emit entry)
     t.entries;
   (* DWARF-4 spec, section 2.17.3 (p.39). *)
   let end_marker = end_marker () in
-  Dwarf_value.emit ~asm_directives end_marker;
-  Dwarf_value.emit ~asm_directives end_marker
+  Dwarf_value.emit end_marker;
+  Dwarf_value.emit end_marker

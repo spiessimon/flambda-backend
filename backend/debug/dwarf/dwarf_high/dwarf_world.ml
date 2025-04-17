@@ -17,9 +17,9 @@ open Asm_targets
 open Dwarf_low
 module A = Asm_directives_new
 
-let emit0_delayed ~asm_directives:_ = ()
+let emit0_delayed = ()
 
-let emit0 ~asm_directives ~compilation_unit_proto_die
+let emit0 ~compilation_unit_proto_die
     ~compilation_unit_header_label ~debug_loc_table ~debug_ranges_table
     ~address_table ~location_list_table =
   (* CR-soon mshinwell: the [compilation_unit_die] member of the record returned
@@ -44,11 +44,11 @@ let emit0 ~asm_directives ~compilation_unit_proto_die
     (fun () ->
       A.switch_to_section (DWARF Debug_info);
       Profile.record "debug_info_section"
-        (Debug_info_section.emit ~asm_directives)
+        (Debug_info_section.emit)
         debug_info;
       A.switch_to_section (DWARF Debug_abbrev);
       Profile.record "abbreviations_table"
-        (Abbreviations_table.emit ~asm_directives)
+        (Abbreviations_table.emit)
         assigned_abbrevs.abbrev_table;
       A.switch_to_section (DWARF Debug_str);
       A.emit_cached_strings ();
@@ -56,23 +56,23 @@ let emit0 ~asm_directives ~compilation_unit_proto_die
       | Four ->
         A.switch_to_section (DWARF Debug_loc);
         Profile.record "debug_loc"
-          (Debug_loc_table.emit ~asm_directives)
+          (Debug_loc_table.emit)
           debug_loc_table;
         A.switch_to_section (DWARF Debug_ranges);
         Profile.record "debug_ranges"
-          (Debug_ranges_table.emit ~asm_directives)
+          (Debug_ranges_table.emit)
           debug_ranges_table
       | Five ->
         Profile.record "addr_table"
-          (Address_table.emit ~asm_directives)
+          (Address_table.emit)
           address_table;
         A.switch_to_section (DWARF Debug_loclists);
         Profile.record "loclists_table"
-          (Location_list_table.emit ~asm_directives)
+          (Location_list_table.emit)
           location_list_table)
     ()
 
-let emit ~asm_directives ~compilation_unit_proto_die
+let emit ~compilation_unit_proto_die
     ~compilation_unit_header_label ~debug_loc_table ~debug_ranges_table
     ~address_table ~location_list_table ~basic_block_sections
     ~binary_backend_available =
@@ -82,15 +82,15 @@ let emit ~asm_directives ~compilation_unit_proto_die
      || binary_backend_available
   then ()
   else
-    emit0 ~asm_directives ~compilation_unit_proto_die
+    emit0 ~compilation_unit_proto_die
       ~compilation_unit_header_label ~debug_loc_table ~debug_ranges_table
       ~address_table ~location_list_table
 
-let emit_delayed ~asm_directives ~basic_block_sections ~binary_backend_available
+let emit_delayed ~basic_block_sections ~binary_backend_available
     =
   if (* CR mshinwell: support function sections *)
      !Clflags.function_sections || basic_block_sections
      (* CR mshinwell: support the internal assembler *)
      || binary_backend_available
   then ()
-  else emit0_delayed ~asm_directives
+  else emit0_delayed

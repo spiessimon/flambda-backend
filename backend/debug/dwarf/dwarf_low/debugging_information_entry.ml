@@ -40,7 +40,7 @@ let null =
 
 let create_null () = Lazy.force null
 
-let emit ~asm_directives t =
+let emit t =
   (* The null DIE is likely to be emitted multiple times; we must not emit its
      label multiple times, or the assembler would complain. We don't actually
      need to point at the null DIE from anywhere else, so we elide emission of
@@ -60,8 +60,8 @@ let emit ~asm_directives t =
 
          A.global symbol *));
     A.define_label t.label);
-  Abbreviation_code.emit ~asm_directives t.abbreviation_code;
-  ASS.Map.iter (fun _spec av -> AV.emit ~asm_directives av) t.attribute_values
+  Abbreviation_code.emit t.abbreviation_code;
+  ASS.Map.iter (fun _spec av -> AV.emit av) t.attribute_values
 
 let size t =
   ASS.Map.fold
