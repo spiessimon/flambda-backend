@@ -557,7 +557,7 @@ module Dwarf_helpers = struct
 
   let sourcefile_for_dwarf = ref None
 
-  let begin_dwarf ~build_asm_directives:_ ~code_begin ~code_end ~file_emitter =
+  let begin_dwarf ~code_begin ~code_end ~file_emitter =
     match !sourcefile_for_dwarf with
     | None -> ()
     | Some sourcefile ->
