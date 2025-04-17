@@ -32,8 +32,7 @@ type t =
 (* CR mshinwell: On OS X 10.11 (El Capitan), dwarfdump doesn't seem to be able
    to read our 64-bit DWARF output. *)
 
-let create ~sourcefile ~unit_name ~get_file_id ~code_begin
-    ~code_end =
+let create ~sourcefile ~unit_name ~get_file_id ~code_begin ~code_end =
   (match !Dwarf_flags.gdwarf_format with
   | Thirty_two -> Dwarf_format.set Thirty_two
   | Sixty_four -> Dwarf_format.set Sixty_four);
@@ -65,11 +64,7 @@ let create ~sourcefile ~unit_name ~get_file_id ~code_begin
     (* CR mshinwell: does get_file_id successfully emit .file directives for
        files we haven't seen before? *)
   in
-  { state;
-    emitted = false;
-    emitted_delayed = false;
-    get_file_id
-  }
+  { state; emitted = false; emitted_delayed = false; get_file_id }
 
 type fundecl =
   { fun_end_label : Cmm.label;
@@ -130,8 +125,7 @@ let emit_delayed t ~basic_block_sections ~binary_backend_available =
       "Cannot call [Dwarf.emit_delayed] more than once on a given value of \
        type [Dwarf.t]";
   t.emitted_delayed <- true;
-  Dwarf_world.emit_delayed
-    ~basic_block_sections ~binary_backend_available
+  Dwarf_world.emit_delayed ~basic_block_sections ~binary_backend_available
 
 let emit_delayed t ~basic_block_sections ~binary_backend_available =
   Profile.record "emit_delayed_dwarf"

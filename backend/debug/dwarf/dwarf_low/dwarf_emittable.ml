@@ -16,7 +16,6 @@
 
 open! Int_replace_polymorphic_compare [@@ocaml.warning "-66"]
 
-
 module type S = sig
   type t
 

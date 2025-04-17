@@ -30,6 +30,4 @@ val emit :
   unit
 
 val emit_delayed :
-  basic_block_sections:bool ->
-  binary_backend_available:bool ->
-  unit
+  basic_block_sections:bool -> binary_backend_available:bool -> unit

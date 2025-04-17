@@ -167,13 +167,11 @@ struct
     | Base_addressx addr_index ->
       Address_index.emit ~comment:"base address" addr_index
     | Startx_endx { start_inclusive; end_exclusive; payload } ->
-      Address_index.emit ~comment:"start_inclusive"
-        start_inclusive;
+      Address_index.emit ~comment:"start_inclusive" start_inclusive;
       Address_index.emit ~comment:"end_exclusive" end_exclusive;
       Payload.emit payload
     | Startx_length { start_inclusive; length; payload } ->
-      Address_index.emit ~comment:"start_inclusive"
-        start_inclusive;
+      Address_index.emit ~comment:"start_inclusive" start_inclusive;
       A.targetint ~comment:"length" length;
       Payload.emit payload
     | Offset_pair { start_offset_inclusive; end_offset_exclusive; payload } ->

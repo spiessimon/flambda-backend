@@ -57,9 +57,7 @@ let emit t =
   A.new_line ();
   A.comment "Range list:";
   A.define_label t.name;
-  List.iter
-    (fun entry -> Dwarf_4_range_list_entry.emit entry)
-    t.entries;
+  List.iter (fun entry -> Dwarf_4_range_list_entry.emit entry) t.entries;
   (* DWARF-4 spec, section 2.17.3 (p.39). *)
   let end_marker = end_marker () in
   Dwarf_value.emit end_marker;

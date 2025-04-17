@@ -59,9 +59,7 @@ let emit t =
   A.new_line ();
   A.comment "Location list:";
   A.define_label t.name;
-  List.iter
-    (fun entry -> Dwarf_4_location_list_entry.emit entry)
-    t.entries;
+  List.iter (fun entry -> Dwarf_4_location_list_entry.emit entry) t.entries;
   (* DWARF-4 spec, section 2.6.2. *)
   let end_marker = end_marker () in
   Dwarf_value.emit end_marker;

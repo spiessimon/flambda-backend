@@ -748,8 +748,7 @@ module Emit = Make (struct
 
   let opcode () t =
     let comment = opcode_name t in
-    V.emit
-      (V.uint8 ~comment (Uint8.of_nonnegative_int_exn (opcode t)))
+    V.emit (V.uint8 ~comment (Uint8.of_nonnegative_int_exn (opcode t)))
 
   let value () v = V.emit v
 

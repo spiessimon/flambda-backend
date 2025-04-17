@@ -78,8 +78,7 @@ module Base_address_selection_entry = struct
       (fun acc v -> Dwarf_int.add acc (Dwarf_value.size v))
       (Dwarf_int.zero ()) (to_dwarf_values t)
 
-  let emit t =
-    List.iter (fun v -> Dwarf_value.emit v) (to_dwarf_values t)
+  let emit t = List.iter (fun v -> Dwarf_value.emit v) (to_dwarf_values t)
 end
 
 type t =

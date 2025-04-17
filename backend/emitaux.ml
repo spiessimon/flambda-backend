@@ -561,7 +561,7 @@ module Dwarf_helpers = struct
     match !sourcefile_for_dwarf with
     | None -> ()
     | Some sourcefile ->
-      let get_file_num = (get_file_num ~file_emitter) in
+      let get_file_num = get_file_num ~file_emitter in
       Asm_targets.Asm_directives_new.debug_header ~get_file_num;
       let unit_name =
         (* CR lmaurer: This doesn't actually need to be an [Ident.t] *)
@@ -572,8 +572,7 @@ module Dwarf_helpers = struct
       let code_end = Asm_targets.Asm_symbol.create code_end in
       dwarf
         := Some
-             (Dwarf.create ~sourcefile ~unit_name
-                ~get_file_id:get_file_num
+             (Dwarf.create ~sourcefile ~unit_name ~get_file_id:get_file_num
                 ~code_begin ~code_end)
 
   let reset_dwarf () =

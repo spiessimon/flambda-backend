@@ -103,6 +103,5 @@ let emit t =
   A.uint8 Uint8.zero;
   A.define_label t.base_addr;
   Address_index.Map.iter
-    (fun _index entry ->
-      Dwarf_value.emit (entry_to_dwarf_value entry))
+    (fun _index entry -> Dwarf_value.emit (entry_to_dwarf_value entry))
     t.table
