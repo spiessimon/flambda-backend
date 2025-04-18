@@ -54,10 +54,7 @@ let reg_x8 = phys_reg Int 8 (* x8 *)
 
 let reg_stack_arg_begin = phys_reg Int 17 (* x20 *)
 
-let reg_stack_arg_end = phys_reg Int 18
-(* x21 *)
-
-(* Output a label *)
+let reg_stack_arg_end = phys_reg Int 18 (* x21 *)
 
 (** Turn a Linear label into an assembly label. The section is checked against the
     section tracked by [D] when emitting label definitions. *)
