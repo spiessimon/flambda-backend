@@ -772,9 +772,12 @@ let emit_literals p align emit_literal =
   if not (Misc.Stdlib.List.is_empty !p)
   then (
     if macosx
-    then
-      emit_printf "\t.section __TEXT,__literal%a,%abyte_literals\n" femit_int
-        align femit_int align;
+    then (
+      D.switch_to_section_raw
+        ~names:["__TEXT,__literal" ^ Int.to_string align]
+        ~flags:None
+        ~args:[Int.to_string align ^ "byte_literals"];
+      D.unsafe_set_interal_section_ref Text);
     D.align ~bytes:align;
     List.iter emit_literal !p;
     p := [])
@@ -2237,5 +2240,6 @@ let end_assembly () =
   match Config.system with
   | "linux" ->
     (* Mark stack as non-executable *)
-    emit_printf "\t.section\t.note.GNU-stack,\"\",%%progbits\n"
+    D.switch_to_section_raw ~names:[".note.GNU-stack"] ~flags:(Some "")
+      ~args:["%progbits"]
   | _ -> ()
