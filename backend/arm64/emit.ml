@@ -177,7 +177,7 @@ module DSL : sig
     ?offset:int ->
     ?reloc:Arm64_ast.Symbol.reloc_directive ->
     Reg.t ->
-    label ->
+    L.t ->
     Arm64_ast.Operand.t
 
   val emit_shift : Arm64_ast.Operand.Shift.Kind.t -> int -> Arm64_ast.Operand.t
@@ -188,7 +188,7 @@ module DSL : sig
   val emit_label :
     ?offset:int ->
     ?reloc:Arm64_ast.Symbol.reloc_directive ->
-    label ->
+    L.t ->
     Arm64_ast.Operand.t
 
   val emit_symbol :
@@ -205,7 +205,7 @@ module DSL : sig
 
   val ins : I.t -> Arm64_ast.Operand.t array -> unit
 
-  val labeled_ins : label -> I.t -> Arm64_ast.Operand.t array -> unit
+  val labeled_ins : L.t -> I.t -> Arm64_ast.Operand.t array -> unit
 
   val simd_instr : Simd.operation -> Linear.instruction -> unit
 
@@ -284,12 +284,9 @@ end = struct
     then "_" ^ Emitaux.symbol_to_string s
     else Emitaux.symbol_to_string s
 
-  let convert_label_representation (lbl : label) =
-    label_prefix ^ Label.to_string lbl
-
-  let emit_label ?offset ?reloc (s : label) =
-    let l = convert_label_representation s in
-    symbol (Arm64_ast.Symbol.create ?offset ?reloc l)
+  let emit_label ?offset ?reloc (lbl : L.t) =
+    let sym = L.encode lbl in
+    symbol (Arm64_ast.Symbol.create ?offset ?reloc sym)
 
   let emit_symbol ?offset ?reloc (s : string) =
     let sym = convert_symbol_representation s in
@@ -327,7 +324,7 @@ end = struct
     mem_symbol ~base ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc sym)
 
   let emit_mem_label ?offset ?reloc r lbl =
-    let sym = convert_label_representation lbl in
+    let sym = L.encode lbl in
     let base = translate_reg r in
     mem_symbol ~base ~symbol:(Arm64_ast.Symbol.create ?offset ?reloc sym)
 
@@ -393,7 +390,9 @@ end = struct
   let ins name ops = print_ins name ops |> Emitaux.emit_string
 
   let labeled_ins lbl name ops =
-    Emitaux.emit_printf "%s:\n" (convert_label_representation lbl);
+    (* CR sspies: labelled instructions have to be in the text section, right?
+       Perhaps we should add an assert here. *)
+    D.define_label lbl;
     print_ins name ops |> Emitaux.emit_string
 
   let ins_cond name cond ops =
@@ -529,18 +528,20 @@ let record_frame_label live dbg =
     live;
   record_frame_descr ~label:lbl ~frame_size:(frame_size ())
     ~live_offset:!live_offset dbg;
-  lbl
+  (* CR sspies: Are we defining this in the text or data section? My guess would
+     be text. *)
+  label_to_asm_label ~section:Text lbl
 
 let record_frame live dbg =
   let lbl = record_frame_label live dbg in
-  emit_printf "%a:\n" femit_label lbl
+  D.define_label lbl
 
 (* Record calls to the GC -- we've moved them out of the way *)
 
 type gc_call =
-  { gc_lbl: label;                      (* Entry label *)
-    gc_return_lbl: label;               (* Where to branch after GC *)
-    gc_frame_lbl: label }               (* Label of frame descriptor *)
+  { gc_lbl: L.t;                      (* Entry label *)
+    gc_return_lbl: L.t;               (* Where to branch after GC *)
+    gc_frame_lbl: L.t }               (* Label of frame descriptor *)
 [@@ocamlformat "disable"]
 
 let call_gc_sites = ref ([] : gc_call list)
@@ -552,15 +553,15 @@ let emit_call_gc gc =
 (* Record calls to local stack reallocation *)
 
 type local_realloc_call =
-  { lr_lbl : label;
-    lr_return_lbl : label;
+  { lr_lbl : L.t;
+    lr_return_lbl : L.t;
     lr_dbg : Debuginfo.t
   }
 
 let local_realloc_sites = ref ([] : local_realloc_call list)
 
 let emit_local_realloc lr =
-  emit_printf "%a:\n" femit_label lr.lr_lbl;
+  D.define_label lr.lr_lbl;
   emit_debug_info lr.lr_dbg;
   DSL.ins I.BL [| DSL.emit_symbol "caml_call_local_realloc" |];
   DSL.ins I.B [| DSL.emit_label lr.lr_return_lbl |]
@@ -568,8 +569,8 @@ let emit_local_realloc lr =
 (* Local stack reallocation *)
 
 type stack_realloc =
-  { sc_label : Label.t; (* Label of the reallocation code. *)
-    sc_return : Label.t; (* Label to return to after reallocation. *)
+  { sc_label : L.t; (* Label of the reallocation code. *)
+    sc_return : L.t; (* Label to return to after reallocation. *)
     sc_max_frame_size_in_bytes : int (* Size for reallocation. *)
   }
 
@@ -581,7 +582,7 @@ let emit_stack_realloc () =
   match !stack_realloc with
   | None -> ()
   | Some { sc_label; sc_return; sc_max_frame_size_in_bytes } ->
-    emit_printf "%a:\n" femit_label sc_label;
+    D.define_label sc_label;
     (* Pass the desired frame size on the stack, since all of the
        argument-passing registers may be in use. *)
     DSL.ins I.MOV
@@ -766,6 +767,9 @@ let vec128_literals = ref ([] : (Cmm.vec128_bits * label) list)
 let add_literal p f =
   try List.assoc f !p
   with Not_found ->
+    (* Note that unlike in most of the rest of this file, we do not create a
+       label via [L.create] here directly. This is fine, because we initialize
+       [L] to call [Cmm.new_label] for creating new labels. *)
     let lbl = Cmm.new_label () in
     p := (f, lbl) :: !p;
     lbl
@@ -1140,10 +1144,10 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
            reg_domain_state_ptr
       |];
     DSL.ins I.CMP [| DSL.emit_reg r; DSL.emit_reg reg_tmp1 |];
-    let lbl_call = Cmm.new_label () in
+    let lbl_call = L.create Text in
     DSL.ins (I.B_cond LT) [| DSL.emit_label lbl_call |];
-    let lbl_after_alloc = Cmm.new_label () in
-    emit_printf "%a:\n" femit_label lbl_after_alloc;
+    let lbl_after_alloc = L.create Text in
+    D.define_label lbl_after_alloc;
     DSL.ins I.LDR
       [| DSL.emit_reg reg_tmp1;
          DSL.emit_addressing (Iindexed domain_local_top_offset)
@@ -1158,8 +1162,8 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
     let lbl_frame = record_frame_label i.live (Dbg_alloc dbginfo) in
     if !fastcode_flag
     then (
-      let lbl_after_alloc = Cmm.new_label () in
-      let lbl_call_gc = Cmm.new_label () in
+      let lbl_after_alloc = L.create Text in
+      let lbl_call_gc = L.create Text in
       (*= n is at most Max_young_whsize * 8, i.e. currently 0x808,
          so it is reasonable to assume n < 0x1_000.  This makes
          the generated code simpler. *)
@@ -1174,10 +1178,10 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
       (if not far
       then DSL.ins (I.B_cond CC) [| DSL.emit_label lbl_call_gc |]
       else
-        let lbl = Cmm.new_label () in
+        let lbl = L.create Text in
         DSL.ins (I.B_cond CS) [| DSL.emit_label lbl |];
         DSL.ins I.B [| DSL.emit_label lbl_call_gc |];
-        emit_printf "%a:\n" femit_label lbl);
+        D.define_label lbl);
       DSL.labeled_ins lbl_after_alloc I.ADD
         [| DSL.emit_reg i.res.(0); DSL.emit_reg reg_alloc_ptr; DSL.imm 8 |];
       call_gc_sites
@@ -1199,9 +1203,9 @@ let assembly_code_for_allocation i ~local ~n ~far ~dbginfo =
 
 let assembly_code_for_poll i ~far ~return_label =
   let lbl_frame = record_frame_label i.live (Dbg_alloc []) in
-  let lbl_call_gc = Cmm.new_label () in
+  let lbl_call_gc = L.create Text in
   let lbl_after_poll =
-    match return_label with None -> Cmm.new_label () | Some lbl -> lbl
+    match return_label with None -> L.create Text | Some lbl -> lbl
   in
   let offset = Domainstate.(idx_of_field Domain_young_limit) * 8 in
   DSL.ins I.LDR
@@ -1214,7 +1218,7 @@ let assembly_code_for_poll i ~far ~return_label =
     match return_label with
     | None ->
       DSL.ins (I.B_cond LS) [| DSL.emit_label lbl_call_gc |];
-      emit_printf "%a:\n" femit_label lbl_after_poll
+      D.define_label lbl_after_poll
     | Some return_label ->
       DSL.ins (I.B_cond HI) [| DSL.emit_label return_label |];
       DSL.ins I.B [| DSL.emit_label lbl_call_gc |])
@@ -1223,9 +1227,9 @@ let assembly_code_for_poll i ~far ~return_label =
     | None ->
       DSL.ins (I.B_cond HI) [| DSL.emit_label lbl_after_poll |];
       DSL.ins I.B [| DSL.emit_label lbl_call_gc |];
-      emit_printf "%a:\n" femit_label lbl_after_poll
+      D.define_label lbl_after_poll
     | Some return_label ->
-      let lbl = Cmm.new_label () in
+      let lbl = L.create Text in
       DSL.ins (I.B_cond LS) [| DSL.emit_label lbl |];
       DSL.ins I.B [| DSL.emit_label return_label |];
       DSL.labeled_ins lbl I.B [| DSL.emit_label lbl_call_gc |]);
@@ -1432,7 +1436,10 @@ let emit_instr i =
         [| DSL.emit_reg i.res.(0); DSL.imm_float (Int32.float_of_bits f) |]
     else
       (* float32 constants still take up 8 bytes; we load the lower half. *)
+      (* CR sspies: Check whether this is 32-bit or 64-bit. There is currently
+         ambiguity about this. *)
       let lbl = float_literal (Int64.of_int32 f) in
+      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl
   | Lop (Const_float f) ->
     if Int64.equal f 0L
@@ -1443,6 +1450,7 @@ let emit_instr i =
         [| DSL.emit_reg i.res.(0); DSL.imm_float (Int64.float_of_bits f) |]
     else
       let lbl = float_literal f in
+      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl
   | Lop (Const_vec128 ({ high; low } as l)) -> (
     DSL.check_reg Vec128 i.res.(0);
@@ -1452,6 +1460,7 @@ let emit_instr i =
       DSL.ins I.MOVI [| dst; DSL.imm 0 |]
     | _ ->
       let lbl = vec128_literal l in
+      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl)
   | Lop (Const_symbol s) -> emit_load_symbol_addr i.res.(0) s.sym_name
   | Lcall_op Lcall_ind ->
@@ -1893,8 +1902,11 @@ let emit_instr i =
   | Lreloadretaddr -> ()
   | Lreturn -> output_epilogue (fun () -> DSL.ins I.RET [||])
   | Llabel { label = lbl; _ } -> emit_printf "%a:\n" femit_label lbl
-  | Lbranch lbl -> DSL.ins I.B [| DSL.emit_label lbl |]
+  | Lbranch lbl ->
+    let lbl = label_to_asm_label ~section:Text lbl in
+    DSL.ins I.B [| DSL.emit_label lbl |]
   | Lcondbranch (tst, lbl) -> (
+    let lbl = label_to_asm_label ~section:Text lbl in
     match tst with
     | Itruetest ->
       DSL.ins I.CBNZ [| DSL.emit_reg i.arg.(0); DSL.emit_label lbl |]
@@ -1920,15 +1932,21 @@ let emit_instr i =
     DSL.ins I.CMP [| DSL.emit_reg i.arg.(0); DSL.imm 1 |];
     (match lbl0 with
     | None -> ()
-    | Some lbl -> DSL.ins (I.B_cond LT) [| DSL.emit_label lbl |]);
+    | Some lbl ->
+      let lbl = label_to_asm_label ~section:Text lbl in
+      DSL.ins (I.B_cond LT) [| DSL.emit_label lbl |]);
     (match lbl1 with
     | None -> ()
-    | Some lbl -> DSL.ins (I.B_cond EQ) [| DSL.emit_label lbl |]);
+    | Some lbl ->
+      let lbl = label_to_asm_label ~section:Text lbl in
+      DSL.ins (I.B_cond EQ) [| DSL.emit_label lbl |]);
     match lbl2 with
     | None -> ()
-    | Some lbl -> DSL.ins (I.B_cond GT) [| DSL.emit_label lbl |])
+    | Some lbl ->
+      let lbl = label_to_asm_label ~section:Text lbl in
+      DSL.ins (I.B_cond GT) [| DSL.emit_label lbl |])
   | Lswitch jumptbl ->
-    let lbltbl = Cmm.new_label () in
+    let lbltbl = L.create Text in
     DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbltbl |];
     DSL.ins I.ADD
       [| DSL.emit_reg reg_tmp1;
@@ -1937,9 +1955,10 @@ let emit_instr i =
          DSL.emit_shift LSL 2
       |];
     DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |];
-    emit_printf "%a:\n" femit_label lbltbl;
+    D.define_label lbltbl;
     for j = 0 to Array.length jumptbl - 1 do
-      DSL.ins I.B [| DSL.emit_label jumptbl.(j) |]
+      let jumplbl = label_to_asm_label ~section:Text jumptbl.(j) in
+      DSL.ins I.B [| DSL.emit_label jumplbl |]
     done
   (*= Alternative:
         let lbltbl = Cmm.new_label() in
@@ -1957,6 +1976,7 @@ let emit_instr i =
     cfi_adjust_cfa_offset delta_bytes;
     stack_offset := !stack_offset + delta_bytes
   | Lpushtrap { lbl_handler } ->
+    let lbl_handler = label_to_asm_label ~section:Text lbl_handler in
     DSL.ins I.ADR [| DSL.emit_reg reg_tmp1; DSL.emit_label lbl_handler |];
     stack_offset := !stack_offset + 16;
     DSL.ins I.STP
@@ -1993,7 +2013,8 @@ let emit_instr i =
         |];
       DSL.ins I.BR [| DSL.emit_reg reg_tmp1 |])
   | Lstackcheck { max_frame_size_bytes } ->
-    let overflow = Cmm.new_label () and ret = Cmm.new_label () in
+    (* CR sspies: Are both of these in the text section? *)
+    let overflow = L.create Text and ret = L.create Text in
     let threshold_offset =
       (Domainstate.stack_ctx_words * 8) + Stack_check.stack_threshold_size
     in
@@ -2006,7 +2027,7 @@ let emit_instr i =
     emit_addimm reg_tmp1 reg_tmp1 f;
     DSL.ins I.CMP [| DSL.sp; DSL.emit_reg reg_tmp1 |];
     DSL.ins (I.B_cond CC) [| DSL.emit_label overflow |];
-    emit_printf "%a:\n" femit_label ret;
+    D.define_label ret;
     stack_realloc
       := Some
            { sc_label = overflow;
@@ -2041,7 +2062,10 @@ let fundecl fundecl =
   in
   function_name := fundecl.fun_name;
   fastcode_flag := fundecl.fun_fast;
-  tailrec_entry_point := fundecl.fun_tailrec_entry_point_label;
+  tailrec_entry_point
+    := Option.map
+         (label_to_asm_label ~section:Text)
+         fundecl.fun_tailrec_entry_point_label;
   float_literals := [];
   stack_offset := 0;
   call_gc_sites := [];
