@@ -2070,7 +2070,7 @@ let fundecl fundecl =
   emit_named_text_section !function_name;
   let fun_sym = S.create fundecl.fun_name in
   D.align ~bytes:8;
-  emit_printf "\t.globl\t%a\n" femit_symbol fundecl.fun_name;
+  D.global fun_sym;
   D.type_symbol ~ty:Function fun_sym;
   emit_printf "%a:\n" femit_symbol fundecl.fun_name;
   emit_debug_info fundecl.fun_dbg;
@@ -2100,13 +2100,14 @@ let fundecl fundecl =
 let emit_item (d : Cmm.data_item) =
   match d with
   | Cdefine_symbol s ->
-    if !Clflags.dlcode || Cmm.equal_is_global s.sym_global Cmm.Global
+    (if !Clflags.dlcode || Cmm.equal_is_global s.sym_global Cmm.Global
     then
       (* GOT relocations against non-global symbols don't seem to work properly:
          GOT entries are not created for the symbols and the relocations
          evaluate to random other GOT entries. For the moment force all symbols
          to be global. *)
-      emit_printf "\t.globl\t%a\n" femit_symbol s.sym_name;
+      let sym = S.create s.sym_name in
+      D.global sym);
     emit_printf "%a:\n" femit_symbol s.sym_name
   (* [Cint8] mirrors x86 with new directives *)
   | Cint8 n -> D.int8 (Numbers.Int8.of_int_exn n)
@@ -2151,14 +2152,16 @@ let begin_assembly _unix =
       Buffer.output_buffer !output_channel asm_line_buffer);
   emit_printf "\t.file\t\"\"\n";
   (* PR#7037 *)
-  let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
+  let data_begin = Cmm_helpers.make_symbol "data_begin" in
+  let data_begin_sym = S.create data_begin in
   D.data ();
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
-  emit_printf "%a:\n" femit_symbol lbl_begin;
-  let lbl_begin = Cmm_helpers.make_symbol "code_begin" in
-  emit_named_text_section lbl_begin;
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
-  emit_printf "%a:\n" femit_symbol lbl_begin;
+  D.global data_begin_sym;
+  emit_printf "%a:\n" femit_symbol data_begin;
+  let code_begin = Cmm_helpers.make_symbol "code_begin" in
+  let code_begin_sym = S.create code_begin in
+  emit_named_text_section code_begin;
+  D.global code_begin_sym;
+  emit_printf "%a:\n" femit_symbol code_begin;
   (* we need to pad here to avoid collision for the unwind test between the
      code_begin symbol and the first function. (See also #4690) Alignment is
      needed to avoid linker warnings for shared_startup__code_{begin,end} (e.g.
@@ -2167,28 +2170,29 @@ let begin_assembly _unix =
   then (
     DSL.ins I.NOP [||];
     D.align ~bytes:8);
-  let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  Emitaux.Dwarf_helpers.begin_dwarf ~code_begin:lbl_begin ~code_end:lbl_end
-    ~file_emitter
+  let code_end = Cmm_helpers.make_symbol "code_end" in
+  Emitaux.Dwarf_helpers.begin_dwarf ~code_begin ~code_end ~file_emitter
 
 let end_assembly () =
-  let lbl_end = Cmm_helpers.make_symbol "code_end" in
-  emit_named_text_section lbl_end;
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
-  emit_printf "%a:\n" femit_symbol lbl_end;
-  let lbl_end = Cmm_helpers.make_symbol "data_end" in
+  let code_end = Cmm_helpers.make_symbol "code_end" in
+  let code_end_sym = S.create code_end in
+  emit_named_text_section code_end;
+  D.global code_end_sym;
+  emit_printf "%a:\n" femit_symbol code_end;
+  let data_end = Cmm_helpers.make_symbol "data_end" in
+  let data_end_sym = S.create data_end in
   D.data ();
   D.int64 0L;
   (* PR#6329 *)
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
-  emit_printf "%a:\n" femit_symbol lbl_end;
+  D.global data_end_sym;
+  emit_printf "%a:\n" femit_symbol data_end;
   D.int64 0L;
   D.align ~bytes:8;
   (* #7887 *)
   let frametable = Cmm_helpers.make_symbol "frametable" in
   let frametable_sym = S.create frametable in
   (* Unlike the name `lbl` suggests, we emit the label as a symbol here. *)
-  emit_printf "\t.globl\t%a\n" femit_symbol frametable;
+  D.global frametable_sym;
   emit_printf "%a:\n" femit_symbol frametable;
   emit_frames
     { efa_code_label =
