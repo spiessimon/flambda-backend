@@ -32,6 +32,8 @@ open Linear
 open Emitaux
 module I = Arm64_ast.Instruction_name
 module D = Asm_targets.Asm_directives_new
+module S = Asm_targets.Asm_symbol
+module L = Asm_targets.Asm_label
 open! Int_replace_polymorphic_compare
 
 (* Tradeoff between code size and code speed *)
@@ -52,9 +54,20 @@ let reg_x8 = phys_reg Int 8 (* x8 *)
 
 let reg_stack_arg_begin = phys_reg Int 17 (* x20 *)
 
-let reg_stack_arg_end = phys_reg Int 18 (* x21 *)
+let reg_stack_arg_end = phys_reg Int 18
+(* x21 *)
 
 (* Output a label *)
+
+(* CR sspies: The create function asks for a section. I believe this is the
+   section where the label is defined. However, I don't think it is actually
+   used anywhere at the moment. *)
+
+(** Turn a Linear label into an assembly label. *)
+let label_to_asm_label (l : label) ~(section : Asm_targets.Asm_section.t) : L.t
+    =
+  L.create_int section (Label.to_int l)
+
 let label_prefix = if macosx then "L" else ".L"
 
 let femit_label out lbl =
@@ -68,17 +81,6 @@ let femit_label out lbl =
 let femit_symbol out s =
   if macosx then femit_string out "_";
   Emitaux.femit_symbol out s
-
-(* Object types *)
-
-let emit_symbol_type emit_lbl_or_sym lbl_or_sym ty =
-  if not macosx
-  then
-    emit_printf "\t.type\t%a, %%%a\n" emit_lbl_or_sym lbl_or_sym femit_string ty
-
-let emit_symbol_size sym =
-  if not macosx
-  then emit_printf "\t.size\t%a, .-%a\n" femit_symbol sym femit_symbol sym
 
 (* Likewise, but with the 32-bit name of the register *)
 
@@ -2053,9 +2055,10 @@ let fundecl fundecl =
   prologue_required := fundecl.fun_prologue_required;
   contains_calls := fundecl.fun_contains_calls;
   emit_named_text_section !function_name;
+  let fun_sym = S.create fundecl.fun_name in
   emit_printf "\t.align\t3\n";
   emit_printf "\t.globl\t%a\n" femit_symbol fundecl.fun_name;
-  emit_symbol_type femit_symbol fundecl.fun_name "function";
+  D.type_symbol ~ty:Function fun_sym;
   emit_printf "%a:\n" femit_symbol fundecl.fun_name;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc ();
@@ -2071,8 +2074,12 @@ let fundecl fundecl =
   | None -> ()
   | Some fun_end_label -> emit_printf "%a:\n" femit_label fun_end_label);
   cfi_endproc ();
-  emit_symbol_type femit_symbol fundecl.fun_name "function";
-  emit_symbol_size fundecl.fun_name;
+  (* The type symbol and the size are system specific. They are not output on
+     macOS. The asm directives take care of correctly handling this distinction.
+     For the size, they automatically emit the size [. - symbol], meaning "this
+     minus symbol definition". *)
+  D.type_symbol ~ty:Function fun_sym;
+  D.size fun_sym;
   emit_literals ()
 
 (* Emission of data *)
@@ -2164,17 +2171,19 @@ let end_assembly () =
   emit_printf "\t.8byte\t0\n";
   emit_printf "\t.align\t3\n";
   (* #7887 *)
-  let lbl = Cmm_helpers.make_symbol "frametable" in
-  emit_printf "\t.globl\t%a\n" femit_symbol lbl;
-  emit_printf "%a:\n" femit_symbol lbl;
+  let frametable = Cmm_helpers.make_symbol "frametable" in
+  let frametable_sym = S.create frametable in
+  (* Unlike the name `lbl` suggests, we emit the label as a symbol here. *)
+  emit_printf "\t.globl\t%a\n" femit_symbol frametable;
+  emit_printf "%a:\n" femit_symbol frametable;
   emit_frames
     { efa_code_label =
         (fun lbl ->
-          emit_symbol_type femit_label lbl "function";
+          D.type_label ~ty:Function (label_to_asm_label ~section:Text lbl);
           emit_printf "\t.8byte\t%a\n" femit_label lbl);
       efa_data_label =
         (fun lbl ->
-          emit_symbol_type femit_label lbl "object";
+          D.type_label ~ty:Object (label_to_asm_label ~section:Data lbl);
           emit_printf "\t.8byte\t%a\n" femit_label lbl);
       efa_8 = (fun n -> emit_printf "\t.byte\t%d\n" n);
       efa_16 = (fun n -> emit_printf "\t.2byte\t%d\n" n);
@@ -2188,8 +2197,8 @@ let end_assembly () =
       efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
       efa_string = (fun s -> emit_string_directive "\t.ascii\t" (s ^ "\000"))
     };
-  emit_symbol_type femit_symbol lbl "object";
-  emit_symbol_size lbl;
+  D.type_symbol ~ty:Object frametable_sym;
+  D.size frametable_sym;
   if not !Flambda_backend_flags.internal_assembler
   then Emitaux.Dwarf_helpers.emit_dwarf ();
   match Config.system with
