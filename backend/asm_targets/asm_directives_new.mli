@@ -424,3 +424,6 @@ val debug_header : get_file_num:(string -> int) -> unit
 
 (** Reinitialize the emitter before compiling a different source file. *)
 val reset : unit -> unit
+
+(** Directly set the internal section ref. Use this function with caution. It only makes sense when you manually switch directly to a section. *)
+val unsafe_set_interal_section_ref : Asm_section.t -> unit
