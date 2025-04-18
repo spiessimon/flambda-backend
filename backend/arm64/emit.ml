@@ -790,22 +790,14 @@ let emit_literals p align emit_literal =
     List.iter emit_literal !p;
     p := [])
 
-let emit_float64_directive_with_comment f =
-  let comment = Printf.sprintf "\t/* %.12g */" (Int64.float_of_bits f) in
-  emit_printf "\t.8byte\t%Ld%s\n" f comment
-
-let emit_float32_directive_with_comment f =
-  let comment = Printf.sprintf "\t/* %.12f */" (Int32.float_of_bits f) in
-  emit_printf "\t.4byte\t%ld%s\n" f comment
-
 let emit_float_literal (f, lbl) =
   emit_printf "%a:\n" femit_label lbl;
-  emit_float64_directive_with_comment f
+  D.float64_from_bits f
 
 let emit_vec128_literal (({ high; low } : Cmm.vec128_bits), lbl) =
   emit_printf "%a:\n" femit_label lbl;
-  emit_float64_directive_with_comment low;
-  emit_float64_directive_with_comment high
+  D.float64_from_bits low;
+  D.float64_from_bits high
 
 let emit_literals () =
   emit_literals float_literals size_float emit_float_literal;
@@ -2116,15 +2108,19 @@ let emit_item (d : Cmm.data_item) =
          to be global. *)
       emit_printf "\t.globl\t%a\n" femit_symbol s.sym_name;
     emit_printf "%a:\n" femit_symbol s.sym_name
-  | Cint8 n -> emit_printf "\t.byte\t%d\n" n
-  | Cint16 n -> emit_printf "\t.2byte\t%d\n" n
-  | Cint32 n -> emit_printf "\t.4byte\t%Ld\n" (Int64.of_nativeint n)
-  | Cint n -> emit_printf "\t.8byte\t%Ld\n" (Int64.of_nativeint n)
-  | Csingle f -> emit_float32_directive_with_comment (Int32.bits_of_float f)
-  | Cdouble f -> emit_float64_directive_with_comment (Int64.bits_of_float f)
+  (* [Cint8] mirrors x86 with new directives *)
+  | Cint8 n -> D.int8 (Numbers.Int8.of_int_exn n)
+  (* [Cint16] mirrors x86 with new directives *)
+  | Cint16 n -> D.int16 (Numbers.Int16.of_int_exn n)
+  (* [Cint32] mirrors x86 with new directives *)
+  | Cint32 n -> D.int32 (Nativeint.to_int32 n)
+  (* [Cint] mirrors x86 with new directives *)
+  | Cint n -> D.targetint (Targetint.of_int64 (Int64.of_nativeint n))
+  | Csingle f -> D.float32 f
+  | Cdouble f -> D.float64 f
   | Cvec128 { high; low } ->
-    emit_float64_directive_with_comment low;
-    emit_float64_directive_with_comment high
+    D.float64_from_bits low;
+    D.float64_from_bits high
   | Csymbol_address s -> emit_printf "\t.8byte\t%a\n" femit_symbol s.sym_name
   | Csymbol_offset (s, o) ->
     emit_printf "\t.8byte\t%a+%a\n" femit_symbol s.sym_name femit_int o
@@ -2185,11 +2181,11 @@ let end_assembly () =
   emit_printf "%a:\n" femit_symbol lbl_end;
   let lbl_end = Cmm_helpers.make_symbol "data_end" in
   D.data ();
-  emit_printf "\t.8byte\t0\n";
+  D.int64 0L;
   (* PR#6329 *)
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
   emit_printf "%a:\n" femit_symbol lbl_end;
-  emit_printf "\t.8byte\t0\n";
+  D.int64 0L;
   D.align ~bytes:8;
   (* #7887 *)
   let frametable = Cmm_helpers.make_symbol "frametable" in
@@ -2206,10 +2202,16 @@ let end_assembly () =
         (fun lbl ->
           D.type_label ~ty:Object (label_to_asm_label ~section:Data lbl);
           emit_printf "\t.8byte\t%a\n" femit_label lbl);
-      efa_8 = (fun n -> emit_printf "\t.byte\t%d\n" n);
-      efa_16 = (fun n -> emit_printf "\t.2byte\t%d\n" n);
-      efa_32 = (fun n -> emit_printf "\t.4byte\t%ld\n" n);
-      efa_word = (fun n -> emit_printf "\t.8byte\t%d\n" n);
+      (* [efa_8] is not part of x86 with new directives *)
+      efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
+      (* [efa_16] mirrors x86 with new directives *)
+      efa_16 = (fun n -> D.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
+      (* CR sspies: for some reason, we can get negative numbers here *)
+      efa_32 = (fun n -> D.int32 n);
+      (* CR sspies: Is a word supposed to mean 64-bit here, or an actual word
+         (i.e., processor size)? *)
+      (* [efa_word] mirrors x86 with new directives *)
+      efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
       efa_align = (fun n -> D.align ~bytes:n);
       efa_label_rel =
         (fun lbl ofs ->
