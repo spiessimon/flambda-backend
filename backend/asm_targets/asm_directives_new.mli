@@ -145,12 +145,21 @@ val cfi_startproc : unit -> unit
 (** Mark the end of a function, for CFI purposes. *)
 val cfi_endproc : unit -> unit
 
+(** Remember the current state for CFI purposes. *)
+val cfi_remember_state : unit -> unit
+
+(** Restore the state for CFI purposes. *)
+val cfi_restore_state : unit -> unit
+
+(** Define a CFA register, for CFI purposes. *)
+val cfi_def_cfa_register : reg:string -> unit
+
 (** Mark that the call stack is not to be executable at runtime.  Not
     supported on all platforms. *)
 val mark_stack_non_executable : unit -> unit
 
 (** Leave as much space as is required to achieve the given alignment. *)
-val align : bytes:int -> unit
+val align : data_section:bool -> bytes:int -> unit
 
 (** Emit a directive giving the displacement between the given symbol and
     the current position.  This should only be used to state sizes of
@@ -348,7 +357,14 @@ module Directive : sig
       have had all necessary prefixing, mangling, escaping and suffixing
       applied. *)
   type t =
-    | Align of { bytes : int }
+    | Align of
+        { bytes : int;
+              (** The number of bytes to align to. This will be taken log2 by the emitter on
+          Arm and macOS platforms.*)
+          data_section : bool
+              (** The data_section flag controls whether the binary emitter emits NOP instructions
+          or null bytes. *)
+        }
     | Bytes of
         { str : string;
           comment : string option
@@ -361,6 +377,9 @@ module Directive : sig
           offset : int
         }
     | Cfi_startproc
+    | Cfi_remember_state
+    | Cfi_restore_state
+    | Cfi_def_cfa_register of string
     | Comment of comment
     | Const of
         { constant : Constant_with_width.t;
@@ -424,3 +443,6 @@ val debug_header : get_file_num:(string -> int) -> unit
 
 (** Reinitialize the emitter before compiling a different source file. *)
 val reset : unit -> unit
+
+(** Directly set the internal section ref. Use this function with caution. It only makes sense when you manually switch directly to a section. *)
+val unsafe_set_interal_section_ref : Asm_section.t -> unit

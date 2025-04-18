@@ -40,6 +40,7 @@ module String = Misc.Stdlib.String
 
 open! Branch_relaxation
 module ND = Asm_targets.Asm_directives_new
+module S = Asm_targets.Asm_symbol
 
 let rec to_x86_constant (c : ND.Directive.Constant.t) : X86_ast.constant =
   match c with
@@ -75,8 +76,8 @@ let to_x86_directive (dir : ND.Directive.t) : X86_ast.asm_line list =
     else []
   in
   match dir with
-  | Align { bytes } ->
-    [X86_ast.Align (false, bytes)]
+  | Align { bytes; data_section } ->
+    [X86_ast.Align (data_section, bytes)]
     (* The data field is currently ignored by both assembler backends. The bytes
        field is only converted to the final value when printing. *)
   | Bytes { str; comment } -> comment_lines comment @ [X86_ast.Bytes str]
@@ -119,6 +120,9 @@ let to_x86_directive (dir : ND.Directive.t) : X86_ast.asm_line list =
   | Cfi_endproc -> [X86_ast.Cfi_endproc]
   | Cfi_offset { reg; offset } -> [X86_ast.Cfi_offset (reg, offset)]
   | Cfi_startproc -> [X86_ast.Cfi_startproc]
+  | Cfi_remember_state -> [X86_ast.Cfi_remember_state]
+  | Cfi_restore_state -> [X86_ast.Cfi_restore_state]
+  | Cfi_def_cfa_register reg -> [X86_ast.Cfi_def_cfa_register reg]
   | Protected s -> [X86_ast.Protected s]
 
 let _label s = D.label ~typ:QWORD s
@@ -145,21 +149,17 @@ let phys_xmm0v () = phys_reg Vec128 100
 
 (* CFI directives *)
 
-let cfi_startproc () = if Config.asm_cfi_supported then D.cfi_startproc ()
+let cfi_startproc () = ND.cfi_startproc ()
 
-let cfi_endproc () = if Config.asm_cfi_supported then D.cfi_endproc ()
+let cfi_endproc () = ND.cfi_endproc ()
 
-let cfi_adjust_cfa_offset n =
-  if Config.asm_cfi_supported then D.cfi_adjust_cfa_offset n
+let cfi_adjust_cfa_offset n = ND.cfi_adjust_cfa_offset ~bytes:n
 
-let cfi_remember_state () =
-  if Config.asm_cfi_supported then D.cfi_remember_state ()
+let cfi_remember_state () = ND.cfi_remember_state ()
 
-let cfi_restore_state () =
-  if Config.asm_cfi_supported then D.cfi_restore_state ()
+let cfi_restore_state () = ND.cfi_restore_state ()
 
-let cfi_def_cfa_register reg =
-  if Config.asm_cfi_supported then D.cfi_def_cfa_register reg
+let cfi_def_cfa_register reg = ND.cfi_def_cfa_register ~reg
 
 let emit_debug_info ?discriminator dbg =
   emit_debug_info_gen ?discriminator dbg D.file D.loc
@@ -249,11 +249,11 @@ let emit_imp_table () =
     _label (emit_symbol imps);
     D.qword (ConstLabel (emit_symbol s))
   in
-  D.data ();
-  D.comment "relocation table start";
-  D.align ~data:true 8;
+  ND.data ();
+  ND.comment "relocation table start";
+  ND.align ~data_section:true ~bytes:8;
   Hashtbl.iter f imp_table;
-  D.comment "relocation table end"
+  ND.comment "relocation table end"
 
 let mem__imp s =
   let imp_s = get_imp_symbol s in
@@ -311,7 +311,7 @@ let load_symbol_addr (s : Cmm.symbol) arg =
 
 let emit_named_text_section ?(suffix = "") func_name =
   if !Clflags.function_sections || !Flambda_backend_flags.basic_block_sections
-  then
+  then (
     match[@ocaml.warning "-4"] system with
     | S_macosx
     (* Names of section segments in macosx are restricted to 16 characters, but
@@ -322,10 +322,15 @@ let emit_named_text_section ?(suffix = "") func_name =
          does not support function sections. *) ->
       assert false
     | _ ->
-      D.section
-        [Printf.sprintf ".text.caml.%s%s" (emit_symbol func_name) suffix]
-        (Some "ax") ["@progbits"]
-  else D.text ()
+      ND.switch_to_section_raw
+        ~names:[Printf.sprintf ".text.caml.%s%s" (emit_symbol func_name) suffix]
+        ~flags:(Some "ax") ~args:["@progbits"];
+      (* Warning: We set the internal section ref to Text here, because it
+         currently does not supported named text sections. In the rest of this
+         file, we pretend the section is called Text rather than the function
+         specific text section. *)
+      ND.unsafe_set_interal_section_ref Text)
+  else ND.text ()
 
 (* Name of current function *)
 let function_name = ref ""
@@ -354,7 +359,8 @@ let emit_Llabel fallthrough lbl section_name =
         emit_function_or_basic_block_section_name ();
         cfi_startproc ())
     | None -> ());
-  if (not fallthrough) && !fastcode_flag then D.align ~data:false 4;
+  if (not fallthrough) && !fastcode_flag
+  then ND.align ~data_section:false ~bytes:4;
   def_label lbl
 
 (* Output a pseudo-register *)
@@ -617,7 +623,7 @@ let emit_jump_table t =
   done
 
 let emit_jump_tables () =
-  D.align ~data:true 4;
+  ND.align ~data_section:true ~bytes:4;
   List.iter emit_jump_table !jump_tables;
   jump_tables := []
 
@@ -807,7 +813,7 @@ let add_float_constant cst =
 
 let emit_float_constant f lbl =
   _label (emit_label lbl);
-  D.qword (Const f)
+  ND.float64_from_bits f
 
 (* Vector constants *)
 
@@ -823,13 +829,15 @@ let add_vec128_constant bits =
 let emit_vec128_constant ({ high; low } : Cmm.vec128_bits) lbl =
   (* SIMD vectors respect little-endian byte order *)
   _label (emit_label lbl);
-  D.qword (Const low);
-  D.qword (Const high)
+  ND.float64_from_bits low;
+  ND.float64_from_bits high
 
-let global_maybe_protected sym =
-  D.global sym;
+let global_maybe_protected (sym : S.t) =
+  ND.global sym;
   if !Flambda_backend_flags.symbol_visibility_protected
   then
+    (* CR sspies: This match should probably moved into asm directives. Check
+       what Arm does. *)
     match system with
     | S_macosx | S_win32 | S_win64 | S_mingw64 | S_cygwin | S_mingw | S_unknown
       ->
@@ -839,13 +847,13 @@ let global_maybe_protected sym =
       (* Global symbols can be marked as being protected. Unlike in C we don't
          want them to be preempted as we're doing a lot of cross module
          inlining. *)
-      D.protected sym
+      ND.protected sym
 
 let emit_global_label_for_symbol lbl =
   add_def_symbol lbl;
-  let lbl = emit_symbol lbl in
+  let lbl = S.create lbl in
   global_maybe_protected lbl;
-  _label lbl
+  _label (S.encode lbl)
 
 let emit_global_label s =
   let lbl = Cmm_helpers.make_symbol s in
@@ -975,11 +983,11 @@ let emit_call_probe_handler_wrapper i ~enabled_at_init ~probe_label =
        an assembler that might choose a different encoding which produces an
        incorrect relocation and changes the meaning of the program. *)
     (* Emit the required encoding of "cmp $0, %eax" directly using .byte *)
-    D.byte (Const 0x3dL);
-    D.byte (Const 0L);
-    D.byte (Const 0L);
-    D.byte (Const 0L);
-    D.byte (Const 0L);
+    ND.int8 (Numbers.Int8.of_int_exn 0x3d);
+    ND.int8 (Numbers.Int8.of_int_exn 0);
+    ND.int8 (Numbers.Int8.of_int_exn 0);
+    ND.int8 (Numbers.Int8.of_int_exn 0);
+    ND.int8 (Numbers.Int8.of_int_exn 0);
     (* Emit the relocation for the call target *)
     (* [rel_size] is the number of bytes taken by the operand of cmp/call that
        needs to be relocated. It is used to form reloc's offset.
@@ -2230,17 +2238,12 @@ let rec emit_all ~first ~fallthrough i =
 let all_functions = ref []
 
 let emit_function_type_and_size fun_name =
-  match system with
-  | S_gnu | S_linux ->
-    D.type_ (emit_symbol fun_name) "@function";
-    if not !Flambda_backend_flags.basic_block_sections
-    then
-      D.size (emit_symbol fun_name)
-        (ConstSub (ConstThis, ConstLabel (emit_symbol fun_name)))
-  | S_macosx | S_cygwin | S_solaris | S_win32 | S_linux_elf | S_bsd_elf | S_beos
-  | S_mingw | S_win64 | S_mingw64 | S_freebsd | S_netbsd | S_openbsd | S_unknown
-    ->
-    ()
+  let fun_sym = S.create fun_name in
+  (* Note: symbol types and sizes are only needed for Linux. These functions
+     check for the correct system internally and emit nothing if it is not
+     Linux. *)
+  ND.type_symbol ~ty:Function fun_sym;
+  if not !Flambda_backend_flags.basic_block_sections then ND.size fun_sym
 
 (* Emission of a function declaration *)
 
@@ -2267,14 +2270,15 @@ let fundecl fundecl =
   current_basic_block_section
     := Option.value fundecl.fun_section_name ~default:"";
   emit_function_or_basic_block_section_name ();
-  D.align ~data:false 16;
+  ND.align ~data_section:false ~bytes:16;
   add_def_symbol fundecl.fun_name;
+  let fundecl_sym = S.create fundecl.fun_name in
   if is_macosx system
      && (not !Clflags.output_c_object)
      && is_generic_function fundecl.fun_name
   then (* PR#4690 *)
-    D.private_extern (emit_symbol fundecl.fun_name)
-  else global_maybe_protected (emit_symbol fundecl.fun_name);
+    ND.private_extern fundecl_sym
+  else global_maybe_protected fundecl_sym;
   (* Even if the function name is Local, still emit an actual linker symbol for
      it. This provides symbols for perf, gdb, and similar tools *)
   D.label (emit_symbol fundecl.fun_name);
@@ -2305,33 +2309,39 @@ let emit_item : Cmm.data_item -> unit = function
     match s.sym_global with
     | Local -> _label (label_name (emit_symbol s.sym_name))
     | Global ->
-      global_maybe_protected (emit_symbol s.sym_name);
+      global_maybe_protected (S.create s.sym_name);
       add_def_symbol s.sym_name;
       _label (emit_symbol s.sym_name);
       _label (label_name (emit_symbol s.sym_name)))
-  | Cint8 n -> D.byte (const n)
-  | Cint16 n -> D.word (const n)
-  | Cint32 n -> D.long (const_nat n)
-  | Cint n -> D.qword (const_nat n)
-  | Csingle f -> D.long (Const (Int64.of_int32 (Int32.bits_of_float f)))
-  | Cdouble f -> D.qword (Const (Int64.bits_of_float f))
+  (* CR sspies: [Cint8] matches X86 with new directives (old version). *)
+  | Cint8 n -> ND.int8 (Numbers.Int8.of_int_exn n)
+  (* CR sspies: [Cint16] matches X86 with new directives (old version). *)
+  | Cint16 n -> ND.int16 (Numbers.Int16.of_int_exn n)
+  (* CR sspies: [Cint32] matches X86 with new directives (old version). *)
+  | Cint32 n -> ND.int32 (Nativeint.to_int32 n)
+  (* CR sspies: [Cint] matches X86 with new directives (old version). *)
+  | Cint n -> ND.targetint (Targetint.of_int64 (Int64.of_nativeint n))
+  (* CR sspies: [Csingle] matches X86 with new directives (old version). *)
+  | Csingle f -> ND.float32 f
+  (* CR sspies: [Cdouble] matches X86 with new directives (old version). *)
+  | Cdouble f -> ND.float64 f
   (* SIMD vectors respect little-endian byte order *)
   | Cvec128 { high; low } ->
-    D.qword (Const low);
-    D.qword (Const high)
+    ND.float64_from_bits low;
+    ND.float64_from_bits high
   | Csymbol_address s ->
     add_used_symbol s.sym_name;
     D.qword (ConstLabel (emit_cmm_symbol s))
   | Csymbol_offset (s, o) ->
     add_used_symbol s.sym_name;
     D.qword (ConstLabelOffset (emit_cmm_symbol s, o))
-  | Cstring s -> D.bytes s
-  | Cskip n -> if n > 0 then D.space n
-  | Calign n -> D.align ~data:true n
+  | Cstring s -> ND.string s
+  | Cskip n -> if n > 0 then ND.space ~bytes:n
+  | Calign n -> ND.align ~data_section:true ~bytes:n
 
 let data l =
-  D.data ();
-  D.align ~data:true 8;
+  ND.data ();
+  ND.align ~data_section:true ~bytes:8;
   List.iter emit_item l
 
 (* Beginning / end of an assembly file *)
@@ -2377,29 +2387,23 @@ let begin_assembly unix =
   if !Clflags.dlcode || Arch.win64
   then (
     (* from amd64.S; could emit these constants on demand *)
-    (match system with
-    | S_macosx -> D.section ["__TEXT"; "__literal16"] None ["16byte_literals"]
-    | S_mingw64 | S_cygwin -> D.section [".rdata"] (Some "dr") []
-    | S_win64 -> D.data ()
-    | S_gnu | S_solaris | S_win32 | S_linux_elf | S_bsd_elf | S_beos | S_mingw
-    | S_linux | S_freebsd | S_netbsd | S_openbsd | S_unknown ->
-      D.section [".rodata.cst16"] (Some "aM") ["@progbits"; "16"]);
-    D.align ~data:true 16;
+    ND.switch_to_section Sixteen_byte_literals;
+    ND.align ~data_section:true ~bytes:16;
     _label (emit_symbol "caml_negf_mask");
-    D.qword (Const 0x8000000000000000L);
-    D.qword (Const 0L);
-    D.align ~data:true 16;
+    ND.int64 0x8000000000000000L;
+    ND.int64 0L;
+    ND.align ~data_section:true ~bytes:16;
     _label (emit_symbol "caml_absf_mask");
-    D.qword (Const 0x7FFFFFFFFFFFFFFFL);
-    D.qword (Const 0xFFFFFFFFFFFFFFFFL);
+    ND.int64 0x7FFFFFFFFFFFFFFFL;
+    ND.int64 0xFFFFFFFFFFFFFFFFL;
     _label (emit_symbol "caml_negf32_mask");
-    D.qword (Const 0x80000000L);
-    D.qword (Const 0L);
-    D.align ~data:true 16;
+    ND.int64 0x80000000L;
+    ND.int64 0L;
+    ND.align ~data_section:true ~bytes:16;
     _label (emit_symbol "caml_absf32_mask");
-    D.qword (Const 0xFFFFFFFF7FFFFFFFL);
-    D.qword (Const 0xFFFFFFFFFFFFFFFFL));
-  D.data ();
+    ND.int64 0xFFFFFFFF7FFFFFFFL;
+    ND.int64 0xFFFFFFFFFFFFFFFFL);
+  ND.data ();
   emit_global_label "data_begin";
   emit_named_text_section code_begin;
   emit_global_label_for_symbol code_begin;
@@ -2524,9 +2528,9 @@ let emit_probe_handler_wrapper p =
   (* Account for the return address that is now pushed on the stack. *)
   stack_offset := !stack_offset + 8;
   (* Emit function entry code *)
-  D.comment (Printf.sprintf "probe %s %s" probe_name handler_code_sym);
+  ND.comment (Printf.sprintf "probe %s %s" probe_name handler_code_sym);
   emit_named_text_section wrap_label;
-  D.align ~data:false 16;
+  ND.align ~data_section:false ~bytes:16;
   _label wrap_label;
   cfi_startproc ();
   if fp
@@ -2616,8 +2620,7 @@ let emit_stapsdt_base_section () =
   if not !stapsdt_base_emitted
   then (
     stapsdt_base_emitted := true;
-    D.section [".stapsdt.base"] (Some "aG")
-      ["\"progbits\""; ".stapsdt.base"; "comdat"];
+    ND.switch_to_section Stapsdt_base;
     D.weak "_.stapsdt.base";
     D.hidden "_.stapsdt.base";
     D.label "_.stapsdt.base";
@@ -2625,7 +2628,7 @@ let emit_stapsdt_base_section () =
     D.size "_.stapsdt.base" (const 1))
 
 let emit_elf_note ~owner ~typ ~emit_desc =
-  D.align ~data:true 4;
+  ND.align ~data_section:true ~bytes:4;
   let a = Cmm.new_label () in
   let b = Cmm.new_label () in
   let c = Cmm.new_label () in
@@ -2636,24 +2639,14 @@ let emit_elf_note ~owner ~typ ~emit_desc =
   def_label a;
   D.bytes (owner ^ "\000");
   def_label b;
-  D.align ~data:true 4;
+  ND.align ~data_section:true ~bytes:4;
   def_label c;
   emit_desc ();
   def_label d;
-  D.align ~data:true 4
+  ND.align ~data_section:true ~bytes:4
 
 let emit_probe_notes0 () =
-  let is_macosx_system =
-    match system with
-    | S_macosx -> (* CR-someday gyorsh: emit dtrace format on mac *) true
-    | S_gnu | S_solaris | S_linux_elf | S_bsd_elf | S_beos | S_linux -> false
-    | S_cygwin | S_mingw | S_mingw64 | S_win64 | S_win32 | S_unknown | S_freebsd
-    | S_netbsd | S_openbsd ->
-      Misc.fatal_error "emit_probe_notes: unexpected system"
-  in
-  (match is_macosx_system with
-  | false -> D.section [".note.stapsdt"] (Some "?") ["\"note\""]
-  | true -> D.section ["__DATA"; "__note_stapsdt"] None ["regular"]);
+  ND.switch_to_section Stapsdt_note;
   let stap_arg arg =
     let arg_name =
       match arg.loc with
@@ -2693,23 +2686,23 @@ let emit_probe_notes0 () =
     let semaphore_label = emit_symbol semsym in
     let emit_desc () =
       D.qword (ConstLabel (emit_label p.probe_label));
-      (match is_macosx_system with
+      (match Target_system.is_macos () with
       | false -> D.qword (ConstLabel "_.stapsdt.base")
-      | true -> D.qword (const 0));
+      | true -> ND.int64 0L);
       D.qword (ConstLabel semaphore_label);
-      D.bytes "ocaml_1\000";
-      D.bytes (probe_name ^ "\000");
-      D.bytes (args ^ "\000")
+      ND.string "ocaml_1\000";
+      ND.string (probe_name ^ "\000");
+      ND.string (args ^ "\000")
     in
     emit_elf_note ~owner:"stapsdt" ~typ:3l ~emit_desc
   in
   List.iter describe_one_probe !probes;
-  (match is_macosx_system with
+  (match Target_system.is_macos () with
   | false ->
     emit_stapsdt_base_section ();
-    D.section [".probes"] (Some "wa") ["\"progbits\""]
-  | true -> D.section ["__TEXT"; "__probes"] None ["regular"]);
-  D.align ~data:true 2;
+    ND.switch_to_section Probes
+  | true -> ND.switch_to_section Probes);
+  ND.align ~data_section:true ~bytes:2;
   String.Map.iter
     (fun _ (label, enabled_at_init) ->
       (* Unresolved weak symbols have a zero value regardless of the following
@@ -2718,9 +2711,9 @@ let emit_probe_notes0 () =
       D.weak label;
       D.hidden label;
       _label label;
-      D.word (const 0);
+      ND.int16 (Numbers.Int16.of_int_exn 0);
       (* for systemtap probes *)
-      D.word (const (Bool.to_int enabled_at_init));
+      ND.int16 (Numbers.Int16.of_int_exn (Bool.to_int enabled_at_init));
       (* for ocaml probes *)
       add_def_symbol label)
     !probe_semaphores
@@ -2741,7 +2734,7 @@ let emit_trap_notes () =
   in
   let emit_labels list =
     List.iter (fun l -> D.qword (ConstLabel (emit_label l))) list;
-    D.qword (const 0)
+    ND.int64 0L
   in
   let emit_desc () =
     D.qword (ConstLabel "_.stapsdt.base");
@@ -2752,35 +2745,25 @@ let emit_trap_notes () =
   if is_system_supported && !Arch.trap_notes
      && not (Label.Set.is_empty traps.enter_traps)
   then (
-    D.section [".note.ocaml_eh"] (Some "?") ["\"note\""];
+    ND.switch_to_section Note_ocaml_eh;
     emit_elf_note ~owner:"OCaml" ~typ:1l ~emit_desc;
     (* Reuse stapsdt base section for calcluating addresses after pre-link *)
     emit_stapsdt_base_section ();
     (* Switch back to Data section *)
-    D.data ())
+    ND.data ())
 
 let end_assembly () =
   if not (Misc.Stdlib.List.is_empty !float_constants)
   then (
-    (match system with
-    | S_macosx -> D.section ["__TEXT"; "__literal8"] None ["8byte_literals"]
-    | S_mingw64 | S_cygwin -> D.section [".rdata"] (Some "dr") []
-    | S_win64 -> D.data ()
-    | S_linux | S_gnu | S_solaris | S_win32 | S_linux_elf | S_bsd_elf | S_beos
-    | S_mingw | S_freebsd | S_netbsd | S_openbsd | S_unknown ->
-      D.section [".rodata.cst8"] (Some "aM") ["@progbits"; "8"]);
-    D.align ~data:true 8;
+    (* CR sspies: Double check this. These are quite a few cases. *)
+    ND.switch_to_section Eight_byte_literals;
+    ND.align ~data_section:true ~bytes:8;
     List.iter (fun (cst, lbl) -> emit_float_constant cst lbl) !float_constants);
   if not (Misc.Stdlib.List.is_empty !vec128_constants)
   then (
-    (match system with
-    | S_macosx -> D.section ["__TEXT"; "__literal16"] None ["16byte_literals"]
-    | S_mingw64 | S_cygwin -> D.section [".rdata"] (Some "dr") []
-    | S_win64 -> D.data ()
-    | S_linux | S_gnu | S_solaris | S_win32 | S_linux_elf | S_bsd_elf | S_beos
-    | S_mingw | S_freebsd | S_netbsd | S_openbsd | S_unknown ->
-      D.section [".rodata.cst16"] (Some "aM") ["@progbits"; "16"]);
-    D.align ~data:true 16;
+    (* CR sspies: Double check this. These are quite a few cases. *)
+    ND.switch_to_section Sixteen_byte_literals;
+    ND.align ~data_section:true ~bytes:16;
     List.iter (fun (cst, lbl) -> emit_vec128_constant cst lbl) !vec128_constants);
   (* Emit probe handler wrappers *)
   List.iter emit_probe_handler_wrapper !probes;
@@ -2792,24 +2775,30 @@ let end_assembly () =
   (* suppress "ld warning: atom sorting error" *)
   emit_global_label_for_symbol code_end;
   emit_imp_table ();
-  D.data ();
-  D.qword (const 0);
+  ND.data ();
+  ND.int64 0L;
   (* PR#6329 *)
   emit_global_label "data_end";
-  D.qword (const 0);
-  D.text ();
-  D.align ~data:true 8;
+  ND.int64 0L;
+  ND.text ();
+  ND.align ~data_section:true ~bytes:8;
   (* PR#7591 *)
   emit_global_label "frametable";
   let setcnt = ref 0 in
   emit_frames
     { efa_code_label = (fun l -> D.qword (ConstLabel (emit_label l)));
       efa_data_label = (fun l -> D.qword (ConstLabel (emit_label l)));
-      efa_8 = (fun n -> D.byte (const n));
-      efa_16 = (fun n -> D.word (const n));
-      efa_32 = (fun n -> D.long (const_32 n));
-      efa_word = (fun n -> D.qword (const n));
-      efa_align = D.align ~data:true;
+      (* CR sspies: [efa_8] was not present in X86 with new directives (old
+         version). *)
+      efa_8 = (fun n -> ND.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
+      (* CR sspies: [efa_16] matches X86 with new directives (old version). *)
+      efa_16 = (fun n -> ND.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
+      (* CR sspies: [efa_32] differs from old version, because negative numbers
+         are possible. *)
+      efa_32 = (fun n -> ND.int32 n);
+      (* CR sspies: [efa_word] matches X86 with new directives (old version). *)
+      efa_word = (fun n -> ND.targetint (Targetint.of_int_exn n));
+      efa_align = (fun n -> ND.align ~data_section:true ~bytes:n);
       efa_label_rel =
         (fun lbl ofs ->
           let open X86_ast in
@@ -2825,25 +2814,22 @@ let end_assembly () =
             D.long (ConstLabel s))
           else D.long c);
       efa_def_label = (fun l -> _label (emit_label l));
-      efa_string = (fun s -> D.bytes (s ^ "\000"))
+      efa_string = (fun s -> ND.string (s ^ "\000"))
     };
-  (match system with
-  | S_linux | S_freebsd | S_netbsd | S_openbsd ->
-    let frametable = emit_symbol (Cmm_helpers.make_symbol "frametable") in
-    D.size frametable (ConstSub (ConstThis, ConstLabel frametable))
-  | S_macosx | S_gnu | S_cygwin | S_solaris | S_win32 | S_linux_elf | S_bsd_elf
-  | S_beos | S_mingw | S_win64 | S_mingw64 | S_unknown ->
-    ());
-  D.data ();
+  let frametable_sym = S.create (Cmm_helpers.make_symbol "frametable") in
+  ND.size frametable_sym;
+  (* the size is not emitting on all platforms *)
+  ND.data ();
   emit_probe_notes ();
   emit_trap_notes ();
   if is_linux system
   then
     (* Mark stack as non-executable, PR#4564 *)
-    D.section [".note.GNU-stack"] (Some "") ["%progbits"];
+    ND.switch_to_section_raw ~names:[".note.GNU-stack"] ~flags:(Some "")
+      ~args:["%progbits"];
   if is_win64 system
   then (
-    D.comment "External functions";
+    ND.comment "External functions";
     String.Set.iter
       (fun s ->
         if not (String.Set.mem s !symbols_defined)

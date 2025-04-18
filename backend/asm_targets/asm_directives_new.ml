@@ -143,7 +143,10 @@ module Directive = struct
   type comment = string
 
   type t =
-    | Align of { bytes : int }
+    | Align of
+        { bytes : int;
+          data_section : bool
+        }
     | Bytes of
         { str : string;
           comment : string option
@@ -156,6 +159,9 @@ module Directive = struct
           offset : int
         }
     | Cfi_startproc
+    | Cfi_remember_state
+    | Cfi_restore_state
+    | Cfi_def_cfa_register of string
     | Comment of comment
     | Const of
         { constant : Constant_with_width.t;
@@ -268,7 +274,9 @@ module Directive = struct
         | Some comment -> Printf.sprintf "\t/* %s */" comment
     in
     match t with
-    | Align { bytes = n } ->
+    | Align { bytes = n; data_section = _ } ->
+      (* The data_section is only relevant for the binary emitter. On GAS, we
+         can ignore it and just use [.align] in both cases. *)
       (* Some assemblers interpret the integer n as a 2^n alignment and others
          as a number of bytes. *)
       let n =
@@ -323,6 +331,9 @@ module Directive = struct
     | Cfi_offset { reg; offset } ->
       bprintf buf "\t.cfi_offset %d, %d" reg offset
     | Cfi_startproc -> bprintf buf "\t.cfi_startproc"
+    | Cfi_remember_state -> bprintf buf "\t.cfi_remember_state"
+    | Cfi_restore_state -> bprintf buf "\t.cfi_restore_state"
+    | Cfi_def_cfa_register reg -> bprintf buf "\t.cfi_def_cfa_register %%%s" reg
     | File { file_num = None; filename } ->
       bprintf buf "\t.file\t\"%s\"" filename
     | File { file_num = Some file_num; filename } ->
@@ -380,7 +391,10 @@ module Directive = struct
         | Some comment -> Printf.sprintf "\t; %s" comment
     in
     match t with
-    | Align { bytes } -> bprintf buf "\tALIGN\t%d" bytes
+    | Align { bytes; data_section = _ } ->
+      (* The data_section is only relevant for the binary emitter. On MASM, we
+         can ignore it. *)
+      bprintf buf "\tALIGN\t%d" bytes
     | Bytes { str; comment } ->
       buf_bytes_directive buf ~directive:"BYTE" str;
       bprintf buf "%s" (masm_comment_opt comment)
@@ -413,6 +427,9 @@ module Directive = struct
     | Cfi_endproc -> unsupported "Cfi_endproc"
     | Cfi_offset _ -> unsupported "Cfi_offset"
     | Cfi_startproc -> unsupported "Cfi_startproc"
+    | Cfi_remember_state -> unsupported "Cfi_remember_state"
+    | Cfi_restore_state -> unsupported "Cfi_restore_state"
+    | Cfi_def_cfa_register _ -> unsupported "Cfi_def_cfa_register"
     | File _ -> unsupported "File"
     | Indirect_symbol _ -> unsupported "Indirect_symbol"
     | Loc _ -> unsupported "Loc"
@@ -479,7 +496,7 @@ let emit_non_masm (d : Directive.t) =
 
 let section ~names ~flags ~args = emit (Section { names; flags; args })
 
-let align ~bytes = emit (Align { bytes })
+let align ~data_section ~bytes = emit (Align { bytes; data_section })
 
 let should_generate_cfi () =
   (* We generate CFI info even if we're not generating any other debugging
@@ -502,6 +519,14 @@ let cfi_offset ~reg ~offset =
   then emit (Cfi_offset { reg; offset })
 
 let cfi_startproc () = if should_generate_cfi () then emit Cfi_startproc
+
+let cfi_remember_state () =
+  if should_generate_cfi () then emit Cfi_remember_state
+
+let cfi_restore_state () = if should_generate_cfi () then emit Cfi_restore_state
+
+let cfi_def_cfa_register ~reg =
+  if should_generate_cfi () then emit (Cfi_def_cfa_register reg)
 
 let comment text = if emit_comments () then emit (Comment text)
 
@@ -651,6 +676,8 @@ let switch_to_section ?(emit_label_on_first_occurrence = false) section =
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })
+
+let unsafe_set_interal_section_ref section = current_section_ref := Some section
 
 let text () = switch_to_section Asm_section.Text
 
