@@ -69,10 +69,6 @@ let label_to_asm_label (l : label) ~(section : Asm_targets.Asm_section.t) : L.t
 
 (* CR sdolan: Support local symbol definitions & references on arm64 *)
 
-let femit_symbol out s =
-  if macosx then femit_string out "_";
-  Emitaux.femit_symbol out s
-
 (* Likewise, but with the 32-bit name of the register *)
 
 (* Layout of the stack frame *)
@@ -1229,9 +1225,15 @@ let assembly_code_for_poll i ~far ~return_label =
 
 let emit_named_text_section func_name =
   if !Clflags.function_sections
-  then
-    emit_printf "\t.section .text.caml.%a,%a,%%progbits\n" femit_symbol
-      func_name femit_string_literal "ax"
+  then (
+    D.switch_to_section_raw
+      ~names:[".text.caml." ^ S.encode (S.create func_name)]
+      ~flags:(Some "ax") ~args:["%progbits"];
+    (* Warning: We set the internal section ref to Text here, because it
+       currently does not supported named text sections. In the rest of this
+       file, we pretend the section is called Text rather than the function
+       specific text section. *)
+    D.unsafe_set_interal_section_ref Text)
   else D.text ()
 
 (* Emit code to load an emitted literal *)
