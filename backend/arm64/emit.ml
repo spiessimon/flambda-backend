@@ -65,12 +65,6 @@ let label_to_asm_label (l : label) ~(section : Asm_targets.Asm_section.t) : L.t
     =
   L.create_int section (Label.to_int l)
 
-let label_prefix = if macosx then "L" else ".L"
-
-let femit_label out lbl =
-  femit_string out label_prefix;
-  femit_string out (Label.to_string lbl)
-
 (* Symbols *)
 
 (* CR sdolan: Support local symbol definitions & references on arm64 *)
@@ -2124,11 +2118,14 @@ let emit_item (d : Cmm.data_item) =
   | Cvec128 { high; low } ->
     D.float64_from_bits low;
     D.float64_from_bits high
-  | Csymbol_address s -> emit_printf "\t.8byte\t%a\n" femit_symbol s.sym_name
+  | Csymbol_address s ->
+    let sym = S.create s.sym_name in
+    D.symbol sym
   | Csymbol_offset (s, o) ->
-    emit_printf "\t.8byte\t%a+%a\n" femit_symbol s.sym_name femit_int o
+    let sym = S.create s.sym_name in
+    D.symbol_plus_offset ~offset_in_bytes:(Targetint.of_int o) sym
   | Cstring s -> D.string s
-  | Cskip n -> if n > 0 then emit_printf "\t.space\t%a\n" femit_int n
+  | Cskip n -> if n > 0 then D.space ~bytes:n
   | Calign n -> D.align ~bytes:n
 
 let data l =
@@ -2199,12 +2196,14 @@ let end_assembly () =
   emit_frames
     { efa_code_label =
         (fun lbl ->
-          D.type_label ~ty:Function (label_to_asm_label ~section:Text lbl);
-          emit_printf "\t.8byte\t%a\n" femit_label lbl);
+          let lbl = label_to_asm_label ~section:Text lbl in
+          D.type_label ~ty:Function lbl;
+          D.label lbl);
       efa_data_label =
         (fun lbl ->
-          D.type_label ~ty:Object (label_to_asm_label ~section:Data lbl);
-          emit_printf "\t.8byte\t%a\n" femit_label lbl);
+          let lbl = label_to_asm_label ~section:Data lbl in
+          D.type_label ~ty:Object lbl;
+          D.label lbl);
       (* [efa_8] is not part of x86 with new directives *)
       efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
       (* [efa_16] mirrors x86 with new directives *)
@@ -2218,7 +2217,9 @@ let end_assembly () =
       efa_align = (fun n -> D.align ~bytes:n);
       efa_label_rel =
         (fun lbl ofs ->
-          emit_printf "\t.4byte\t(%a + %ld) - .\n" femit_label lbl ofs);
+          let lbl = label_to_asm_label ~section:Data lbl in
+          D.between_this_and_label_offset_32bit_expr ~upper:lbl
+            ~offset_upper:(Targetint.of_int32 ofs));
       efa_def_label =
         (fun lbl ->
           (* The frametable lives in the [.data] section on Arm, but in the
