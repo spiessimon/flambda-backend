@@ -1221,6 +1221,8 @@ let assembly_code_for_poll i ~far ~return_label =
 let emit_named_text_section func_name =
   if !Clflags.function_sections
   then (
+    (* CR sspies: Clean this up and add proper support for function sections in
+       the new asm directives. *)
     D.switch_to_section_raw
       ~names:[".text.caml." ^ S.encode (S.create func_name)]
       ~flags:(Some "ax") ~args:["%progbits"];
