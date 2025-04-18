@@ -759,18 +759,17 @@ let function_name = ref ""
 let tailrec_entry_point = ref None
 
 (* Pending floating-point literals *)
-let float_literals = ref ([] : (int64 * label) list)
+let float_literals = ref ([] : (int64 * L.t) list)
 
-let vec128_literals = ref ([] : (Cmm.vec128_bits * label) list)
+let vec128_literals = ref ([] : (Cmm.vec128_bits * L.t) list)
 
 (* Label a floating-point literal *)
 let add_literal p f =
   try List.assoc f !p
   with Not_found ->
-    (* Note that unlike in most of the rest of this file, we do not create a
-       label via [L.create] here directly. This is fine, because we initialize
-       [L] to call [Cmm.new_label] for creating new labels. *)
-    let lbl = Cmm.new_label () in
+    (* CR sspies: Should the literals really be in the text section? They are
+       currently emitted at the end of a function in the text section. *)
+    let lbl = L.create Text in
     p := (f, lbl) :: !p;
     lbl
 
@@ -791,11 +790,11 @@ let emit_literals p align emit_literal =
     p := [])
 
 let emit_float_literal (f, lbl) =
-  emit_printf "%a:\n" femit_label lbl;
+  D.define_label lbl;
   D.float64_from_bits f
 
 let emit_vec128_literal (({ high; low } : Cmm.vec128_bits), lbl) =
-  emit_printf "%a:\n" femit_label lbl;
+  D.define_label lbl;
   D.float64_from_bits low;
   D.float64_from_bits high
 
@@ -1431,7 +1430,6 @@ let emit_instr i =
       (* CR sspies: Check whether this is 32-bit or 64-bit. There is currently
          ambiguity about this. *)
       let lbl = float_literal (Int64.of_int32 f) in
-      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl
   | Lop (Const_float f) ->
     if Int64.equal f 0L
@@ -1442,7 +1440,6 @@ let emit_instr i =
         [| DSL.emit_reg i.res.(0); DSL.imm_float (Int64.float_of_bits f) |]
     else
       let lbl = float_literal f in
-      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl
   | Lop (Const_vec128 ({ high; low } as l)) -> (
     DSL.check_reg Vec128 i.res.(0);
@@ -1452,7 +1449,6 @@ let emit_instr i =
       DSL.ins I.MOVI [| dst; DSL.imm 0 |]
     | _ ->
       let lbl = vec128_literal l in
-      let lbl = label_to_asm_label ~section:Data lbl in
       emit_load_literal i.res.(0) lbl)
   | Lop (Const_symbol s) -> emit_load_symbol_addr i.res.(0) s.sym_name
   | Lcall_op Lcall_ind ->
@@ -1893,7 +1889,9 @@ let emit_instr i =
           |])
   | Lreloadretaddr -> ()
   | Lreturn -> output_epilogue (fun () -> DSL.ins I.RET [||])
-  | Llabel { label = lbl; _ } -> emit_printf "%a:\n" femit_label lbl
+  | Llabel { label = lbl; _ } ->
+    let lbl = label_to_asm_label ~section:Text lbl in
+    D.define_label lbl
   | Lbranch lbl ->
     let lbl = label_to_asm_label ~section:Text lbl in
     DSL.ins I.B [| DSL.emit_label lbl |]
@@ -2072,7 +2070,7 @@ let fundecl fundecl =
   D.align ~bytes:8;
   D.global fun_sym;
   D.type_symbol ~ty:Function fun_sym;
-  emit_printf "%a:\n" femit_symbol fundecl.fun_name;
+  D.define_function_symbol fun_sym;
   emit_debug_info fundecl.fun_dbg;
   cfi_startproc ();
   let num_call_gc = num_call_gc_points fundecl.fun_body in
@@ -2085,7 +2083,9 @@ let fundecl fundecl =
   assert (List.length !call_gc_sites = num_call_gc);
   (match fun_end_label with
   | None -> ()
-  | Some fun_end_label -> emit_printf "%a:\n" femit_label fun_end_label);
+  | Some fun_end_label ->
+    let fun_end_label = label_to_asm_label ~section:Text fun_end_label in
+    D.define_label fun_end_label);
   cfi_endproc ();
   (* The type symbol and the size are system specific. They are not output on
      macOS. The asm directives take care of correctly handling this distinction.
@@ -2100,15 +2100,17 @@ let fundecl fundecl =
 let emit_item (d : Cmm.data_item) =
   match d with
   | Cdefine_symbol s ->
-    (if !Clflags.dlcode || Cmm.equal_is_global s.sym_global Cmm.Global
+    let sym = S.create s.sym_name in
+    if !Clflags.dlcode || Cmm.equal_is_global s.sym_global Cmm.Global
     then
       (* GOT relocations against non-global symbols don't seem to work properly:
          GOT entries are not created for the symbols and the relocations
          evaluate to random other GOT entries. For the moment force all symbols
          to be global. *)
-      let sym = S.create s.sym_name in
-      D.global sym);
-    emit_printf "%a:\n" femit_symbol s.sym_name
+      D.global sym;
+    (* CR sspies: Are these data or function symbols? From context, I guessed
+       data symbols. *)
+    D.define_data_symbol sym
   (* [Cint8] mirrors x86 with new directives *)
   | Cint8 n -> D.int8 (Numbers.Int8.of_int_exn n)
   (* [Cint16] mirrors x86 with new directives *)
@@ -2156,12 +2158,12 @@ let begin_assembly _unix =
   let data_begin_sym = S.create data_begin in
   D.data ();
   D.global data_begin_sym;
-  emit_printf "%a:\n" femit_symbol data_begin;
+  D.define_data_symbol data_begin_sym;
   let code_begin = Cmm_helpers.make_symbol "code_begin" in
   let code_begin_sym = S.create code_begin in
   emit_named_text_section code_begin;
   D.global code_begin_sym;
-  emit_printf "%a:\n" femit_symbol code_begin;
+  D.define_function_symbol code_begin_sym;
   (* we need to pad here to avoid collision for the unwind test between the
      code_begin symbol and the first function. (See also #4690) Alignment is
      needed to avoid linker warnings for shared_startup__code_{begin,end} (e.g.
@@ -2178,14 +2180,14 @@ let end_assembly () =
   let code_end_sym = S.create code_end in
   emit_named_text_section code_end;
   D.global code_end_sym;
-  emit_printf "%a:\n" femit_symbol code_end;
+  D.define_function_symbol code_end_sym;
   let data_end = Cmm_helpers.make_symbol "data_end" in
   let data_end_sym = S.create data_end in
   D.data ();
   D.int64 0L;
   (* PR#6329 *)
   D.global data_end_sym;
-  emit_printf "%a:\n" femit_symbol data_end;
+  D.define_data_symbol data_end_sym;
   D.int64 0L;
   D.align ~bytes:8;
   (* #7887 *)
@@ -2193,7 +2195,7 @@ let end_assembly () =
   let frametable_sym = S.create frametable in
   (* Unlike the name `lbl` suggests, we emit the label as a symbol here. *)
   D.global frametable_sym;
-  emit_printf "%a:\n" femit_symbol frametable;
+  D.define_data_symbol frametable_sym;
   emit_frames
     { efa_code_label =
         (fun lbl ->
@@ -2217,7 +2219,12 @@ let end_assembly () =
       efa_label_rel =
         (fun lbl ofs ->
           emit_printf "\t.4byte\t(%a + %ld) - .\n" femit_label lbl ofs);
-      efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
+      efa_def_label =
+        (fun lbl ->
+          (* The frametable lives in the [.data] section on Arm, but in the
+             [.text] section on x86 *)
+          let lbl = label_to_asm_label ~section:Data lbl in
+          D.define_label lbl);
       efa_string = (fun s -> D.string (s ^ "\000"))
     };
   D.type_symbol ~ty:Object frametable_sym;
