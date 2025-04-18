@@ -786,7 +786,7 @@ let emit_literals p align emit_literal =
     then
       emit_printf "\t.section __TEXT,__literal%a,%abyte_literals\n" femit_int
         align femit_int align;
-    emit_printf "\t.align\t%a\n" femit_int (Misc.log2 align);
+    D.align ~bytes:align;
     List.iter emit_literal !p;
     p := [])
 
@@ -2077,7 +2077,7 @@ let fundecl fundecl =
   contains_calls := fundecl.fun_contains_calls;
   emit_named_text_section !function_name;
   let fun_sym = S.create fundecl.fun_name in
-  emit_printf "\t.align\t3\n";
+  D.align ~bytes:8;
   emit_printf "\t.globl\t%a\n" femit_symbol fundecl.fun_name;
   D.type_symbol ~ty:Function fun_sym;
   emit_printf "%a:\n" femit_symbol fundecl.fun_name;
@@ -2133,11 +2133,11 @@ let emit_item (d : Cmm.data_item) =
     then emit_string "\n"
     else emit_string_directive "\t.ascii\t" s
   | Cskip n -> if n > 0 then emit_printf "\t.space\t%a\n" femit_int n
-  | Calign n -> emit_printf "\t.align\t%a\n" femit_int (Misc.log2 n)
+  | Calign n -> D.align ~bytes:n
 
 let data l =
-  emit_printf "\t.data\n";
-  emit_printf "\t.align\t3\n";
+  D.data ();
+  D.align ~bytes:8;
   List.iter emit_item l
 
 let file_emitter ~file_num ~file_name =
@@ -2173,7 +2173,7 @@ let begin_assembly _unix =
   if macosx
   then (
     DSL.ins I.NOP [||];
-    emit_printf "\t.align\t3\n");
+    D.align ~bytes:8);
   let lbl_end = Cmm_helpers.make_symbol "code_end" in
   Emitaux.Dwarf_helpers.begin_dwarf ~code_begin:lbl_begin ~code_end:lbl_end
     ~file_emitter
@@ -2190,7 +2190,7 @@ let end_assembly () =
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
   emit_printf "%a:\n" femit_symbol lbl_end;
   emit_printf "\t.8byte\t0\n";
-  emit_printf "\t.align\t3\n";
+  D.align ~bytes:8;
   (* #7887 *)
   let frametable = Cmm_helpers.make_symbol "frametable" in
   let frametable_sym = S.create frametable in
@@ -2210,8 +2210,7 @@ let end_assembly () =
       efa_16 = (fun n -> emit_printf "\t.2byte\t%d\n" n);
       efa_32 = (fun n -> emit_printf "\t.4byte\t%ld\n" n);
       efa_word = (fun n -> emit_printf "\t.8byte\t%d\n" n);
-      efa_align =
-        (fun n -> emit_printf "\t.align\t%a\n" femit_int (Misc.log2 n));
+      efa_align = (fun n -> D.align ~bytes:n);
       efa_label_rel =
         (fun lbl ofs ->
           emit_printf "\t.4byte\t(%a + %ld) - .\n" femit_label lbl ofs);
