@@ -59,11 +59,8 @@ let reg_stack_arg_end = phys_reg Int 18
 
 (* Output a label *)
 
-(* CR sspies: The create function asks for a section. I believe this is the
-   section where the label is defined. However, I don't think it is actually
-   used anywhere at the moment. *)
-
-(** Turn a Linear label into an assembly label. *)
+(** Turn a Linear label into an assembly label. The section is checked against the
+    section tracked by [D] when emitting label definitions. *)
 let label_to_asm_label (l : label) ~(section : Asm_targets.Asm_section.t) : L.t
     =
   L.create_int section (Label.to_int l)
@@ -1246,7 +1243,7 @@ let emit_named_text_section func_name =
   then
     emit_printf "\t.section .text.caml.%a,%a,%%progbits\n" femit_symbol
       func_name femit_string_literal "ax"
-  else emit_printf "\t.text\n"
+  else D.text ()
 
 (* Emit code to load an emitted literal *)
 
@@ -2138,7 +2135,7 @@ let begin_assembly _unix =
   emit_printf "\t.file\t\"\"\n";
   (* PR#7037 *)
   let lbl_begin = Cmm_helpers.make_symbol "data_begin" in
-  emit_printf "\t.data\n";
+  D.data ();
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_begin;
   emit_printf "%a:\n" femit_symbol lbl_begin;
   let lbl_begin = Cmm_helpers.make_symbol "code_begin" in
@@ -2163,7 +2160,7 @@ let end_assembly () =
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
   emit_printf "%a:\n" femit_symbol lbl_end;
   let lbl_end = Cmm_helpers.make_symbol "data_end" in
-  emit_printf "\t.data\n";
+  D.data ();
   emit_printf "\t.8byte\t0\n";
   (* PR#6329 *)
   emit_printf "\t.globl\t%a\n" femit_symbol lbl_end;
