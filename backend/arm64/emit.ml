@@ -2124,10 +2124,7 @@ let emit_item (d : Cmm.data_item) =
   | Csymbol_address s -> emit_printf "\t.8byte\t%a\n" femit_symbol s.sym_name
   | Csymbol_offset (s, o) ->
     emit_printf "\t.8byte\t%a+%a\n" femit_symbol s.sym_name femit_int o
-  | Cstring s ->
-    if String.length s = 0
-    then emit_string "\n"
-    else emit_string_directive "\t.ascii\t" s
+  | Cstring s -> D.string s
   | Cskip n -> if n > 0 then emit_printf "\t.space\t%a\n" femit_int n
   | Calign n -> D.align ~bytes:n
 
@@ -2217,7 +2214,7 @@ let end_assembly () =
         (fun lbl ofs ->
           emit_printf "\t.4byte\t(%a + %ld) - .\n" femit_label lbl ofs);
       efa_def_label = (fun lbl -> emit_printf "%a:\n" femit_label lbl);
-      efa_string = (fun s -> emit_string_directive "\t.ascii\t" (s ^ "\000"))
+      efa_string = (fun s -> D.string (s ^ "\000"))
     };
   D.type_symbol ~ty:Object frametable_sym;
   D.size frametable_sym;
