@@ -890,7 +890,7 @@ let between_this_and_label_offset_32bit_expr ~upper ~offset_upper =
         Asm_label.print upper Asm_section.print upper_section Asm_section.print
         this_section);
   let offset_upper = Targetint.to_int64 offset_upper in
-  let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
+  let expr = Add (Sub (Label upper, This), Signed_int offset_upper) in
   const expr Thirty_two
 
 let between_symbol_in_current_unit_and_label_offset ?comment:_comment ~upper
