@@ -770,7 +770,7 @@ let emit_literals p align emit_literal =
         ~flags:None
         ~args:[Int.to_string align ^ "byte_literals"];
       D.unsafe_set_interal_section_ref Text);
-    D.align ~bytes:align;
+    D.align ~data_section:false ~bytes:align;
     List.iter emit_literal !p;
     p := [])
 
@@ -2061,7 +2061,7 @@ let fundecl fundecl =
   contains_calls := fundecl.fun_contains_calls;
   emit_named_text_section !function_name;
   let fun_sym = S.create fundecl.fun_name in
-  D.align ~bytes:8;
+  D.align ~data_section:false ~bytes:8;
   D.global fun_sym;
   D.type_symbol ~ty:Function fun_sym;
   D.define_function_symbol fun_sym;
@@ -2126,11 +2126,11 @@ let emit_item (d : Cmm.data_item) =
     D.symbol_plus_offset ~offset_in_bytes:(Targetint.of_int o) sym
   | Cstring s -> D.string s
   | Cskip n -> if n > 0 then D.space ~bytes:n
-  | Calign n -> D.align ~bytes:n
+  | Calign n -> D.align ~data_section:true ~bytes:n
 
 let data l =
   D.data ();
-  D.align ~bytes:8;
+  D.align ~data_section:true ~bytes:8;
   List.iter emit_item l
 
 let file_emitter ~file_num ~file_name =
@@ -2168,7 +2168,7 @@ let begin_assembly _unix =
   if macosx
   then (
     DSL.ins I.NOP [||];
-    D.align ~bytes:8);
+    D.align ~data_section:false ~bytes:8);
   let code_end = Cmm_helpers.make_symbol "code_end" in
   Emitaux.Dwarf_helpers.begin_dwarf ~code_begin ~code_end ~file_emitter
 
@@ -2186,7 +2186,7 @@ let end_assembly () =
   D.global data_end_sym;
   D.define_data_symbol data_end_sym;
   D.int64 0L;
-  D.align ~bytes:8;
+  D.align ~data_section:true ~bytes:8;
   (* #7887 *)
   let frametable = Cmm_helpers.make_symbol "frametable" in
   let frametable_sym = S.create frametable in
@@ -2214,7 +2214,7 @@ let end_assembly () =
          (i.e., processor size)? *)
       (* [efa_word] mirrors x86 with new directives *)
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
-      efa_align = (fun n -> D.align ~bytes:n);
+      efa_align = (fun n -> D.align ~data_section:true ~bytes:n);
       efa_label_rel =
         (fun lbl ofs ->
           let lbl = label_to_asm_label ~section:Data lbl in
