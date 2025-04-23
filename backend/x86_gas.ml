@@ -433,7 +433,73 @@ let print_instr b = function
   | TZCNT (arg1, arg2) -> i2_s b "tzcnt" arg1 arg2
   | SSE42 (CRC32 (arg1, arg2)) -> i2_s b "crc32" arg1 arg2
 
-let print_line b = function
+module D = Asm_targets.Asm_directives_new.Directive
+
+let rec translate_constant = function
+  | Const n -> D.Constant.Signed_int n
+  | ConstAdd (c1, c2) ->
+    D.Constant.Add (translate_constant c1, translate_constant c2)
+  | ConstSub (c1, c2) ->
+    D.Constant.Sub (translate_constant c1, translate_constant c2)
+  | ConstThis -> D.Constant.This
+  | ConstLabel l -> D.Constant.Named_thing l
+  | ConstLabelOffset _ ->
+    Misc.fatal_error "Const Label Offset should not be emitted by emit.ml"
+
+let translate_const_with_width c w =
+  let c = translate_constant c in
+  D.Const { constant = D.Constant_with_width.create c w; comment = None }
+
+let translate_asm_line = function[@warning "-4"]
+  | Ins _ -> Misc.fatal_error "instructions should be translated by the caller"
+  | Align (data, n) -> [D.Align { bytes = n; data_section = data }]
+  | Byte n -> [translate_const_with_width n Eight]
+  | Bytes s -> [D.Bytes { str = s; comment = None }]
+  | Comment s -> [D.Comment s]
+  | Global s -> [D.Global s]
+  | Protected s -> [D.Protected s]
+  | Hidden s -> [D.Hidden s]
+  | Weak s -> [D.Weak s]
+  | Long n -> [translate_const_with_width n Thirty_two]
+  | NewLabel (s, NONE) -> [D.New_label (s, Code)]
+  | NewLabel (s, QWORD) -> [D.New_label (s, Machine_width_data)]
+  | NewLabel _ -> Misc.fatal_error "new label only supported for QWORD or NONE"
+  | NewLine -> [D.New_line]
+  | Quad n -> [translate_const_with_width n Sixty_four]
+  | Section (name, flags, args, _delayed) ->
+    [D.Section { names = name; flags; args }]
+  | Space n -> [D.Space { bytes = n }]
+  | Word n -> [translate_const_with_width n Sixteen]
+  | Sleb128 n -> [D.Sleb128 { constant = translate_constant n; comment = None }]
+  | Uleb128 n -> [D.Uleb128 { constant = translate_constant n; comment = None }]
+  | Cfi_adjust_cfa_offset n -> [D.Cfi_adjust_cfa_offset n]
+  | Cfi_endproc -> [D.Cfi_endproc]
+  | Cfi_startproc -> [D.Cfi_startproc]
+  | Cfi_remember_state -> [D.Cfi_remember_state]
+  | Cfi_restore_state -> [D.Cfi_restore_state]
+  | Cfi_def_cfa_register reg -> [D.Cfi_def_cfa_register reg]
+  | Cfi_def_cfa_offset n -> [D.Cfi_def_cfa_offset n]
+  | Cfi_offset (reg, n) -> [D.Cfi_offset { reg; offset = n }]
+  | File (file_num, filename) -> [D.File { file_num = Some file_num; filename }]
+  | Indirect_symbol s -> [D.Indirect_symbol s]
+  | Loc { file_num; line; col; discriminator } ->
+    [D.Loc { file_num; line; col; discriminator }]
+  | Private_extern s -> [D.Private_extern s]
+  | Set (var, expr) -> [D.Direct_assignment (var, translate_constant expr)]
+  | Size (s, c) -> [D.Size (s, translate_constant c)]
+  | Type (s, "STT_OBJECT") -> [D.Type (s, Object)]
+  | Type (s, "STT_FUNC") -> [D.Type (s, Function)]
+  | Type _ -> Misc.fatal_error "Unsupported type."
+  | Reloc { offset; name = R_X86_64_PLT32; expr } ->
+    [ D.Reloc
+        { offset = translate_constant offset;
+          name = R_X86_64_PLT32;
+          expr = translate_constant expr
+        } ]
+  | External _ | Mode386 | Model _ | Direct_assignment _ ->
+    Misc.fatal_error "unsupported directive"
+
+let print_line_old b = function
   | Ins instr -> print_instr b instr
   | Align (_data, n) ->
     (* MacOSX assembler interprets the integer n as a 2^n alignment *)
@@ -522,6 +588,18 @@ let print_line b = function
   | Direct_assignment (var, c) ->
     assert (List.mem Config.system ["macosx"; "darwin"]);
     bprintf b "\t%s = %a" var cst c
+
+let print_line b i =
+  match[@warning "-4"] i with
+  | Align _ | Byte _ | Bytes _ | Comment _ | Global _ | Protected _ | Hidden _
+  | Weak _ | Long _ | NewLabel _ | NewLine | Quad _ | Section _ | Space _
+  | Word _ | Uleb128 _ | Sleb128 _ | Cfi_adjust_cfa_offset _ | Cfi_endproc
+  | Cfi_startproc | Cfi_remember_state | Cfi_restore_state
+  | Cfi_def_cfa_register _ | Cfi_def_cfa_offset _ | Cfi_offset _ | File _
+  | Indirect_symbol _ | Loc _ | Private_extern _ | Set _ | Size _ | Type _
+  | Reloc _ | External _ | Mode386 | Model _ | Direct_assignment _ ->
+    translate_asm_line i |> List.iter (D.print b)
+  | _ -> print_line_old b i
 
 let generate_asm oc lines =
   let b = Buffer.create 10000 in
