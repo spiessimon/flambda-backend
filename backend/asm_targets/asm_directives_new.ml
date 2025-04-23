@@ -513,6 +513,7 @@ let space ~bytes = emit (Space { bytes })
 (* We do not perform any checks that the string does not contain null bytes. The
    reason is that we sometimes want to emit strings that have an explicit null
    byte added. *)
+(* CR sspies: If the string is empty, should we just not emit anything? *)
 let string ?comment str = emit (Bytes { str; comment })
 
 let global symbol = emit (Global (Asm_symbol.encode symbol))
@@ -651,6 +652,8 @@ let switch_to_section ?(emit_label_on_first_occurrence = false) section =
 
 let switch_to_section_raw ~names ~flags ~args =
   emit (Section { names; flags; args })
+
+let unsafe_set_interal_section_ref section = current_section_ref := Some section
 
 let text () = switch_to_section Asm_section.Text
 
@@ -887,7 +890,7 @@ let between_this_and_label_offset_32bit_expr ~upper ~offset_upper =
         Asm_label.print upper Asm_section.print upper_section Asm_section.print
         this_section);
   let offset_upper = Targetint.to_int64 offset_upper in
-  let expr = Sub (Add (Label upper, Signed_int offset_upper), This) in
+  let expr = Add (Sub (Label upper, This), Signed_int offset_upper) in
   const expr Thirty_two
 
 let between_symbol_in_current_unit_and_label_offset ?comment:_comment ~upper
