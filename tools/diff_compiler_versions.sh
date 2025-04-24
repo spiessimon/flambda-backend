@@ -43,6 +43,19 @@ BASE=$(git rev-parse --verify "$2")
 REVISION=$(git rev-parse --verify "$3")
 TARGETDIR_REL_ABS=$1
 
+# we prepare the build flags
+ADDITIONAL_FLAGS="-S"
+ADDITIONAL_CONFIGURE_FLAGS=""
+RESTRICT_TO_UPSTREAM_DWARF="true"
+
+if $WITH_NEW_DWARF; then
+  ADDITIONAL_FLAGS="$ADDITIONAL_FLAGS -g"
+  ADDITIONAL_CONFIGURE_FLAGS="$ADDITIONAL_CONFIGURE_FLAGS --disable-function-sections"
+  RESTRICT_TO_UPSTREAM_DWARF="false"
+fi
+
+
+
 # we make sure the target directory exists
 mkdir -p $TARGETDIR_REL_ABS
 TARGETDIR=$(realpath $TARGETDIR_REL_ABS)
@@ -90,16 +103,6 @@ git archive --format=tar --prefix=base-original/ $BASE | (cd $BUILDDIR && tar xf
 cp -r $BASE_ORIGINAL_DIR $BASE_REVISION_DIR
 git archive --format=tar --prefix=revision/ $REVISION | (cd $BUILDDIR && tar xf -)
 
-
-ADDITIONAL_FLAGS="-S"
-ADDITIONAL_CONFIGURE_FLAGS=""
-RESTRICT_TO_UPSTREAM_DWARF="true"
-
-if $WITH_NEW_DWARF; then
-  ADDITIONAL_FLAGS="$ADDITIONAL_FLAGS -g"
-  ADDITIONAL_CONFIGURE_FLAGS="$ADDITIONAL_CONFIGURE_FLAGS --disable-function-sections"
-  RESTRICT_TO_UPSTREAM_DWARF="false"
-fi
 
 
 # we first build the bootcompiler of the new compiler
