@@ -209,7 +209,8 @@ module Directive = struct
     | Section of
         { names : string list;
           flags : string option;
-          args : string list
+          args : string list;
+          is_delayed : bool
         }
     | Size of string * Constant.t
     | Sleb128 of
@@ -234,32 +235,36 @@ module Directive = struct
 
   let bprintf = Printf.bprintf
 
-  (* CR sspies: This code is a duplicate with [emit_string_literal] in
-     [emitaux.ml]. Hopefully, we can deduplicate this soon. *)
-  let string_of_string_literal s =
+  (* CR sspies: This code is effectively a duplicate with [emit_string_literal]
+     in [emitaux.ml] and [string_of_substring_literal] in [x86_proc.ml].
+     Hopefully, we can deduplicate this soon. *)
+  let string_of_substring_literal ~start:k ~length:n s =
     let between x low high =
       Char.compare x low >= 0 && Char.compare x high <= 0
     in
-    let buf = Buffer.create (String.length s + 2) in
+    let b = Buffer.create (n + 2) in
     let last_was_escape = ref false in
-    for i = 0 to String.length s - 1 do
+    for i = k to k + n - 1 do
       let c = s.[i] in
       if between c '0' '9'
       then
         if !last_was_escape
-        then Printf.bprintf buf "\\%o" (Char.code c)
-        else Buffer.add_char buf c
+        then Printf.bprintf b "\\%o" (Char.code c)
+        else Buffer.add_char b c
       else if between c ' ' '~'
-              && (not (Char.equal c '"' (* '"' *)))
-              && not (Char.equal c '\\')
+              && (not (Char.equal c '"'))
+              (* '"' *) && not (Char.equal c '\\')
       then (
-        Buffer.add_char buf c;
+        Buffer.add_char b c;
         last_was_escape := false)
       else (
-        Printf.bprintf buf "\\%o" (Char.code c);
+        Printf.bprintf b "\\%o" (Char.code c);
         last_was_escape := true)
     done;
-    Buffer.contents buf
+    Buffer.contents b
+
+  let string_of_string_literal s =
+    string_of_substring_literal ~start:0 ~length:(String.length s) s
 
   let buf_bytes_directive buf ~directive s =
     let pos = ref 0 in
@@ -287,13 +292,13 @@ module Directive = struct
       let i = ref 0 in
       while l - !i > chunk_size do
         bprintf buf "\t.ascii\t\"%s\"\n"
-          (string_of_string_literal (String.sub s !i chunk_size));
+          (string_of_substring_literal ~start:!i ~length:chunk_size s);
         i := !i + chunk_size
       done;
       (* Then we print the remainder. We do not append a new line, because every
          directive ends with a new line. *)
       bprintf buf "\t.ascii\t\"%s\""
-        (string_of_string_literal (String.sub s !i (l - !i)))
+        (string_of_substring_literal ~start:!i ~length:(l - !i) s)
 
   let reloc_type_to_string = function R_X86_64_PLT32 -> "R_X86_64_PLT32"
 
@@ -340,7 +345,12 @@ module Directive = struct
         comment
     | Bytes { str; comment } ->
       (match TS.system (), TS.architecture () with
-      | Solaris, _ | _, POWER -> buf_bytes_directive buf ~directive:".byte" str
+      | Solaris, _ | _, POWER ->
+        buf_bytes_directive buf ~directive:".byte" str
+        (* Very long lines can cause gas to be extremely slow so split up large
+           string literals. It turns out that gas reads files in 32kb chunks so
+           splitting the string into blocks of 25k characters should be close to
+           the sweet spot even with a lot of escapes. *)
       | _, X86_64 -> print_ascii_string_gas ~chunk_size:25000 buf str
       | _, AArch64 -> print_ascii_string_gas ~chunk_size:80 buf str
       | _, _ -> print_ascii_string_gas ~chunk_size:80 buf str);
@@ -351,7 +361,7 @@ module Directive = struct
     | New_line -> ()
     | Section { names = [".data"]; _ } -> bprintf buf "\t.data"
     | Section { names = [".text"]; _ } -> bprintf buf "\t.text"
-    | Section { names; flags; args } -> (
+    | Section { names; flags; args; is_delayed = _ } -> (
       bprintf buf "\t.section %s" (String.concat "," names);
       (match flags with None -> () | Some flags -> bprintf buf ",%S" flags);
       match args with
@@ -566,7 +576,8 @@ let emit (d : Directive.t) =
 let emit_non_masm (d : Directive.t) =
   match TS.assembler () with MASM -> () | MacOS | GAS_like -> emit d
 
-let section ~names ~flags ~args = emit (Section { names; flags; args })
+let section ~names ~flags ~args ~is_delayed =
+  emit (Section { names; flags; args; is_delayed })
 
 let align ~data_section ~bytes = emit (Align { bytes; data_section })
 
@@ -746,17 +757,17 @@ let switch_to_section ?(emit_label_on_first_occurrence = false) section =
       true)
   in
   current_section_ref := Some section;
-  let ({ names; flags; args } : Asm_section.section_details) =
+  let ({ names; flags; args; is_delayed } : Asm_section.section_details) =
     Asm_section.details section ~first_occurrence
   in
   (* CR sspies: We do not print an empty line here to be consistent with Arm
      emission. *)
-  emit (Section { names; flags; args });
+  emit (Section { names; flags; args; is_delayed });
   if first_occurrence && emit_label_on_first_occurrence
   then define_label (Asm_label.for_section section)
 
-let switch_to_section_raw ~names ~flags ~args =
-  emit (Section { names; flags; args })
+let switch_to_section_raw ~names ~flags ~args ~is_delayed =
+  emit (Section { names; flags; args; is_delayed })
 
 let unsafe_set_interal_section_ref section = current_section_ref := Some section
 
@@ -931,7 +942,8 @@ let mark_stack_non_executable () =
   let current_section = current_section () in
   match TS.system () with
   | Linux ->
-    section ~names:[".note.GNU-stack"] ~flags:(Some "") ~args:["%progbits"];
+    section ~names:[".note.GNU-stack"] ~flags:(Some "") ~args:["%progbits"]
+      ~is_delayed:false;
     switch_to_section current_section
   | _ -> ()
 

@@ -768,7 +768,8 @@ let emit_literals p align emit_literal =
       D.switch_to_section_raw
         ~names:["__TEXT,__literal" ^ Int.to_string align]
         ~flags:None
-        ~args:[Int.to_string align ^ "byte_literals"];
+        ~args:[Int.to_string align ^ "byte_literals"]
+        ~is_delayed:false;
       D.unsafe_set_interal_section_ref Text);
     D.align ~data_section:false ~bytes:align;
     List.iter emit_literal !p;
@@ -1225,7 +1226,7 @@ let emit_named_text_section func_name =
        the new asm directives. *)
     D.switch_to_section_raw
       ~names:[".text.caml." ^ S.encode (S.create func_name)]
-      ~flags:(Some "ax") ~args:["%progbits"];
+      ~flags:(Some "ax") ~args:["%progbits"] ~is_delayed:false;
     (* Warning: We set the internal section ref to Text here, because it
        currently does not supported named text sections. In the rest of this
        file, we pretend the section is called Text rather than the function
@@ -2236,5 +2237,5 @@ let end_assembly () =
   | "linux" ->
     (* Mark stack as non-executable *)
     D.switch_to_section_raw ~names:[".note.GNU-stack"] ~flags:(Some "")
-      ~args:["%progbits"]
+      ~args:["%progbits"] ~is_delayed:false
   | _ -> ()
