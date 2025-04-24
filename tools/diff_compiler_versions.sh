@@ -39,8 +39,8 @@ fi
 
 
 # we set the base commit, the revision commit, and the target directory
-BASE=$2
-REVISION=$3
+BASE=$(git rev-parse --verify "$2")
+REVISION=$(git rev-parse --verify "$3")
 TARGETDIR_REL_ABS=$1
 
 # we make sure the target directory exists
