@@ -4,8 +4,9 @@ if [ $# -ne 3 ]; then
     echo "Usage: $0 <output-directory> <base-commit> <revision-commit>"
     echo ""
     echo "Additional configuration is possible via environment variables:"
-    echo "  TMPDIR=<path>             # defaults to /tmp"
-    echo "  AUTOCONF=<autoconf-path>  # defaults to autoconf"
+    echo "  TMPDIR=<path>                   # defaults to /tmp"
+    echo "  AUTOCONF=<autoconf-path>        # defaults to autoconf"
+    echo "  WITH_NEW_DWARF=<true|false>     # defaults to false"
     exit 1
 fi
 
@@ -19,6 +20,11 @@ fi
 if [[ -z "${TMPDIR:-}" ]]; then
   TMPDIR=/tmp
 fi
+
+if [[ -z "${WITH_NEW_DWARF:-}" ]]; then
+  WITH_NEW_DWARF=false
+fi
+
 
 
 # check that the git commits exist
@@ -85,18 +91,31 @@ cp -r $BASE_ORIGINAL_DIR $BASE_REVISION_DIR
 git archive --format=tar --prefix=revision/ $REVISION | (cd $BUILDDIR && tar xf -)
 
 
+ADDITIONAL_FLAGS="-S"
+ADDITIONAL_CONFIGURE_FLAGS=""
+RESTRICT_TO_UPSTREAM_DWARF="true"
+
+if $WITH_NEW_DWARF; then
+  ADDITIONAL_FLAGS="$ADDITIONAL_FLAGS -g"
+  ADDITIONAL_CONFIGURE_FLAGS="$ADDITIONAL_CONFIGURE_FLAGS --disable-function-sections"
+  RESTRICT_TO_UPSTREAM_DWARF="false"
+fi
+
+
 # we first build the bootcompiler of the new compiler
 cd $REVISION_DIR
-sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard -S \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
+sed -i.bak "s/let restrict_to_upstream_dwarf = ref true/let restrict_to_upstream_dwarf = ref $RESTRICT_TO_UPSTREAM_DWARF/g" backend/debug/dwarf/dwarf_flags/dwarf_flags.ml && rm backend/debug/dwarf/dwarf_flags/dwarf_flags.ml.bak
+sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard $ADDITIONAL_FLAGS \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
 $AUTOCONF
-./configure --enable-ocamltest --enable-warn-error --prefix="$INSTALL_PATH"
+./configure --enable-ocamltest --enable-warn-error $ADDITIONAL_CONFIGURE_FLAGS --prefix="$INSTALL_PATH"
 make boot-compiler
 
 # we turn to the base line compiler and build the normal version
 cd $BASE_ORIGINAL_DIR
-sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard -S \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
+sed -i.bak "s/let restrict_to_upstream_dwarf = ref true/let restrict_to_upstream_dwarf = ref $RESTRICT_TO_UPSTREAM_DWARF/g" backend/debug/dwarf/dwarf_flags/dwarf_flags.ml && rm backend/debug/dwarf/dwarf_flags/dwarf_flags.ml.bak
+sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard $ADDITIONAL_FLAGS \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
 $AUTOCONF
-./configure --enable-ocamltest --enable-warn-error --prefix="$INSTALL_PATH"
+./configure --enable-ocamltest --enable-warn-error $ADDITIONAL_CONFIGURE_FLAGS --prefix="$INSTALL_PATH"
 make _install
 cp -R -f _install/. "$TARGETDIR/base-compiler-original/_install/"
 cp -R -f _build/. "$TARGETDIR/base-compiler-original/_build/"
@@ -104,9 +123,10 @@ cp -R -f _build/. "$TARGETDIR/base-compiler-original/_build/"
 
 # we build a version with the new compiler
 cd $BASE_REVISION_DIR
-sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard -S \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
+sed -i.bak "s/let restrict_to_upstream_dwarf = ref true/let restrict_to_upstream_dwarf = ref $RESTRICT_TO_UPSTREAM_DWARF/g" backend/debug/dwarf/dwarf_flags/dwarf_flags.ml && rm backend/debug/dwarf/dwarf_flags/dwarf_flags.ml.bak
+sed -i.bak "s/echo '(:standard \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/echo '(:standard $ADDITIONAL_FLAGS \$(if \$(filter true,\$(FUNCTION_SECTIONS)),-function-sections,))' > ocamlopt_flags.sexp/g" Makefile.common-jst && rm Makefile.common-jst.bak
 $AUTOCONF
-./configure --enable-ocamltest --enable-warn-error --prefix="$INSTALL_PATH"
+./configure --enable-ocamltest --enable-warn-error $ADDITIONAL_CONFIGURE_FLAGS --prefix="$INSTALL_PATH"
 make boot-compiler
 # hack: we copy over the boot compiler from the revision compiler
 cp -L -R -f "$REVISION_DIR/_build/_bootinstall/bin/ocamlopt.opt" _build/_bootinstall/bin/

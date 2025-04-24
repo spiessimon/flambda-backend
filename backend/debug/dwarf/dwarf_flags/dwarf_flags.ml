@@ -97,6 +97,8 @@ let use_g () =
   then use_g1 ()
   else current_debug_settings := bytecode_g
 
+(* Warning. If you change the line below, please also adjust the script
+   tools/diff_compiler_versions.sh *)
 let restrict_to_upstream_dwarf = ref true
 
 (* Currently the maximum number of stack slots, see asmgen.ml *)
