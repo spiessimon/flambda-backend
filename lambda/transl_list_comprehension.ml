@@ -241,12 +241,15 @@ let rec translate_bindings ~transl_exp ~scopes ~loc ~inner_body ~accumulator =
              local, [nlocal] has to be equal to the number of parameters *)
         ~params:
           [ { name = element;
+              debug_uid = Lambda.debug_uid_none;
+              (* CR sspies: How do we get the uid of the element? *)
               layout = element_kind;
               attributes = Lambda.default_param_attribute;
               (* CR ncourant: check *)
               mode = alloc_heap
             };
             { name = inner_acc;
+              debug_uid = Lambda.debug_uid_none;
               layout = layout_any_value;
               attributes = Lambda.default_param_attribute;
               mode = alloc_local

@@ -99,7 +99,7 @@ let transl_label_init_general f =
          (* CR ncourant: this *should* not be too precise for the moment,
             but we should take care, or fix the underlying cause that led
             us to using [Popaque]. *)
-         Llet(Alias, layout, id, const, expr))
+         Llet(Alias, layout, id, Lambda.debug_uid_none, const, expr))
       consts expr
   in
   (*let expr =
@@ -123,6 +123,7 @@ let transl_label_init_flambda f =
     if !method_count = 0 then expr
     else
       Llet (Strict, Lambda.layout_array Pgenarray, method_cache_id,
+        Lambda.debug_uid_none,
         Lprim (Pccall prim_makearray,
                [int !method_count; int 0],
                Loc_unknown),
@@ -192,6 +193,7 @@ let oo_wrap_gen env req f x =
                         Loc_unknown)
                 in
                 Llet(StrictOpt, Lambda.layout_class, id,
+                     Lambda.debug_uid_none,
                      Lprim (Popaque Lambda.layout_class, [cl], Loc_unknown),
                      lambda))
              lambda !classes

@@ -77,8 +77,8 @@ let transl_object =
 let probe_handlers = ref []
 let clear_probe_handlers () = probe_handlers := []
 let declare_probe_handlers lam =
-  List.fold_left (fun acc (funcid, func) ->
-      Llet(Strict, Lambda.layout_function, funcid, func, acc))
+  List.fold_left (fun acc (funcid, func_duid, func) ->
+      Llet(Strict, Lambda.layout_function, funcid, func_duid, func, acc))
     lam
     !probe_handlers
 
@@ -477,7 +477,8 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
   | Texp_try(body, pat_expr_list) ->
       let id = Typecore.name_cases "exn" pat_expr_list in
       let return_layout = layout_exp sort e in
-      Ltrywith(transl_exp ~scopes sort body, id,
+      Ltrywith(transl_exp ~scopes sort body, id, Lambda.debug_uid_none,
+               (* CR sspies: Is there a better uid that we could track here. *)
                Matching.for_trywith ~scopes ~return_layout e.exp_loc (Lvar id)
                  (transl_cases_try ~scopes sort pat_expr_list),
                return_layout)
@@ -890,6 +891,8 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
       let body = transl_exp ~scopes for_body_sort for_body in
       Lfor {
         for_id;
+        for_debug_uid = Lambda.debug_uid_none;
+        (* CR sspies: The debug id should be tracked in the type tree already. *)
         for_loc = of_location ~scopes e.exp_loc;
         for_from = transl_exp ~scopes Jkind.Sort.Const.for_predef_value for_from;
         for_to = transl_exp ~scopes Jkind.Sort.Const.for_predef_value for_to;
@@ -957,7 +960,7 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
       let loc = of_location ~scopes e.exp_loc in
       let self = transl_value_path loc e.exp_env path_self in
       let cpy = Ident.create_local "copy" in
-      Llet(Strict, Lambda.layout_object, cpy,
+      Llet(Strict, Lambda.layout_object, cpy, Lambda.debug_uid_none,
            Lapply{
              ap_loc=Loc_unknown;
              ap_func=Translobj.oo_prim "copy";
@@ -985,13 +988,14 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
         let mod_scopes = enter_module_definition ~scopes id in
         !transl_module ~scopes:mod_scopes Tcoerce_none None modl
       in
-      Llet(Strict, Lambda.layout_module, id, defining_expr,
-           transl_exp ~scopes sort body)
+      Llet(Strict, Lambda.layout_module, id, Lambda.debug_uid_none,
+          defining_expr, transl_exp ~scopes sort body)
   | Texp_letmodule(_, _, Mp_absent, _, body) ->
       transl_exp ~scopes sort body
   | Texp_letexception(cd, body) ->
       Llet(Strict, Lambda.layout_block,
-           cd.ext_id, transl_extension_constructor ~scopes e.exp_env None cd,
+           cd.ext_id,  Lambda.debug_uid_none,
+           transl_extension_constructor ~scopes e.exp_env None cd,
            transl_exp ~scopes sort body)
   | Texp_pack modl ->
       !transl_module ~scopes Tcoerce_none None modl
@@ -1041,6 +1045,7 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
          let scopes = enter_lazy ~scopes in
          let fn = lfunction ~kind:(Curried {nlocal=0})
                             ~params:[{ name = Ident.create_local "param";
+                                       debug_uid = Lambda.debug_uid_none;
                                        layout = Lambda.layout_unit;
                                        attributes = Lambda.default_param_attribute;
                                        mode = alloc_heap}]
@@ -1093,6 +1098,7 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
                here. *)
             List.fold_left (fun (body, pos) id ->
               Llet(Alias, Lambda.layout_module_field, id,
+                   Lambda.debug_uid_none,
                    Lprim(mod_field pos, [Lvar oid],
                          of_location ~scopes od.open_loc), body),
               pos + 1
@@ -1100,6 +1106,7 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
               (bound_value_identifiers od.open_bound_items)
           in
           Llet(pure, Lambda.layout_module, oid,
+               Lambda.debug_uid_none,
                !transl_module ~scopes Tcoerce_none None od.open_expr, body)
       end
   | Texp_probe {name; handler=exp; enabled_at_init} ->
@@ -1157,6 +1164,7 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
       ) arg_idents;
       let make_param name = {
         name;
+        debug_uid = Lambda.debug_uid_none;
         layout = layout_probe_arg;
         attributes = Lambda.default_param_attribute;
         mode = alloc_local }
@@ -1221,14 +1229,18 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
       in
       begin match Config.flambda || Config.flambda2 with
       | true ->
-          Llet(Strict, Lambda.layout_function, funcid, handler, Lapply app)
+          Llet(Strict, Lambda.layout_function, funcid, Lambda.debug_uid_none,
+          handler, Lapply app)
       | false ->
         (* Needs to be lifted to top level manually here,
            because functions that contain other function declarations
            are not inlined by Closure. For example, adding a probe into
            the body of function foo will prevent foo from being inlined
            into another function. *)
-        probe_handlers := (funcid, handler)::!probe_handlers;
+        probe_handlers := (funcid, Lambda.debug_uid_none, handler)::!probe_handlers;
+        (* CR sspies: Currently, this sets all probe handlers to hidden. Probably,
+           this is the behavior we want and there is no need to store the debug_uid
+           in the probe handler. *)
         Lapply app
       end
     end else begin
@@ -1439,6 +1451,7 @@ and transl_apply ~scopes
           let layout_arg = layout_of_sort (to_location loc) sort_arg in
           let params = [{
               name = id_arg;
+              debug_uid = Lambda.debug_uid_none;
               layout = layout_arg;
               attributes = Lambda.default_param_attribute;
               mode = arg_mode
@@ -1450,7 +1463,10 @@ and transl_apply ~scopes
         (* Wrap "protected" definitions, starting from the left,
            so that evaluation is right-to-left. *)
         List.fold_right
-          (fun (id, layout, lam) body -> Llet(Strict, layout, id, lam, body))
+          (fun (id, layout, lam) body ->
+          (* CR sspies: It appears all variables in [defs] are hidden from
+             the user. Is that correct? *)
+          Llet(Strict, layout, id, Lambda.debug_uid_none, lam, body))
           !defs body
     | Arg (arg, _) :: l ->
       build_apply lam (arg :: args) loc pos ap_mode result_layout l
@@ -1551,6 +1567,7 @@ and transl_tupled_function
         let tparams =
           List.map (fun kind -> {
                 name = Ident.create_local "param";
+                debug_uid = Lambda.debug_uid_none;
                 layout = kind;
                 attributes = Lambda.default_param_attribute;
                 mode = alloc_heap
@@ -1606,6 +1623,8 @@ and transl_curried_function ~scopes loc repr params body
         in
         let param =
           { name = fc_param;
+            debug_uid = Lambda.debug_uid_none;
+            (* CR sspies: this is certainly wrong *)
             layout = arg_layout;
             attributes;
             mode = arg_mode;
@@ -1634,6 +1653,8 @@ and transl_curried_function ~scopes loc repr params body
         let arg_mode = transl_alloc_mode_l fp_mode in
         let param =
           { name = fp_param;
+            debug_uid = Lambda.debug_uid_none;
+            (* CR sspies: this is certainly wrong *)
             layout = arg_layout;
             attributes;
             mode = arg_mode;
@@ -1876,7 +1897,8 @@ and transl_let ~scopes ~return_layout ?(add_regions=false) ?(in_structure=false)
         let def =
           if add_regions then maybe_region_exp vb_sort expr def else def
         in
-        ( id, rkind, def ) in
+        (* CR sspies: Probably this recursive function has actually a debug id. *)
+        ( id, Lambda.debug_uid_none, rkind, def ) in
       let lam_bds = List.map2 transl_case pat_expr_list idlist in
       fun body -> Value_rec_compiler.compile_letrec lam_bds body
 
@@ -1959,6 +1981,7 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
     in
     assert (is_heap_mode (Option.get mode)); (* Pduprecord must be Alloc_heap and not unboxed *)
     Llet(Strict, Lambda.layout_block, copy_id,
+         Lambda.debug_uid_none,
          Lprim(Pduprecord (repres, size),
                [transl_exp ~scopes init_expr_sort init_expr],
                of_location ~scopes loc),
@@ -2134,6 +2157,7 @@ and transl_record ~scopes loc env mode fields repres opt_init_expr =
           Jkind.Sort.default_for_transl_and_get init_expr_sort
         in
         Llet(Strict, Lambda.layout_block, init_id,
+              Lambda.debug_uid_none, (* CR sspies: Is this really true? *)
              transl_exp ~scopes init_expr_sort init_expr, lam)
     end
 
@@ -2174,7 +2198,9 @@ and transl_record_unboxed_product ~scopes loc env fields repres opt_init_expr =
       in
       let layout = layout_exp init_expr_sort init_expr in
       let exp = transl_exp ~scopes init_expr_sort init_expr in
-      Llet(Strict, layout, init_id, exp, lam)
+      Llet(Strict, layout, init_id,
+      Lambda.debug_uid_none, (* CR sspies: Same as above. *)
+      exp, lam)
 
 and transl_match ~scopes ~arg_sort ~return_sort e arg pat_expr_list partial =
   let return_layout = layout_exp return_sort e in
@@ -2205,8 +2231,8 @@ and transl_match ~scopes ~arg_sort ~return_sort e arg pat_expr_list partial =
         let ids_full = Typedtree.pat_bound_idents_full arg_sort pv in
         let ids = List.map (fun (id, _, _, _, _) -> id) ids_full in
         let ids_kinds =
-          List.map (fun (id, {Location.loc; _}, ty, _, s) ->
-            id, Typeopt.layout pv.pat_env loc s ty)
+          List.map (fun (id, {Location.loc; _}, ty, uid, s) ->
+            id, uid, Typeopt.layout pv.pat_env loc s ty)
             ids_full
         in
         let vids = List.map Ident.rename ids in
@@ -2250,6 +2276,7 @@ and transl_match ~scopes ~arg_sort ~return_sort e arg pat_expr_list partial =
     let static_exception_id = next_raise_count () in
     Lstaticcatch
       (Ltrywith (Lstaticraise (static_exception_id, scrutinees), id,
+                 Lambda.debug_uid_none,
                  Matching.for_trywith ~scopes ~return_layout e.exp_loc (Lvar id)
                    exn_cases,
                  return_layout),
@@ -2281,7 +2308,7 @@ and transl_match ~scopes ~arg_sort ~return_sort e arg pat_expr_list partial =
             (fun (arg,s) ->
                let layout = layout_exp s arg in
                let id = Typecore.name_pattern "val" [] in
-               (id, layout), (Lvar id, s, layout))
+               (id, Lambda.debug_uid_none, layout), (Lvar id, s, layout))
             argl
           |> List.split
         in
@@ -2297,7 +2324,9 @@ and transl_match ~scopes ~arg_sort ~return_sort e arg pat_expr_list partial =
     | arg, _ :: _ ->
         let val_id = Typecore.name_pattern "val" (List.map fst val_cases) in
         let arg_layout = layout_exp arg_sort arg in
-        static_catch [transl_exp ~scopes arg_sort arg] [val_id, arg_layout]
+        static_catch
+          [transl_exp ~scopes arg_sort arg]
+          [val_id, Lambda.debug_uid_none, arg_layout]
           (Matching.for_function ~scopes ~arg_sort ~arg_layout ~return_layout
              e.exp_loc None (Lvar val_id) val_cases partial)
   in
@@ -2331,7 +2360,7 @@ and transl_letop ~scopes loc env let_ ands param param_sort case case_sort
             and_.bop_op_type
         in
         let lam =
-          bind_with_layout Strict (right_id, right_layout) exp
+          bind_with_layout Strict (right_id, Lambda.debug_uid_none, right_layout) exp
             (Lapply{
                ap_loc = of_location ~scopes and_.bop_loc;
                ap_func = op;
@@ -2345,7 +2374,7 @@ and transl_letop ~scopes loc env let_ ands param param_sort case case_sort
                ap_probe=None;
              })
         in
-        bind_with_layout Strict (left_id, prev_layout) prev_lam (loop result_layout lam rest)
+        bind_with_layout Strict (left_id,  Lambda.debug_uid_none, prev_layout) prev_lam (loop result_layout lam rest)
   in
   let op =
     transl_ident (of_location ~scopes let_.bop_op_name.loc) env
