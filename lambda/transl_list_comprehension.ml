@@ -167,12 +167,12 @@ let iterator ~transl_exp ~scopes = function
   | Texp_comp_range { ident; pattern = _; start; stop; direction } ->
     (* We have to let-bind [start] and [stop] so that they're evaluated in the
        correct (i.e., left-to-right) order *)
-    let transl_bound var bound =
-      Let_binding.make (Immutable Strict) layout_int var
+    let transl_bound var debug_uid bound =
+      Let_binding.make (Immutable Strict) layout_int var debug_uid
         (transl_exp ~scopes Jkind.Sort.Const.for_predef_value bound)
     in
-    let start = transl_bound "start" start in
-    let stop = transl_bound "stop" stop in
+    let start = transl_bound "start" Lambda.debug_uid_none start in
+    let stop = transl_bound "stop" Lambda.debug_uid_none stop in
     { builder =
         (match direction with
         | Upto -> rev_dlist_concat_iterate_up
@@ -185,6 +185,7 @@ let iterator ~transl_exp ~scopes = function
   | Texp_comp_in { pattern; sequence } ->
     let iter_list =
       Let_binding.make (Immutable Strict) layout_any_value "iter_list"
+        Lambda.debug_uid_none
         (transl_exp ~scopes Jkind.Sort.Const.for_predef_value sequence)
     in
     (* Create a fresh variable to use as the function argument *)

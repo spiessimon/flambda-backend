@@ -1723,6 +1723,8 @@ let map f =
 let bind_with_layout str (var, duid, layout) exp body =
   match exp with
     Lvar var' when Ident.same var var' -> body
+    (* CR sspies: This implicitly assumes that they have the same debug uid,
+       which is probably correct.*)
   | _ -> Llet(str, layout, var, duid, exp, body)
 
 let negate_integer_comparison = function

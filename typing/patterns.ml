@@ -87,6 +87,7 @@ module General = struct
     | `Var of Ident.t * string loc * Uid.t * Mode.Value.l
     | `Alias of pattern * Ident.t * string loc
                 * Uid.t * Mode.Value.l * Types.type_expr
+    (* CR sspies: ^^^^^ can this Uid.t be used for debugging information? *)
   ]
   type pattern = view pattern_data
 
