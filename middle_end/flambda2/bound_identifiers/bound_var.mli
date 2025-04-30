@@ -23,7 +23,7 @@ val create : Variable.t -> Flambda_debug_uid.t -> Name_mode.t -> t
 
 val var : t -> Variable.t
 
-val uid : t -> Flambda_debug_uid.t
+val debug_uid : t -> Flambda_debug_uid.t
 
 val name_mode : t -> Name_mode.t
 

@@ -14,8 +14,6 @@
 (*                                                                        *)
 (**************************************************************************)
 
-module Uid = Shape.Uid
-
 (** A parameter (to a function, continuation, etc.) together with its kind. *)
 type t
 

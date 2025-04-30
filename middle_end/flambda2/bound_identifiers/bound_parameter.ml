@@ -15,7 +15,6 @@
 (**************************************************************************)
 
 module Simple = Int_ids.Simple
-module Uid = Shape.Uid
 
 type t =
   { param : Variable.t;

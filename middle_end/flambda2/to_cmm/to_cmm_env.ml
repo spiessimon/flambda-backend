@@ -426,7 +426,7 @@ let create_binding_aux (type a) effs (var : Bound_var.t) ~(inline : a inline)
     !next_order
   in
   let cmm_var =
-    gen_variable ~debug_uid:(Bound_var.uid var) (Bound_var.var var)
+    gen_variable ~debug_uid:(Bound_var.debug_uid var) (Bound_var.var var)
   in
   let binding = Binding { order; inline; effs; cmm_var; bound_expr } in
   binding
