@@ -13,6 +13,8 @@
 (**************************************************************************)
 
 module Uid = Shape.Uid
+(* Lambda debugging uids of type [Lambda.debug_uid] are actually values of type
+   Shape.Uid.t, so we use the functions from [Shape.Uid] below. *)
 
 type t =
   | Uid of Lambda.debug_uid
