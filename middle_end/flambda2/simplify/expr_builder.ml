@@ -285,8 +285,7 @@ let create_coerced_singleton_let uacc var defining_expr
         let ((_body, _uacc, outer_result) as outer) =
           let bound =
             Bound_pattern.singleton
-              (VB.create uncoerced_var
-                 Flambda_debug_uid.internal_not_actually_unique name_mode)
+              (VB.create uncoerced_var Flambda_debug_uid.none name_mode)
           in
           create_let uacc bound defining_expr ~free_names_of_defining_expr ~body
             ~cost_metrics_of_defining_expr
@@ -571,8 +570,7 @@ let create_let_symbols uacc lifted_constant ~body =
       let expr, uacc, _ =
         create_coerced_singleton_let uacc
           (* CR tnowak: verify *)
-          (VB.create var Flambda_debug_uid.internal_not_actually_unique
-             Name_mode.normal)
+          (VB.create var Flambda_debug_uid.none Name_mode.normal)
           defining_expr ~coercion_from_defining_expr_to_var
           ~free_names_of_defining_expr ~body:expr ~cost_metrics_of_defining_expr
       in
@@ -769,8 +767,7 @@ let rewrite_fixed_arity_continuation0 uacc cont_or_apply_cont ~use_id arity :
       let params =
         List.map
           (fun kind ->
-            BP.create (Variable.create "param") kind
-              Flambda_debug_uid.internal_not_actually_unique
+            BP.create (Variable.create "param") kind Flambda_debug_uid.none
             (* CR tnowak: verify *))
           (Flambda_arity.unarized_components arity)
       in

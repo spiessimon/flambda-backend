@@ -626,8 +626,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
         let var, env = fresh_var env var in
         (* CR tnowak: verify *)
         let var =
-          Bound_var.create var Flambda_debug_uid.internal_not_actually_unique
-            Name_mode.normal
+          Bound_var.create var Flambda_debug_uid.none Name_mode.normal
         in
         var, env
       in
@@ -655,10 +654,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
     let named = defining_expr env d in
     let id, env = fresh_var env var in
     let body = expr env body in
-    let var =
-      Bound_var.create id Flambda_debug_uid.internal_not_actually_unique
-        Name_mode.normal
-    in
+    let var = Bound_var.create id Flambda_debug_uid.none Name_mode.normal in
     let bound = Bound_pattern.singleton var in
     Flambda.Let.create bound named ~body ~free_names_of_body:Unknown
     |> Flambda.Expr.create_let
@@ -689,7 +685,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
           let param =
             Bound_parameter.create var
               (value_kind_with_subkind_opt kind)
-              Flambda_debug_uid.internal_not_actually_unique
+              Flambda_debug_uid.none
             (* CR tnowak: verify *)
           in
           env, param :: args)
@@ -906,7 +902,7 @@ let rec expr env (e : Fexpr.expr) : Flambda.Expr.t =
                 let param =
                   Bound_parameter.create var
                     (value_kind_with_subkind_opt kind)
-                    Flambda_debug_uid.internal_not_actually_unique
+                    Flambda_debug_uid.none
                   (* CR tnowak: verify *)
                 in
                 param, env)

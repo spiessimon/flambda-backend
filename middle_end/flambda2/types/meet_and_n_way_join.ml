@@ -284,7 +284,7 @@ let add_defined_vars env level =
     (fun var kind env ->
       TE.add_definition env
         (Bound_name.create_var
-           (Bound_var.create var Flambda_debug_uid.internal_not_actually_unique
+           (Bound_var.create var Flambda_debug_uid.none
               (* CR sspies: fix *) Name_mode.in_types))
         kind)
     level env
@@ -1226,8 +1226,7 @@ and meet_row_like :
       (fun var kind env ->
         TE.add_definition env
           (Bound_name.create_var
-             (Bound_var.create var
-                Flambda_debug_uid.internal_not_actually_unique
+             (Bound_var.create var Flambda_debug_uid.none
                 (* CR sspies: fix *) Name_mode.in_types))
           kind)
       !extra_variables result_env

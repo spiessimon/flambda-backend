@@ -463,8 +463,7 @@ let names_with_non_equal_types_level_ignoring_name_mode ~meet_type env level1
       (fun var kind left_env ->
         TE.add_definition left_env
           (Bound_name.create_var
-             (Bound_var.create var
-                Flambda_debug_uid.internal_not_actually_unique
+             (Bound_var.create var Flambda_debug_uid.none
                 (* CR sspies: fix *)
                 Name_mode.in_types))
           kind)
@@ -475,8 +474,7 @@ let names_with_non_equal_types_level_ignoring_name_mode ~meet_type env level1
       (fun var kind right_env ->
         TE.add_definition right_env
           (Bound_name.create_var
-             (Bound_var.create var
-                Flambda_debug_uid.internal_not_actually_unique
+             (Bound_var.create var Flambda_debug_uid.none
                 (* CR sspies: fix *)
                 Name_mode.in_types))
           kind)

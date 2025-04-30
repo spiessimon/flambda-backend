@@ -214,10 +214,7 @@ let add_continuation t cont ~push_to_try_stack ~pop_region
   in
   let extra_params =
     List.map
-      (fun (id, kind) ->
-        ( id,
-          Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *),
-          kind ))
+      (fun (id, kind) -> id, Flambda_debug_uid.none (* CR sspies: fix *), kind)
       extra_params
   in
   { body_env; handler_env; extra_params }
@@ -280,9 +277,7 @@ let extra_args_for_continuation_with_kinds t cont =
         | exception Not_found ->
           Misc.fatal_errorf "No current value for %a" Ident.print mut
         | current_value, kind ->
-          ( current_value,
-            Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *),
-            kind ))
+          current_value, Flambda_debug_uid.none (* CR sspies: fix *), kind)
       mutables
 
 let extra_args_for_continuation t cont =

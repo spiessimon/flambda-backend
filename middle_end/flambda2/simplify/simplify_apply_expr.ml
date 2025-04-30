@@ -165,8 +165,7 @@ let simplify_direct_tuple_application ~simplify_expr dacc apply
     List.fold_right
       (fun (v, defining_expr) body ->
         let var_bind =
-          Bound_var.create v Flambda_debug_uid.internal_not_actually_unique
-            Name_mode.normal
+          Bound_var.create v Flambda_debug_uid.none Name_mode.normal
         in
         Let.create
           (Bound_pattern.singleton var_bind)
@@ -480,8 +479,7 @@ let simplify_direct_partial_application ~simplify_expr dacc apply
           List.map
             (fun kind ->
               let param = Variable.create "param" in
-              Bound_parameter.create param kind
-                Flambda_debug_uid.internal_not_actually_unique
+              Bound_parameter.create param kind Flambda_debug_uid.none
               (* CR sspies: fix *))
             (Flambda_arity.unarize remaining_param_arity)
           |> Bound_parameters.create
@@ -601,7 +599,7 @@ let simplify_direct_partial_application ~simplify_expr dacc apply
               | Const _ | Symbol _ -> expr, cost_metrics, free_names
               | In_closure { var; value_slot; value = _ } ->
                 let arg =
-                  VB.create var Flambda_debug_uid.internal_not_actually_unique
+                  VB.create var Flambda_debug_uid.none
                     (* CR sspies: fix *) Name_mode.normal
                 in
                 let prim =
@@ -713,7 +711,7 @@ let simplify_direct_partial_application ~simplify_expr dacc apply
       in
       let expr =
         let wrapper_var =
-          VB.create wrapper_var Flambda_debug_uid.internal_not_actually_unique
+          VB.create wrapper_var Flambda_debug_uid.none
             (* CR sspies: fix *) Name_mode.normal
         in
         let bound_vars = [wrapper_var] in

@@ -343,16 +343,13 @@ let rebuild_switch_with_single_arg_to_same_destination uacc ~dacc_before_switch
       | Must_untag ->
         let bound =
           BPt.singleton
-            (BV.create final_arg_var
-               Flambda_debug_uid.internal_not_actually_unique NM.normal)
+            (BV.create final_arg_var Flambda_debug_uid.none NM.normal)
         in
         let untag_arg = Named.create_prim untag_arg_prim dbg in
         RE.create_let rebuilding bound untag_arg ~body ~free_names_of_body
     in
     let bound =
-      BPt.singleton
-        (BV.create arg_var Flambda_debug_uid.internal_not_actually_unique
-           NM.normal)
+      BPt.singleton (BV.create arg_var Flambda_debug_uid.none NM.normal)
     in
     RE.create_let rebuilding bound load_from_block ~body ~free_names_of_body
   in
@@ -521,8 +518,7 @@ let rebuild_switch ~original ~arms ~condition_dbg ~scrutinee ~scrutinee_ty
                   Debuginfo.none
               in
               let bound =
-                VB.create not_scrutinee
-                  Flambda_debug_uid.internal_not_actually_unique NM.normal
+                VB.create not_scrutinee Flambda_debug_uid.none NM.normal
                 |> Bound_pattern.singleton
               in
               let apply_cont =
@@ -649,8 +645,7 @@ let simplify_switch ~simplify_let ~simplify_function_body dacc switch
     (* [body] won't be looked at (see below). *)
     Let.create
       (Bound_pattern.singleton
-         (Bound_var.create tagged_scrutinee
-            Flambda_debug_uid.internal_not_actually_unique NM.normal))
+         (Bound_var.create tagged_scrutinee Flambda_debug_uid.none NM.normal))
       tagging_prim
       ~body:(Expr.create_switch switch)
       ~free_names_of_body:Unknown

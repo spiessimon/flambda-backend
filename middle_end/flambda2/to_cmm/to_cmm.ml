@@ -81,8 +81,7 @@ let unit0 ~offsets ~all_code ~reachable_names flambda_unit =
     C.continuation_bound_parameters env
       (Bound_parameters.create
          [ Bound_parameter.create (Variable.create "*ret*")
-             Flambda_kind.With_subkind.any_value
-             Flambda_debug_uid.internal_not_actually_unique
+             Flambda_kind.With_subkind.any_value Flambda_debug_uid.none
            (* CR tnowak: verify *) ])
   in
   let return_cont, env =
@@ -94,8 +93,7 @@ let unit0 ~offsets ~all_code ~reachable_names flambda_unit =
   let env, toplevel_region_var =
     Env.create_bound_parameter env
       ( Flambda_unit.toplevel_my_region flambda_unit,
-        Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: verify *)
-      )
+        Flambda_debug_uid.none (* CR tnowak: verify *) )
   in
   let r =
     R.create ~reachable_names

@@ -92,7 +92,7 @@ let wrap_inlined_body_for_exn_extra_args acc ~extra_args ~apply_exn_continuation
           (fun k ->
             Bound_parameter.create
               (Variable.create "wrapper_return")
-              k Flambda_debug_uid.internal_not_actually_unique
+              k Flambda_debug_uid.none
             (* CR tnowak: verify *))
           (Flambda_arity.unarized_components result_arity)
       in
@@ -111,8 +111,7 @@ let wrap_inlined_body_for_exn_extra_args acc ~extra_args ~apply_exn_continuation
   let param = Variable.create "exn" in
   let wrapper_handler_params =
     [ Bound_parameter.create param Flambda_kind.With_subkind.any_value
-        Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: verify *)
-    ]
+        Flambda_debug_uid.none (* CR tnowak: verify *) ]
     |> Bound_parameters.create
   in
   let exn_handler = Exn_continuation.exn_handler apply_exn_continuation in

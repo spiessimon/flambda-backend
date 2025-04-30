@@ -310,8 +310,7 @@ let rec bind_recs acc exn_cont ~register_const0 (prim : expr_primitive)
   | If_then_else (cond, ifso, ifnot, result_kinds) ->
     let cond_result = Variable.create "cond_result" in
     let cond_result_pat =
-      Bound_var.create cond_result
-        Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
+      Bound_var.create cond_result Flambda_debug_uid.none Name_mode.normal
     in
     let ifso_cont = Continuation.create () in
     let ifnot_cont = Continuation.create () in
@@ -323,7 +322,7 @@ let rec bind_recs acc exn_cont ~register_const0 (prim : expr_primitive)
       List.map2
         (fun result_var result_kind ->
           Bound_parameter.create result_var result_kind
-            Flambda_debug_uid.internal_not_actually_unique (* CR sspies: new *))
+            Flambda_debug_uid.none (* CR sspies: new *))
         result_vars result_kinds
     in
     let result_simples = List.map Simple.var result_vars in
@@ -355,8 +354,7 @@ let rec bind_recs acc exn_cont ~register_const0 (prim : expr_primitive)
       let result_pats =
         List.map
           (fun result_var ->
-            Bound_var.create result_var
-              Flambda_debug_uid.internal_not_actually_unique
+            Bound_var.create result_var Flambda_debug_uid.none
               (* CR sspies: fix *) Name_mode.normal)
           result_vars
       in
@@ -396,8 +394,7 @@ let rec bind_recs acc exn_cont ~register_const0 (prim : expr_primitive)
           (fun acc nameds ->
             let named = must_be_singleton_named nameds in
             let pat =
-              Bound_var.create (Variable.create "seq")
-                Flambda_debug_uid.internal_not_actually_unique
+              Bound_var.create (Variable.create "seq") Flambda_debug_uid.none
                 (* CR sspies: fix *) Name_mode.normal
               |> Bound_pattern.singleton
             in
@@ -422,9 +419,7 @@ and bind_rec_primitive acc exn_cont ~register_const0 (prim : simple_or_prim)
       let vars = List.map (fun _ -> Variable.create "prim") nameds in
       let vars' =
         List.map
-          (fun var ->
-            VB.create var Flambda_debug_uid.internal_not_actually_unique
-              Name_mode.normal)
+          (fun var -> VB.create var Flambda_debug_uid.none Name_mode.normal)
           vars
       in
       let acc, body = cont acc (List.map Simple.var vars) in
