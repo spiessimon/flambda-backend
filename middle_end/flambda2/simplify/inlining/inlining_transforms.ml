@@ -44,10 +44,13 @@ let make_inlined_body ~callee ~called_code_id ~unroll_to ~params ~args
         in
         Some callee, unrolled_rec_info)
   in
+  let my_closure_duid = Flambda_debug_uid.none in
+  (* CR sspies: Not sure whethere these closures can ever be user visible.
+     Popagating a [Lambda_debug_uid.t] here is nontrivial, so I picked
+     [Flambda_debug_uid.none] for now. *)
   let my_closure =
     Bound_parameter.create my_closure Flambda_kind.With_subkind.any_value
-      Flambda_debug_uid.none
-    (* CR tnowak: maybe here? *)
+      my_closure_duid
   in
   let bind_params ~params ~args ~body =
     if List.compare_lengths params args <> 0
@@ -66,9 +69,11 @@ let make_inlined_body ~callee ~called_code_id ~unroll_to ~params ~args
         |> Expr.create_let)
   in
   let bind_depth ~my_depth ~rec_info ~body =
+    let my_depth_duid = Flambda_debug_uid.none in
+    (* CR sspies: [my_depth] sounds like something internally generated. *)
     let bound =
       Bound_pattern.singleton
-        (VB.create my_depth Flambda_debug_uid.none Name_mode.normal)
+        (VB.create my_depth my_depth_duid Name_mode.normal)
     in
     Let.create bound
       (Named.create_rec_info rec_info)

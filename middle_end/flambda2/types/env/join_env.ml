@@ -1194,7 +1194,10 @@ let cut_and_n_way_join ~n_way_join_type ~meet_type ~cut_after target_env
           TE.add_definition target_env
             (Bound_name.create_var
                (Bound_var.create var Flambda_debug_uid.none
-                  (* CR sspies: fix *) Name_mode.in_types))
+                  (* CR sspies: We can probably find a better
+                     [Flambda_debug_uid.t] for these extra variables. However,
+                     propagating it here seems non-trivial. *)
+                  Name_mode.in_types))
             kind)
         extra_variables target_env
     in

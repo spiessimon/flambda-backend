@@ -47,7 +47,11 @@ let join_types ~env_at_fork envs_with_levels =
                     TE.add_definition base_env
                       (Bound_name.create_var
                          (Bound_var.create var Flambda_debug_uid.none
-                            (* CR sspies: fix *) Name_mode.in_types))
+                            (* CR sspies: We can probably find a better
+                               [Flambda_debug_uid.t] for these variables.
+                               However, propagating it here seems
+                               non-trivial. *)
+                            Name_mode.in_types))
                       kind)
                 vars base_env)
             (TEL.variables_by_binding_time level)

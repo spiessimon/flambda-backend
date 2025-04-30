@@ -464,7 +464,9 @@ let names_with_non_equal_types_level_ignoring_name_mode ~meet_type env level1
         TE.add_definition left_env
           (Bound_name.create_var
              (Bound_var.create var Flambda_debug_uid.none
-                (* CR sspies: fix *)
+                (* CR sspies: We can probably find a better
+                   [Flambda_debug_uid.t] for these variables. However,
+                   propagating it here seems non-trivial. *)
                 Name_mode.in_types))
           kind)
       level1 env
@@ -475,7 +477,9 @@ let names_with_non_equal_types_level_ignoring_name_mode ~meet_type env level1
         TE.add_definition right_env
           (Bound_name.create_var
              (Bound_var.create var Flambda_debug_uid.none
-                (* CR sspies: fix *)
+                (* CR sspies: We can probably find a better
+                   [Flambda_debug_uid.t] for these variables. However,
+                   propagating it here seems non-trivial. *)
                 Name_mode.in_types))
           kind)
       level2 env
