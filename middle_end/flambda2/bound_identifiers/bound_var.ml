@@ -16,12 +16,12 @@
 
 type t =
   { var : Variable.t;
-    uid : Flambda_uid.t;
+    uid : Flambda_debug_uid.t;
     name_mode : Name_mode.t
   }
 
 let [@ocamlformat "disable"] print ppf { var; uid; name_mode = _; } =
-  Format.fprintf ppf "%a,uid=%a" Variable.print var Flambda_uid.print uid
+  Format.fprintf ppf "%a,uid=%a" Variable.print var Flambda_debug_uid.print uid
 
 let create var uid name_mode =
   (* Note that [name_mode] might be [In_types], e.g. when dealing with function

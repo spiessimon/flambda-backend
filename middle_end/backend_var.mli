@@ -19,7 +19,7 @@
 
 include module type of struct include Ident end
 
-module Uid = Flambda2_identifiers.Flambda_uid
+module Uid = Flambda2_identifiers.Flambda_debug_uid
 
 type backend_var = t
 

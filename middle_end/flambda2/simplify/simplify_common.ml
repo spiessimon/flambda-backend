@@ -187,8 +187,8 @@ let split_direct_over_application apply
           (fun i kind ->
             BP.create
               (Variable.create ("result" ^ string_of_int i))
-              kind
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: verify *))
+              kind Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: verify *))
           (Flambda_arity.unarized_components (Apply.return_arity apply))
       in
       let call_return_continuation, call_return_continuation_free_names =
@@ -209,7 +209,7 @@ let split_direct_over_application apply
         Let.create
           (Bound_pattern.singleton
              (Bound_var.create (Variable.create "unit")
-                Flambda_uid.internal_not_actually_unique Name_mode.normal))
+                Flambda_debug_uid.internal_not_actually_unique Name_mode.normal))
           (Named.create_prim
              (Unary (End_region { ghost = false }, Simple.var region))
              (Apply.dbg apply))
@@ -217,7 +217,7 @@ let split_direct_over_application apply
             (Let.create
                (Bound_pattern.singleton
                   (Bound_var.create (Variable.create "unit")
-                     Flambda_uid.internal_not_actually_unique
+                     Flambda_debug_uid.internal_not_actually_unique
                      (* CR sspies: fix *) Name_mode.normal))
                (Named.create_prim
                   (Unary (End_region { ghost = true }, Simple.var ghost_region))
@@ -250,7 +250,7 @@ let split_direct_over_application apply
   let after_full_application_handler =
     let func_param =
       BP.create func_var K.With_subkind.any_value
-        Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+        Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
     in
     Continuation_handler.create
       (Bound_parameters.create [func_param])
@@ -285,7 +285,7 @@ let split_direct_over_application apply
     in
     Let.create
       (Bound_pattern.singleton
-         (Bound_var.create region Flambda_uid.internal_not_actually_unique
+         (Bound_var.create region Flambda_debug_uid.internal_not_actually_unique
             (* CR tnowak: verify *) Name_mode.normal))
       (Named.create_prim
          (Variadic (Begin_region { ghost = false }, []))
@@ -294,7 +294,7 @@ let split_direct_over_application apply
         (Let.create
            (Bound_pattern.singleton
               (Bound_var.create ghost_region
-                 Flambda_uid.internal_not_actually_unique
+                 Flambda_debug_uid.internal_not_actually_unique
                  (* CR sspies: fix *) Name_mode.normal))
            (Named.create_prim
               (Variadic (Begin_region { ghost = false }, []))

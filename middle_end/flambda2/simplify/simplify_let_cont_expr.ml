@@ -262,7 +262,8 @@ let extra_params_for_continuation_param_aliases cont uacc rewrite_ids =
       EPA.add
         ~extra_param:
           (Bound_parameter.create var var_kind
-             Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *))
+             Flambda_debug_uid.internal_not_actually_unique
+             (* CR tnowak: maybe? *))
         ~extra_args epa ~invalids:Apply_cont_rewrite_id.Set.empty)
     required_extra_args.extra_args_for_aliases EPA.empty
 
@@ -506,7 +507,7 @@ let add_lets_around_handler cont at_unit_toplevel uacc handler =
         let bound_pattern =
           (* CR tnowak: verify *)
           Bound_pattern.singleton
-            (Bound_var.create var Flambda_uid.internal_not_actually_unique
+            (Bound_var.create var Flambda_debug_uid.internal_not_actually_unique
                Name_mode.normal)
         in
         let named = Named.create_simple (Simple.var bound_to) in

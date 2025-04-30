@@ -46,7 +46,8 @@ let make_inlined_body ~callee ~called_code_id ~unroll_to ~params ~args
   in
   let my_closure =
     Bound_parameter.create my_closure Flambda_kind.With_subkind.any_value
-      Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe here? *)
+      Flambda_debug_uid.internal_not_actually_unique
+    (* CR tnowak: maybe here? *)
   in
   let bind_params ~params ~args ~body =
     if List.compare_lengths params args <> 0
@@ -67,7 +68,7 @@ let make_inlined_body ~callee ~called_code_id ~unroll_to ~params ~args
   let bind_depth ~my_depth ~rec_info ~body =
     let bound =
       Bound_pattern.singleton
-        (VB.create my_depth Flambda_uid.internal_not_actually_unique
+        (VB.create my_depth Flambda_debug_uid.internal_not_actually_unique
            Name_mode.normal)
     in
     Let.create bound

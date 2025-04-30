@@ -28,7 +28,7 @@ let add_equation_on_var denv var shape =
 let denv_of_number_decision naked_kind shape param_var naked_var denv : DE.t =
   (* CR tnowak: verify *)
   let naked_name =
-    VB.create naked_var Flambda_uid.internal_not_actually_unique
+    VB.create naked_var Flambda_debug_uid.internal_not_actually_unique
       Name_mode.normal
   in
   let denv = DE.define_variable denv naked_name naked_kind in
@@ -42,7 +42,7 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
       Misc.Stdlib.List.fold_lefti
         (fun index denv ({ epa = { param = var; _ }; _ } : U.field_decision) ->
           let v =
-            VB.create var Flambda_uid.internal_not_actually_unique
+            VB.create var Flambda_debug_uid.internal_not_actually_unique
               Name_mode.normal
           in
           DE.define_variable denv v (K.Block_shape.element_kind shape index))
@@ -69,7 +69,7 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
         (fun _ ({ epa = { param = var; _ }; kind; _ } : U.field_decision) denv ->
           (* CR tnowak: verify *)
           let v =
-            VB.create var Flambda_uid.internal_not_actually_unique
+            VB.create var Flambda_debug_uid.internal_not_actually_unique
               Name_mode.normal
           in
           DE.define_variable denv v (K.With_subkind.kind kind))
@@ -94,7 +94,7 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
     (* Adapt the denv for the tag *)
     (* CR tnowak: verify *)
     let tag_v =
-      VB.create tag.param Flambda_uid.internal_not_actually_unique
+      VB.create tag.param Flambda_debug_uid.internal_not_actually_unique
         Name_mode.normal
     in
     let denv = DE.define_variable denv tag_v K.naked_immediate in
@@ -114,7 +114,7 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
       | At_least_one { is_int; _ } ->
         (* CR tnowak: verify *)
         let is_int_v =
-          VB.create is_int.param Flambda_uid.internal_not_actually_unique
+          VB.create is_int.param Flambda_debug_uid.internal_not_actually_unique
             Name_mode.normal
         in
         let denv = DE.define_variable denv is_int_v K.naked_immediate in
@@ -140,8 +140,8 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
       | At_least_one { ctor = Unbox (Number (Naked_immediate, ctor_epa)); _ } ->
         (* CR tnowak: verify *)
         let v =
-          VB.create ctor_epa.param Flambda_uid.internal_not_actually_unique
-            Name_mode.normal
+          VB.create ctor_epa.param
+            Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
         in
         let denv = DE.define_variable denv v K.naked_immediate in
         let ty =
@@ -168,7 +168,7 @@ let rec denv_of_decision denv ~param_var (decision : U.decision) : DE.t =
           Misc.Stdlib.List.fold_lefti
             (fun index denv ({ epa = { param = var; _ }; _ } : U.field_decision) ->
               let v =
-                VB.create var Flambda_uid.internal_not_actually_unique
+                VB.create var Flambda_debug_uid.internal_not_actually_unique
                   Name_mode.normal
               in
               DE.define_variable denv v (K.Block_shape.element_kind shape index))

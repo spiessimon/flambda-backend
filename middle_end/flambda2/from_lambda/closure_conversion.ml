@@ -355,7 +355,7 @@ module Inlining = struct
           Let_with_acc.create acc
             (* CR tnowak: verify *)
             (Bound_pattern.singleton
-               (VB.create param Flambda_uid.internal_not_actually_unique
+               (VB.create param Flambda_debug_uid.internal_not_actually_unique
                   Name_mode.normal))
             (Named.create_simple arg) ~body)
         (acc, body) params args
@@ -363,7 +363,7 @@ module Inlining = struct
     let bind_depth ~my_depth ~rec_info ~body:(acc, body) =
       Let_with_acc.create acc
         (Bound_pattern.singleton
-           (VB.create my_depth Flambda_uid.internal_not_actually_unique
+           (VB.create my_depth Flambda_debug_uid.internal_not_actually_unique
               Name_mode.normal))
         (Named.create_rec_info rec_info)
         ~body
@@ -390,7 +390,7 @@ module Inlining = struct
       (Bound_pattern.singleton
          (VB.create
             (Variable.create "inlined_dbg")
-            Flambda_uid.internal_not_actually_unique Name_mode.normal))
+            Flambda_debug_uid.internal_not_actually_unique Name_mode.normal))
       (Named.create_prim
          (Nullary (Enter_inlined_apply { dbg = inlined_debuginfo }))
          Debuginfo.none)
@@ -690,8 +690,8 @@ let close_c_call acc env ~loc ~let_bound_ids_with_kinds
           | [arg] ->
             let result = Variable.create "reinterpreted" in
             let result' =
-              Bound_var.create result Flambda_uid.internal_not_actually_unique
-                Name_mode.normal
+              Bound_var.create result
+                Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
             in
             let bindable = Bound_pattern.singleton result' in
             let prim = P.Unary (Reinterpret_64_bit_word op, arg) in
@@ -745,8 +745,8 @@ let close_c_call acc env ~loc ~let_bound_ids_with_kinds
           fun args acc ->
             let unboxed_arg = Variable.create "unboxed" in
             let unboxed_arg' =
-              VB.create unboxed_arg Flambda_uid.internal_not_actually_unique
-                Name_mode.normal
+              VB.create unboxed_arg
+                Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
             in
             let acc, body = call (Simple.var unboxed_arg :: args) acc in
             let named = Named.create_prim (Unary (named, arg)) dbg in
@@ -761,7 +761,7 @@ let close_c_call acc env ~loc ~let_bound_ids_with_kinds
         (fun ret_value { kind; _ } ->
           BP.create ret_value
             (K.With_subkind.anything kind)
-            Flambda_uid.internal_not_actually_unique
+            Flambda_debug_uid.internal_not_actually_unique
           (* CR tnowak: verify *))
         handler_params unarized_results
       |> Bound_parameters.create
@@ -780,7 +780,7 @@ let close_c_call acc env ~loc ~let_bound_ids_with_kinds
     let let_bound_vars' =
       List.map
         (fun let_bound_var ->
-          VB.create let_bound_var Flambda_uid.internal_not_actually_unique
+          VB.create let_bound_var Flambda_debug_uid.internal_not_actually_unique
             Name_mode.normal)
         let_bound_vars
     in
@@ -888,7 +888,7 @@ let close_effect_primitive acc env ~dbg exn_continuation
   let return_kind = Flambda_kind.With_subkind.any_value in
   let params =
     [ BP.create let_bound_var return_kind
-        Flambda_uid.internal_not_actually_unique (* CR sspies: fix *) ]
+        Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *) ]
     |> Bound_parameters.create
   in
   let close call_kind =
@@ -1648,7 +1648,7 @@ let close_switch acc env ~condition_dbg scrutinee (sw : IR.switch) :
   let scrutinee = find_simple_from_id env scrutinee in
   let untagged_scrutinee = Variable.create "untagged" in
   let untagged_scrutinee' =
-    VB.create untagged_scrutinee Flambda_uid.internal_not_actually_unique
+    VB.create untagged_scrutinee Flambda_debug_uid.internal_not_actually_unique
       Name_mode.normal
   in
   let known_const_scrutinee =
@@ -1690,7 +1690,7 @@ let close_switch acc env ~condition_dbg scrutinee (sw : IR.switch) :
     in
     let comparison_result = Variable.create "eq" in
     let comparison_result' =
-      VB.create comparison_result Flambda_uid.internal_not_actually_unique
+      VB.create comparison_result Flambda_debug_uid.internal_not_actually_unique
         Name_mode.normal
     in
     let acc, default_action =
@@ -1863,7 +1863,7 @@ let compute_body_of_unboxed_function acc my_region my_closure
             (Bound_pattern.singleton
                (Bound_var.create
                   (Bound_parameter.var param)
-                  Flambda_uid.internal_not_actually_unique
+                  Flambda_debug_uid.internal_not_actually_unique
                   (* CR sspies: fix *) Name_mode.normal))
             (Named.create_prim
                (boxing_primitive k alloc_mode (List.map fst vars_with_kinds))
@@ -1873,7 +1873,7 @@ let compute_body_of_unboxed_function acc my_region my_closure
         ( List.map
             (fun (var, kind) ->
               Bound_parameter.create var kind
-                Flambda_uid.internal_not_actually_unique
+                Flambda_debug_uid.internal_not_actually_unique
               (* CR sspies: fix *))
             vars_with_kinds
           @ main_code_params,
@@ -1922,7 +1922,7 @@ let compute_body_of_unboxed_function acc my_region my_closure
       let handler_params =
         Bound_parameters.create
           [ Bound_parameter.create boxed_variable return
-              Flambda_uid.internal_not_actually_unique
+              Flambda_debug_uid.internal_not_actually_unique
             (* CR sspies: fix *) ]
       in
       let handler acc =
@@ -1939,7 +1939,7 @@ let compute_body_of_unboxed_function acc my_region my_closure
               ( Let_with_acc.create acc
                   (Bound_pattern.singleton
                      (Bound_var.create var
-                        Flambda_uid.internal_not_actually_unique
+                        Flambda_debug_uid.internal_not_actually_unique
                         (* CR sspies: fix *) Name_mode.normal))
                   (Named.create_prim
                      (unboxing_primitive k boxed_variable i)
@@ -1965,7 +1965,8 @@ let compute_body_of_unboxed_function acc my_region my_closure
   let acc, unboxed_body =
     Let_with_acc.create acc
       (Bound_pattern.singleton
-         (Bound_var.create my_closure Flambda_uid.internal_not_actually_unique
+         (Bound_var.create my_closure
+            Flambda_debug_uid.internal_not_actually_unique
             (* CR sspies: fix *) Name_mode.normal))
       (Named.create_prim
          (Flambda_primitive.Unary
@@ -2046,7 +2047,7 @@ let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
                     (Let_expr.create
                        (Bound_pattern.singleton
                           (Bound_var.create var
-                             Flambda_uid.internal_not_actually_unique
+                             Flambda_debug_uid.internal_not_actually_unique
                              (* CR sspies: fix *) Name_mode.normal))
                        named ~body
                        ~free_names_of_body:(Known free_names_of_body)),
@@ -2102,7 +2103,7 @@ let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
         (Let_expr.create
            (Bound_pattern.singleton
               (Bound_var.create main_closure
-                 Flambda_uid.internal_not_actually_unique
+                 Flambda_debug_uid.internal_not_actually_unique
                  (* CR sspies: fix *) Name_mode.normal))
            projection
            ~body:(Expr.create_apply main_application)
@@ -2127,7 +2128,7 @@ let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
              (fun kind ->
                let var = Variable.create "unboxed_return" in
                Bound_parameter.create var kind
-                 Flambda_uid.internal_not_actually_unique
+                 Flambda_debug_uid.internal_not_actually_unique
                (* CR sspies: fix *))
              (Flambda_arity.unarized_components result_arity_main_code))
       in
@@ -2147,7 +2148,7 @@ let make_unboxed_function_wrapper acc function_slot ~unarized_params:params
             (Let_expr.create
                (Bound_pattern.singleton
                   (Bound_var.create boxed_return
-                     Flambda_uid.internal_not_actually_unique
+                     Flambda_debug_uid.internal_not_actually_unique
                      (* CR sspies: fix *) Name_mode.normal))
                box_result_named
                ~body:(Expr.create_apply_cont return_apply_cont)
@@ -2425,7 +2426,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
     List.map
       (fun (p : Function_decl.param) ->
         let var = fst (Env.find_var closure_env p.name) in
-        BP.create var p.kind Flambda_uid.internal_not_actually_unique
+        BP.create var p.kind Flambda_debug_uid.internal_not_actually_unique
         (* CR sspies: fix *))
       unarized_params
     |> Bound_parameters.create
@@ -2460,7 +2461,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
             Project_function_slot { move_from = function_slot; move_to }
           in
           let var =
-            VB.create var Flambda_uid.internal_not_actually_unique
+            VB.create var Flambda_debug_uid.internal_not_actually_unique
               Name_mode.normal
           in
           let named =
@@ -2473,7 +2474,7 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
       Variable.Map.fold
         (fun var value_slot (acc, body) ->
           let var =
-            VB.create var Flambda_uid.internal_not_actually_unique
+            VB.create var Flambda_debug_uid.internal_not_actually_unique
               Name_mode.normal
           in
           let named =
@@ -2490,8 +2491,8 @@ let close_one_function acc ~code_id ~external_env ~by_function_slot
     let next_depth_expr = Rec_info_expr.succ (Rec_info_expr.var my_depth) in
     let bound =
       Bound_pattern.singleton
-        (Bound_var.create next_depth Flambda_uid.internal_not_actually_unique
-           Name_mode.normal)
+        (Bound_var.create next_depth
+           Flambda_debug_uid.internal_not_actually_unique Name_mode.normal)
     in
     Let_with_acc.create acc bound (Named.create_rec_info next_depth_expr) ~body
   in
@@ -2912,7 +2913,7 @@ let close_let_rec acc env ~function_declarations
           (* CR tnowak: verify *)
           VB.create
             (fst (Env.find_var env ident))
-            Flambda_uid.internal_not_actually_unique Name_mode.normal
+            Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
         in
         let function_slot = Function_decl.function_slot decl in
         ( Function_slot.Map.add function_slot fun_var fun_vars_map,
@@ -2977,7 +2978,7 @@ let close_let_rec acc env ~function_declarations
           let fun_var =
             VB.create
               (Variable.create "generated")
-              Flambda_uid.internal_not_actually_unique Name_mode.normal
+              Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
           in
           Function_slot.Map.add function_slot fun_var fun_vars_map)
         generated_closures fun_vars_map
@@ -3041,7 +3042,8 @@ let wrap_partial_application acc env apply_continuation (apply : IR.apply)
       (fun n (kind, mode) : Function_decl.param ->
         { name = Ident.create_local ("param" ^ string_of_int (num_provided + n));
           var_uid =
-            Flambda_uid.internal_not_actually_unique (* CR tnowak: verify *);
+            Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: verify *);
           kind;
           attributes = Lambda.default_param_attribute;
           mode = Alloc_mode.For_types.to_lambda mode
@@ -3126,7 +3128,8 @@ let wrap_partial_application acc env apply_continuation (apply : IR.apply)
   else
     let function_declarations =
       [ Function_decl.create ~let_rec_ident:(Some wrapper_id)
-          ~let_rec_uid:Flambda_uid.internal_not_actually_unique ~function_slot
+          ~let_rec_uid:Flambda_debug_uid.internal_not_actually_unique
+          ~function_slot
           ~kind:
             (Lambda.Curried
                { nlocal =
@@ -3220,8 +3223,8 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
           (fun i kind ->
             BP.create
               (Variable.create ("result" ^ string_of_int i))
-              kind
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: verify *))
+              kind Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: verify *))
           (Flambda_arity.unarized_components apply.return_arity)
       in
       let handler acc =
@@ -3237,7 +3240,7 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
           Let_with_acc.create acc
             (Bound_pattern.singleton
                (Bound_var.create (Variable.create "unit")
-                  Flambda_uid.internal_not_actually_unique
+                  Flambda_debug_uid.internal_not_actually_unique
                   (* CR sspies: fix *) Name_mode.normal))
             (Named.create_prim
                (Unary (End_region { ghost = true }, Simple.var ghost_region))
@@ -3247,7 +3250,7 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
         Let_with_acc.create acc
           (Bound_pattern.singleton
              (Bound_var.create (Variable.create "unit")
-                Flambda_uid.internal_not_actually_unique
+                Flambda_debug_uid.internal_not_actually_unique
                 (* CR sspies: fix *) Name_mode.normal))
           (Named.create_prim
              (Unary (End_region { ghost = false }, Simple.var region))
@@ -3267,7 +3270,8 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
     Let_cont_with_acc.build_non_recursive acc wrapper_cont
       ~handler_params:
         ([ BP.create returned_func K.With_subkind.any_value
-             Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *) ]
+             Flambda_debug_uid.internal_not_actually_unique
+           (* CR tnowak: maybe? *) ]
         |> Bound_parameters.create)
       ~handler:perform_over_application ~body ~is_exn_handler:false
       ~is_cold:false
@@ -3279,7 +3283,7 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
       Let_with_acc.create acc
         (Bound_pattern.singleton
            (Bound_var.create ghost_region
-              Flambda_uid.internal_not_actually_unique
+              Flambda_debug_uid.internal_not_actually_unique
               (* CR sspies: fix *) Name_mode.normal))
         (Named.create_prim
            (Variadic (Begin_region { ghost = true }, []))
@@ -3288,7 +3292,7 @@ let wrap_over_application acc env full_call (apply : IR.apply) ~remaining
     in
     Let_with_acc.create acc
       (Bound_pattern.singleton
-         (Bound_var.create region Flambda_uid.internal_not_actually_unique
+         (Bound_var.create region Flambda_debug_uid.internal_not_actually_unique
             Name_mode.normal))
       (Named.create_prim
          (Variadic (Begin_region { ghost = false }, []))
@@ -3614,7 +3618,7 @@ let wrap_final_module_block acc env ~program ~prog_return_cont
       (fun (acc, body) (pos, var) ->
         (* CR tnowak: verify *)
         let var =
-          VB.create var Flambda_uid.internal_not_actually_unique
+          VB.create var Flambda_debug_uid.internal_not_actually_unique
             Name_mode.normal
         in
         let pat = Bound_pattern.singleton var in
@@ -3638,7 +3642,8 @@ let wrap_final_module_block acc env ~program ~prog_return_cont
   in
   let load_fields_handler_param =
     [ BP.create module_block_var K.With_subkind.any_value
-        Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *) ]
+        Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+    ]
     |> Bound_parameters.create
   in
   (* This binds the return continuation that is free (or, at least, not bound)

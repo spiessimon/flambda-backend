@@ -144,7 +144,8 @@ let define_variable0 ~extra t var kind =
           Lifted_cont_params.new_param ~replay_history
             variables_defined_in_current_continuation
             (Bound_parameter.create (Bound_var.var var) kind
-               Flambda_uid.internal_not_actually_unique (* CR sspies: fix *))
+               Flambda_debug_uid.internal_not_actually_unique
+               (* CR sspies: fix *))
         in
         variables_defined_in_current_continuation :: r
   in
@@ -205,11 +206,11 @@ let create ~round ~(resolver : resolver)
   define_variable
     (define_variable t
        (Bound_var.create toplevel_my_region
-          Flambda_uid.internal_not_actually_unique
+          Flambda_debug_uid.internal_not_actually_unique
           (* CR sspies: fix *) Name_mode.normal)
        K.region)
     (Bound_var.create toplevel_my_ghost_region
-       Flambda_uid.internal_not_actually_unique
+       Flambda_debug_uid.internal_not_actually_unique
        (* CR sspies: fix *) Name_mode.normal)
     K.region
 
@@ -317,7 +318,7 @@ let define_name t name kind =
   Name.pattern_match (Bound_name.name name)
     ~var:(fun [@inline] var ->
       (define_variable [@inlined hint]) t
-        (Bound_var.create var Flambda_uid.internal_not_actually_unique
+        (Bound_var.create var Flambda_debug_uid.internal_not_actually_unique
            (* CR sspies: fix *) (Bound_name.name_mode name))
         kind)
     ~symbol:(fun [@inline] sym -> (define_symbol [@inlined hint]) t sym kind)
@@ -339,7 +340,7 @@ let add_name t name ty =
   Name.pattern_match (Bound_name.name name)
     ~var:(fun [@inline] var ->
       add_variable t
-        (Bound_var.create var Flambda_uid.internal_not_actually_unique
+        (Bound_var.create var Flambda_debug_uid.internal_not_actually_unique
            (* CR sspies: fix *) (Bound_name.name_mode name))
         ty)
     ~symbol:(fun [@inline] sym -> add_symbol t sym ty)
@@ -382,7 +383,8 @@ let define_parameters ~extra t ~params =
     (fun t param ->
       let param_var, _param_uid = BP.var_and_uid param in
       let var =
-        Bound_var.create param_var Flambda_uid.internal_not_actually_unique
+        Bound_var.create param_var
+          Flambda_debug_uid.internal_not_actually_unique
           (* CR sspies: fix *) Name_mode.normal
       in
       define_variable0 ~extra t var (K.With_subkind.kind (BP.kind param)))
@@ -404,7 +406,8 @@ let add_parameters ~extra ?(name_mode = Name_mode.normal) t params ~param_types
     (fun t param param_type ->
       let param_var, _param_uid = BP.var_and_uid param in
       let var =
-        Bound_var.create param_var Flambda_uid.internal_not_actually_unique
+        Bound_var.create param_var
+          Flambda_debug_uid.internal_not_actually_unique
           (* CR sspies: fix *) name_mode
       in
       add_variable0 ~extra t var param_type)

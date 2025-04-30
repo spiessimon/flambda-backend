@@ -422,7 +422,8 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
         (fun extra_params_and_args ({ epa; decision; kind } : U.field_decision) ->
           let extra_param =
             BP.create epa.param kind
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+              Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: maybe? *)
           in
           let extra_params_and_args =
             EPA.add extra_params_and_args ~invalids ~extra_param
@@ -436,7 +437,8 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
              extra_params_and_args ->
           let extra_param =
             BP.create epa.param kind
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+              Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: maybe? *)
           in
           let extra_params_and_args =
             EPA.add extra_params_and_args ~invalids ~extra_param
@@ -453,7 +455,7 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
                    ({ epa; decision; kind } : U.field_decision) ->
                 let extra_param =
                   BP.create epa.param kind
-                    Flambda_uid.internal_not_actually_unique
+                    Flambda_debug_uid.internal_not_actually_unique
                   (* CR tnowak: maybe? *)
                 in
                 let extra_params_and_args =
@@ -470,7 +472,8 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
         | At_least_one { is_int; ctor = Do_not_unbox _; _ } ->
           let extra_param =
             BP.create is_int.param K.With_subkind.naked_immediate
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+              Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: maybe? *)
           in
           EPA.add extra_params_and_args ~invalids ~extra_param
             ~extra_args:is_int.args
@@ -478,7 +481,8 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
           ->
           let extra_param =
             BP.create is_int.param K.With_subkind.naked_immediate
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+              Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: maybe? *)
           in
           let extra_params_and_args =
             EPA.add extra_params_and_args ~invalids ~extra_param
@@ -486,7 +490,8 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
           in
           let extra_param =
             BP.create ctor.param K.With_subkind.naked_immediate
-              Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+              Flambda_debug_uid.internal_not_actually_unique
+            (* CR tnowak: maybe? *)
           in
           EPA.add extra_params_and_args ~invalids ~extra_param
             ~extra_args:ctor.args
@@ -506,7 +511,7 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
       in
       let extra_param =
         BP.create tag.param K.With_subkind.naked_immediate
-          Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+          Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
       in
       EPA.add extra_params_and_args ~invalids ~extra_param ~extra_args:tag.args
     | Unbox (Number (naked_number_kind, epa)) ->
@@ -515,7 +520,7 @@ let add_extra_params_and_args extra_params_and_args ~invalids decision =
       in
       let extra_param =
         BP.create epa.param kind_with_subkind
-          Flambda_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
+          Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: maybe? *)
       in
       EPA.add extra_params_and_args ~invalids ~extra_param ~extra_args:epa.args
   in

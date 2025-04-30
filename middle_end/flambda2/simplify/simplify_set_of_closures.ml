@@ -46,8 +46,8 @@ let dacc_inside_function context ~outer_dacc ~params ~my_closure ~my_region
       (* This happens in the stub case, where we are only simplifying code, not
          a set of closures. *)
       DE.add_variable denv
-        (Bound_var.create my_closure Flambda_uid.internal_not_actually_unique
-           NM.normal)
+        (Bound_var.create my_closure
+           Flambda_debug_uid.internal_not_actually_unique NM.normal)
         (T.unknown K.value)
     | Some function_slot -> (
       match
@@ -63,8 +63,8 @@ let dacc_inside_function context ~outer_dacc ~params ~my_closure ~my_region
       | name ->
         let name = Bound_name.name name in
         DE.add_variable denv
-          (Bound_var.create my_closure Flambda_uid.internal_not_actually_unique
-             NM.normal)
+          (Bound_var.create my_closure
+             Flambda_debug_uid.internal_not_actually_unique NM.normal)
           (T.alias_type_of K.value (Simple.name name)))
   in
   let denv =
@@ -72,8 +72,8 @@ let dacc_inside_function context ~outer_dacc ~params ~my_closure ~my_region
     | None -> denv
     | Some my_region ->
       let my_region =
-        Bound_var.create my_region Flambda_uid.internal_not_actually_unique
-          Name_mode.normal
+        Bound_var.create my_region
+          Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
       in
       DE.add_variable denv my_region (T.unknown K.region)
   in
@@ -83,13 +83,13 @@ let dacc_inside_function context ~outer_dacc ~params ~my_closure ~my_region
     | Some my_ghost_region ->
       let my_ghost_region =
         Bound_var.create my_ghost_region
-          Flambda_uid.internal_not_actually_unique Name_mode.normal
+          Flambda_debug_uid.internal_not_actually_unique Name_mode.normal
       in
       DE.add_variable denv my_ghost_region (T.unknown K.region)
   in
   let denv =
     let my_depth =
-      Bound_var.create my_depth Flambda_uid.internal_not_actually_unique
+      Bound_var.create my_depth Flambda_debug_uid.internal_not_actually_unique
         Name_mode.normal
     in
     DE.add_variable denv my_depth (T.unknown K.rec_info)
@@ -201,7 +201,8 @@ let simplify_function_body context ~outer_dacc function_slot_opt
       | None -> []
       | Some region ->
         [ Bound_parameter.create region Flambda_kind.With_subkind.region
-            Flambda_uid.internal_not_actually_unique (* CR sspies: fix *) ]
+            Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *)
+        ]
     in
     region_param my_region @ region_param my_ghost_region
   in
@@ -212,9 +213,9 @@ let simplify_function_body context ~outer_dacc function_slot_opt
         (Bound_parameters.create
            ([ Bound_parameter.create my_closure
                 Flambda_kind.With_subkind.any_value
-                Flambda_uid.internal_not_actually_unique;
+                Flambda_debug_uid.internal_not_actually_unique;
               Bound_parameter.create my_depth Flambda_kind.With_subkind.rec_info
-                Flambda_uid.internal_not_actually_unique ]
+                Flambda_debug_uid.internal_not_actually_unique ]
            @ region_params))
       ~loopify_state ~params
   with
@@ -389,7 +390,7 @@ let simplify_function0 context ~outer_dacc function_slot_opt code_id code
         BP.create
           (Variable.create ("result" ^ string_of_int i))
           kind_with_subkind
-          Flambda_uid.internal_not_actually_unique (* CR tnowak: verify *))
+          Flambda_debug_uid.internal_not_actually_unique (* CR tnowak: verify *))
       (Flambda_arity.unarized_components result_arity)
     |> Bound_parameters.create
   in

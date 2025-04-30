@@ -477,7 +477,7 @@ module Fold_prims = struct
                 let name = Variable.unique_name block_needed in
                 let var = Variable.create (Printf.sprintf "%s_%i" name i) in
                 Bound_parameter.create var kind
-                  Flambda_uid.internal_not_actually_unique
+                  Flambda_debug_uid.internal_not_actually_unique
                 (* CR tnowak: verify *))
               fields_kinds
           in

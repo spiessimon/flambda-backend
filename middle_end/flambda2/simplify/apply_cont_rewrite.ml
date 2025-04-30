@@ -176,7 +176,8 @@ let make_rewrite rewrite ~ctx id args : _ Or_invalid.t =
               simple, [], Simple.free_names simple, Name_occurrences.empty
             | New_let_binding (temp, prim) ->
               let extra_let =
-                ( Bound_var.create temp Flambda_uid.internal_not_actually_unique
+                ( Bound_var.create temp
+                    Flambda_debug_uid.internal_not_actually_unique
                     (* CR sspies: fix *) Name_mode.normal,
                   Code_size.prim prim,
                   Flambda.Named.create_prim prim Debuginfo.none )
@@ -196,7 +197,8 @@ let make_rewrite rewrite ~ctx id args : _ Or_invalid.t =
                      since they are already named."
               in
               let extra_let =
-                ( Bound_var.create temp Flambda_uid.internal_not_actually_unique
+                ( Bound_var.create temp
+                    Flambda_debug_uid.internal_not_actually_unique
                     (* CR sspies: fix *) Name_mode.normal,
                   Code_size.prim prim,
                   Flambda.Named.create_prim prim Debuginfo.none )

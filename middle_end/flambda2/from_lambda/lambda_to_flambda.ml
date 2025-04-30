@@ -137,14 +137,15 @@ let compile_staticfail acc env ccenv ~(continuation : Continuation.t) ~args :
       fun acc ccenv ->
         CC.close_let acc ccenv
           [ ( Ident.create_local "unit",
-              Flambda_uid.internal_not_actually_unique (* CR sspies: fix *),
+              Flambda_debug_uid.internal_not_actually_unique
+              (* CR sspies: fix *),
               Flambda_kind.With_subkind.tagged_immediate ) ]
           Not_user_visible
           (End_region { is_try_region = false; region; ghost = false })
           ~body:(fun acc ccenv ->
             CC.close_let acc ccenv
               [ ( Ident.create_local "unit",
-                  Flambda_uid.internal_not_actually_unique,
+                  Flambda_debug_uid.internal_not_actually_unique,
                   Flambda_kind.With_subkind.tagged_immediate ) ]
               Not_user_visible
               (End_region
@@ -204,7 +205,7 @@ let let_cont_nonrecursive_with_extra_params acc env ccenv ~is_exn_handler
         in
         match arity_component with
         | Singleton kind ->
-          let duid = Flambda_uid.uid duid in
+          let duid = Flambda_debug_uid.uid duid in
           let param = id, duid, visible, kind in
           handler_env, param :: params_rev
         | Unboxed_product _ ->
@@ -216,7 +217,7 @@ let let_cont_nonrecursive_with_extra_params acc env ccenv ~is_exn_handler
                   Ident.create_local
                     (Printf.sprintf "%s_unboxed%d" (Ident.unique_name id) n)
                 in
-                let field_uid = Flambda_uid.proj duid ~field:n in
+                let field_uid = Flambda_debug_uid.proj duid ~field:n in
                 field, field_uid, kind)
               (Flambda_arity.unarize arity)
           in
@@ -280,14 +281,15 @@ let restore_continuation_context acc env ccenv cont ~close_current_region_early
       in
       CC.close_let acc ccenv
         [ ( Ident.create_local "unit",
-            Flambda_uid.internal_not_actually_unique (* CR sspies: fix *),
+            Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *),
             Flambda_kind.With_subkind.tagged_immediate ) ]
         Not_user_visible
         (End_region { is_try_region = false; region; ghost = false })
         ~body:(fun acc ccenv ->
           CC.close_let acc ccenv
             [ ( Ident.create_local "unit",
-                Flambda_uid.internal_not_actually_unique (* CR sspies: fix*),
+                Flambda_debug_uid.internal_not_actually_unique
+                (* CR sspies: fix*),
                 Flambda_kind.With_subkind.tagged_immediate ) ]
             Not_user_visible
             (End_region
@@ -373,7 +375,7 @@ let wrap_return_continuation acc env ccenv (apply : IR.apply) =
         List.map2
           (fun return_value_component kind ->
             ( return_value_component,
-              Flambda_uid.internal_not_actually_unique,
+              Flambda_debug_uid.internal_not_actually_unique,
               IR.Not_user_visible,
               kind ))
           return_value_components return_kinds
@@ -448,7 +450,7 @@ let name_if_not_var acc ccenv name simple kind body =
   | IR.Var id -> body id acc ccenv
   | IR.Const _ ->
     let id = Ident.create_local name in
-    let duid = Flambda_uid.internal_not_actually_unique in
+    let duid = Flambda_debug_uid.internal_not_actually_unique in
     CC.close_let acc ccenv
       [id, duid, kind]
       Not_user_visible (IR.Simple simple) ~body:(body id)
@@ -505,7 +507,8 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
     let id = Ident.create_local (name_for_function func) in
     let dbg = Debuginfo.from_location func.loc in
     let func =
-      cps_function env ~fid:id ~fuid:Flambda_uid.internal_not_actually_unique
+      cps_function env ~fid:id
+        ~fuid:Flambda_debug_uid.internal_not_actually_unique
         ~recursive:(Non_recursive : Recursive.t)
         func
     in
@@ -531,7 +534,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
         let env, new_id = Env.register_mutable_variable env id kind in
         let body acc ccenv = cps acc env ccenv body k k_exn in
         CC.close_let acc ccenv
-          [new_id, Flambda_uid.uid duid, kind]
+          [new_id, Flambda_debug_uid.uid duid, kind]
           User_visible (Simple (Var temp_id)) ~body)
   | Llet ((Strict | Alias | StrictOpt), _, fun_id, duid, Lfunction func, body)
     ->
@@ -558,7 +561,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
         layout
     in
     CC.close_let acc ccenv
-      [id, Flambda_uid.uid duid, kind]
+      [id, Flambda_debug_uid.uid duid, kind]
       (is_user_visible env id) (Simple (Const const)) ~body
   | Llet
       ( ((Strict | Alias | StrictOpt) as let_kind),
@@ -593,7 +596,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
               ->
               ( env,
                 [ ( id,
-                    Flambda_uid.uid duid,
+                    Flambda_debug_uid.uid duid,
                     Flambda_kind.With_subkind
                     .from_lambda_values_and_unboxed_numbers_only layout ) ] )
             | Punboxed_product layouts ->
@@ -606,7 +609,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
               let fields =
                 List.mapi
                   (fun n (id, kind) ->
-                    let duid = Flambda_uid.proj duid ~field:n in
+                    let duid = Flambda_debug_uid.proj duid ~field:n in
                     id, duid, kind)
                   (Flambda_arity.fresh_idents_unarized ~id arity)
               in
@@ -653,7 +656,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
           let body acc ccenv = cps acc env ccenv body k k_exn in
           CC.close_let acc ccenv
             [ ( id,
-                Flambda_uid.uid duid,
+                Flambda_debug_uid.uid duid,
                 Flambda_kind.With_subkind.tagged_immediate ) ]
             Not_user_visible (Simple (Const L.const_unit)) ~body
         in
@@ -661,7 +664,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
           snd (Env.get_mutable_variable_with_kind env being_assigned)
         in
         CC.close_let acc ccenv
-          [new_id, Flambda_uid.internal_not_actually_unique, value_kind]
+          [new_id, Flambda_debug_uid.internal_not_actually_unique, value_kind]
           User_visible (Simple new_value) ~body)
       k_exn
   | Llet
@@ -787,7 +790,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
               (fun handler_env ((arg, duid, layout), kinds) ->
                 match kinds with
                 | [] -> handler_env, []
-                | [kind] -> handler_env, [arg, Flambda_uid.uid duid, kind]
+                | [kind] -> handler_env, [arg, Flambda_debug_uid.uid duid, kind]
                 | _ :: _ ->
                   let fields =
                     List.mapi
@@ -797,7 +800,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
                             (Printf.sprintf "%s_unboxed%d"
                                (Ident.unique_name arg) n)
                         in
-                        let duid = Flambda_uid.proj duid ~field:n in
+                        let duid = Flambda_debug_uid.proj duid ~field:n in
                         ident, duid, kind)
                       kinds
                   in
@@ -895,7 +898,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
     let handler k acc env ccenv =
       CC.close_let acc ccenv
         [ ( Ident.create_local "unit",
-            Flambda_uid.internal_not_actually_unique,
+            Flambda_debug_uid.internal_not_actually_unique,
             Flambda_kind.With_subkind.tagged_immediate ) ]
         (* CR sspies: can we do better? *)
         Not_user_visible
@@ -903,7 +906,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
         ~body:(fun acc ccenv ->
           CC.close_let acc ccenv
             [ ( Ident.create_local "unit",
-                Flambda_uid.internal_not_actually_unique,
+                Flambda_debug_uid.internal_not_actually_unique,
                 (* CR sspies: can we do better? *)
                 Flambda_kind.With_subkind.tagged_immediate ) ]
             Not_user_visible
@@ -915,7 +918,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
     let begin_try_region body =
       CC.close_let acc ccenv
         [ ( region,
-            Flambda_uid.internal_not_actually_unique,
+            Flambda_debug_uid.internal_not_actually_unique,
             Flambda_kind.With_subkind.region ) ]
         Not_user_visible
         (Begin_region
@@ -927,7 +930,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
         ~body:(fun acc ccenv ->
           CC.close_let acc ccenv
             [ ( ghost_region,
-                Flambda_uid.internal_not_actually_unique,
+                Flambda_debug_uid.internal_not_actually_unique,
                 Flambda_kind.With_subkind.region ) ]
             Not_user_visible
             (Begin_region
@@ -1021,7 +1024,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
           Env.get_mutable_variable_with_kind env being_assigned
         in
         CC.close_let acc ccenv
-          [new_id, Flambda_uid.internal_not_actually_unique, value_kind]
+          [new_id, Flambda_debug_uid.internal_not_actually_unique, value_kind]
           User_visible (Simple new_value) ~body)
       k_exn
   | Levent (body, _event) -> cps acc env ccenv body k k_exn
@@ -1044,14 +1047,15 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
     let ghost_region = Env.Region_stack_element.ghost_region current_region in
     CC.close_let acc ccenv
       [ ( Ident.create_local "unit",
-          Flambda_uid.internal_not_actually_unique,
+          Flambda_debug_uid.internal_not_actually_unique,
           Flambda_kind.With_subkind.tagged_immediate ) ]
       Not_user_visible
       (End_region { is_try_region = false; region; ghost = false })
       ~body:(fun acc ccenv ->
         CC.close_let acc ccenv
           [ ( Ident.create_local "unit",
-              Flambda_uid.internal_not_actually_unique (* CR sspies: fix *),
+              Flambda_debug_uid.internal_not_actually_unique
+              (* CR sspies: fix *),
               Flambda_kind.With_subkind.tagged_immediate ) ]
           Not_user_visible
           (End_region
@@ -1072,7 +1076,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
     let dbg = Debuginfo.none in
     CC.close_let acc ccenv
       [ ( region,
-          Flambda_uid.internal_not_actually_unique,
+          Flambda_debug_uid.internal_not_actually_unique,
           Flambda_kind.With_subkind.region ) ]
       Not_user_visible
       (Begin_region
@@ -1084,7 +1088,8 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
       ~body:(fun acc ccenv ->
         CC.close_let acc ccenv
           [ ( ghost_region,
-              Flambda_uid.internal_not_actually_unique (* CR sspies: fix *),
+              Flambda_debug_uid.internal_not_actually_unique
+              (* CR sspies: fix *),
               Flambda_kind.With_subkind.region ) ]
           Not_user_visible
           (Begin_region
@@ -1135,7 +1140,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
                   ~handler:(fun acc env ccenv ->
                     CC.close_let acc ccenv
                       [ ( Ident.create_local "unit",
-                          Flambda_uid.internal_not_actually_unique,
+                          Flambda_debug_uid.internal_not_actually_unique,
                           Flambda_kind.With_subkind.tagged_immediate ) ]
                       Not_user_visible
                       (End_region
@@ -1143,7 +1148,7 @@ let rec cps acc env ccenv (lam : L.lambda) (k : cps_continuation)
                       ~body:(fun acc ccenv ->
                         CC.close_let acc ccenv
                           [ ( Ident.create_local "unit",
-                              Flambda_uid.internal_not_actually_unique,
+                              Flambda_debug_uid.internal_not_actually_unique,
                               Flambda_kind.With_subkind.tagged_immediate ) ]
                           Not_user_visible
                           (End_region
@@ -1333,7 +1338,7 @@ and cps_function_bindings env (bindings : Lambda.rec_binding list) =
   let bindings_with_wrappers = List.flatten bindings_with_wrappers in
   List.map
     (fun (fun_id, fun_uid, def) ->
-      let fuid = Flambda_uid.uid fun_uid in
+      let fuid = Flambda_debug_uid.uid fun_uid in
       cps_function env ~fid:fun_id ~fuid ~recursive:(recursive fun_id)
         ~precomputed_free_idents:(Ident.Map.find fun_id free_idents)
         def)
@@ -1517,13 +1522,13 @@ and cps_function env ~fid ~fuid ~(recursive : Recursive.t)
         match kinds with
         | [] -> []
         | [kind] ->
-          let var_uid = Flambda_uid.uid var_uid in
+          let var_uid = Flambda_debug_uid.uid var_uid in
           [{ name; var_uid; kind; mode; attributes }]
         | _ :: _ ->
           let fields =
             List.mapi
               (fun n kind ->
-                let duid = Flambda_uid.proj var_uid ~field:n in
+                let duid = Flambda_debug_uid.proj var_uid ~field:n in
                 let ident =
                   Ident.create_local
                     (Printf.sprintf "%s_unboxed%d" (Ident.unique_name name) n)
@@ -1680,7 +1685,7 @@ and cps_switch acc env ccenv (switch : L.lambda_switch) ~condition_dbg
           in
           CC.close_let acc ccenv
             [ ( scrutinee_tag,
-                Flambda_uid.internal_not_actually_unique,
+                Flambda_debug_uid.internal_not_actually_unique,
                 Flambda_kind.With_subkind.tagged_immediate ) ]
             Not_user_visible (Get_tag scrutinee) ~body
         in
@@ -1714,7 +1719,7 @@ and cps_switch acc env ccenv (switch : L.lambda_switch) ~condition_dbg
             in
             CC.close_let acc ccenv
               [ ( is_scrutinee_int,
-                  Flambda_uid.internal_not_actually_unique,
+                  Flambda_debug_uid.internal_not_actually_unique,
                   Flambda_kind.With_subkind.tagged_immediate ) ]
               Not_user_visible
               (Prim

@@ -75,7 +75,7 @@ type t =
     mutables_needed_by_continuations : Ident.Set.t Continuation.Map.t;
     unboxed_product_components_in_scope :
       ([`Complex] Flambda_arity.Component_for_creation.t
-      * (Ident.t * Flambda_uid.t) list)
+      * (Ident.t * Flambda_debug_uid.t) list)
       Ident.Map.t;
     try_stack : Continuation.t list;
     try_stack_at_handler : Continuation.t list Continuation.Map.t;
@@ -158,7 +158,8 @@ let register_unboxed_product_with_kinds t ~unboxed_product ~before_unarization
 type add_continuation_result =
   { body_env : t;
     handler_env : t;
-    extra_params : (Ident.t * Flambda_uid.t * Flambda_kind.With_subkind.t) list
+    extra_params :
+      (Ident.t * Flambda_debug_uid.t * Flambda_kind.With_subkind.t) list
   }
 
 let add_continuation t cont ~push_to_try_stack ~pop_region
@@ -214,7 +215,9 @@ let add_continuation t cont ~push_to_try_stack ~pop_region
   let extra_params =
     List.map
       (fun (id, kind) ->
-        id, Flambda_uid.internal_not_actually_unique (* CR sspies: fix *), kind)
+        ( id,
+          Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *),
+          kind ))
       extra_params
   in
   { body_env; handler_env; extra_params }
@@ -278,7 +281,7 @@ let extra_args_for_continuation_with_kinds t cont =
           Misc.fatal_errorf "No current value for %a" Ident.print mut
         | current_value, kind ->
           ( current_value,
-            Flambda_uid.internal_not_actually_unique (* CR sspies: fix *),
+            Flambda_debug_uid.internal_not_actually_unique (* CR sspies: fix *),
             kind ))
       mutables
 
