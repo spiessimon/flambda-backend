@@ -47,10 +47,9 @@ let join_types ~env_at_fork envs_with_levels =
                     TE.add_definition base_env
                       (Bound_name.create_var
                          (Bound_var.create var Flambda_debug_uid.none
-                            (* CR sspies: We can probably find a better
-                               [Flambda_debug_uid.t] for these variables.
-                               However, propagating it here seems
-                               non-trivial. *)
+                            (* Variables with [Name_mode.in_types] do not exist
+                               at runtime, so we do not equip them with a
+                               [Flambda_debug_uid.t]. See #3967. *)
                             Name_mode.in_types))
                       kind)
                 vars base_env)
