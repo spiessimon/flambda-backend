@@ -144,9 +144,7 @@ let define_variable0 ~extra t var kind =
           Lifted_cont_params.new_param ~replay_history
             variables_defined_in_current_continuation
             (Bound_parameter.create (Bound_var.var var) kind
-               Flambda_debug_uid.none
-               (* CR sspies: Unclear whether bound variables should have a
-                  [Flambda_debug_uid.t]. For now, I just left it as [.none]. *))
+               (Bound_var.debug_uid var))
         in
         variables_defined_in_current_continuation :: r
   in
@@ -319,7 +317,7 @@ let define_name t name kind =
     ~var:(fun [@inline] var ->
       (define_variable [@inlined hint]) t
         (Bound_var.create var Flambda_debug_uid.none
-           (* CR sspies: Unclear whether bound variables should have a
+           (* CR sspies: Unclear whether bound names should have a
               [Flambda_debug_uid.t]. For now, I just left it as [.none]. *)
            (Bound_name.name_mode name))
         kind)
@@ -343,7 +341,7 @@ let add_name t name ty =
     ~var:(fun [@inline] var ->
       add_variable t
         (Bound_var.create var Flambda_debug_uid.none
-           (* CR sspies: Unclear whether bound variables should have a
+           (* CR sspies: Unclear whether bound names should have a
               [Flambda_debug_uid.t]. For now, I just left it as [.none]. *)
            (Bound_name.name_mode name))
         ty)

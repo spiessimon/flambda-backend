@@ -130,11 +130,10 @@ let fresh_exn_cont env { Fexpr.txt = name; loc = _ } =
 
 let fresh_var env { Fexpr.txt = name; loc = _ } =
   let v = Variable.create name ~user_visible:() in
+  let v_duid = Flambda_debug_uid.none in
   (* CR sspies: These variables are apparently user visible. Where do we get
      [Lambda.debug_uid] values for them from? *)
-  ( v,
-    Flambda_debug_uid.none,
-    { env with variables = VM.add name v env.variables } )
+  v, v_duid, { env with variables = VM.add name v env.variables }
 
 let fresh_or_existing_code_id env { Fexpr.txt = name; loc = _ } =
   match DM.find_opt env.code_ids name with

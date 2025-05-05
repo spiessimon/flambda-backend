@@ -70,7 +70,6 @@ let make_inlined_body ~callee ~called_code_id ~unroll_to ~params ~args
   in
   let bind_depth ~my_depth ~rec_info ~body =
     let my_depth_duid = Flambda_debug_uid.none in
-    (* CR sspies: [my_depth] sounds like something internally generated. *)
     let bound =
       Bound_pattern.singleton
         (VB.create my_depth my_depth_duid Name_mode.normal)

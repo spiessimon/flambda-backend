@@ -72,6 +72,9 @@ type t =
   { current_unit : Compilation_unit.t;
     current_values_of_mutables_in_scope :
       (Ident.t * Flambda_kind.With_subkind.t) Ident.Map.t;
+    (* CR sspies: Should this additinally track the debug uid of the variables?
+       There is currently a point belowm where we set the debug uids for the
+       variables in this map to [.none]. *)
     mutables_needed_by_continuations : Ident.Set.t Continuation.Map.t;
     unboxed_product_components_in_scope :
       ([`Complex] Flambda_arity.Component_for_creation.t
@@ -214,7 +217,11 @@ let add_continuation t cont ~push_to_try_stack ~pop_region
   in
   let extra_params =
     List.map
-      (fun (id, kind) -> id, Flambda_debug_uid.none (* CR sspies: fix *), kind)
+      (fun (id, kind) ->
+        let id_duid = Flambda_debug_uid.none in
+        (* CR sspies: Do the original variables in
+           [current_values_of_mutables_in_scope] not have a debug uid? *)
+        id, id_duid, kind)
       extra_params
   in
   { body_env; handler_env; extra_params }
@@ -277,7 +284,10 @@ let extra_args_for_continuation_with_kinds t cont =
         | exception Not_found ->
           Misc.fatal_errorf "No current value for %a" Ident.print mut
         | current_value, kind ->
-          current_value, Flambda_debug_uid.none (* CR sspies: fix *), kind)
+          let current_value_duid = Flambda_debug_uid.none in
+          (* CR sspies: Do these variables have any debug uids that we could use
+             here? Are they always not user visible variables? *)
+          current_value, current_value_duid, kind)
       mutables
 
 let extra_args_for_continuation t cont =
