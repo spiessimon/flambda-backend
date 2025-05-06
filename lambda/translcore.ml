@@ -1582,11 +1582,32 @@ and transl_tupled_function
             (transl_tupled_cases ~scopes return_sort pats_expr_list) partial
         in
         let region = region || not (may_allocate_in_region body) in
+        add_type_shapes_of_cases cases;
+        (* CR sspies: Unsure whether we need to add this here. *)
         Some
           ((Tupled, tparams, return_layout, region, return_mode), body)
     with Matching.Cannot_flatten -> None
       end
   | _ -> None
+and add_type_shapes_of_cases cases =
+  let add_case (case : Typedtree.value Typedtree.case) =
+    let var_list = Typedtree.pat_bound_idents_full Jkind.Sort.Const.value case.c_lhs in
+    List.iter (fun (_ident, _loc, type_expr, var_uid, _mode) ->
+      Type_shape.add_to_type_shapes var_uid type_expr
+        (Typedecl.uid_of_path ~env:case.c_lhs.pat_env))
+      var_list
+  in
+  List.iter add_case cases
+
+and add_type_shapes_of_patterns patterns =
+  let add_case (value_binding : Typedtree.value_binding) =
+    let var_list = Typedtree.pat_bound_idents_full Jkind.Sort.Const.value value_binding.vb_pat in
+    List.iter (fun (_ident, _loc, type_expr, var_uid, _mode) ->
+      Type_shape.add_to_type_shapes var_uid type_expr
+        (Typedecl.uid_of_path ~env:value_binding.vb_expr.exp_env))
+      var_list
+  in
+  List.iter add_case patterns
 
 and transl_curried_function ~scopes loc repr params body
     ~return_sort ~return_layout ~return_mode ~region ~mode
@@ -1620,6 +1641,7 @@ and transl_curried_function ~scopes loc repr params body
               layout_of_sort fc_loc fc_arg_sort
         in
         let arg_mode = transl_alloc_mode_l fc_arg_mode in
+        add_type_shapes_of_cases fc_cases;
         let attributes =
           match fc_cases with
           | [ { c_lhs }] -> Translattribute.transl_param_attributes c_lhs
@@ -1863,6 +1885,7 @@ and transl_bound_exp ~scopes ~in_structure pat sort expr loc attrs =
 *)
 and transl_let ~scopes ~return_layout ?(add_regions=false) ?(in_structure=false)
                rec_flag pat_expr_list =
+  add_type_shapes_of_patterns pat_expr_list;
   match rec_flag with
     Nonrecursive ->
       let rec transl = function
