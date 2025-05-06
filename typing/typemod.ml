@@ -3883,14 +3883,6 @@ let type_implementation target modulename initial_env ast =
             let shape = Shape_reduce.local_reduce Env.empty shape in
             let annots = Cmt_format.Implementation str in
             save_cmt_and_cms target annots initial_env None (Some shape));
-            (* CR sspies: Fix this. *)
-            (*= Cmt_format.save_cmt (outputprefix ^ ".cmt") modulename
-              annots (Some sourcefile) initial_env None (Some shape);
-            (match !Clflags.native_code with
-            | true -> ()
-            | false -> Cms_format.save_cms (outputprefix ^ ".cms") modulename
-              (Some sourcefile) (Some shape));
-            gen_annot outputprefix sourcefile annots); *)
           { structure = str;
             coercion;
             shape;
@@ -3938,14 +3930,6 @@ let type_implementation target modulename initial_env ast =
             Profile.record_call "save_cmt" (fun () ->
               let annots = Cmt_format.Implementation str in
               save_cmt_and_cms target annots initial_env (Some cmi) (Some shape));
-              (* CR sspies: fix*)
-              (*= Cmt_format.save_cmt  (outputprefix ^ ".cmt") modulename
-                annots (Some sourcefile) initial_env (Some cmi) (Some shape);
-              (match !Clflags.native_code with
-               | true -> ()
-               | false -> Cms_format.save_cms  (outputprefix ^ ".cms") modulename
-                (Some sourcefile) (Some shape));
-              gen_annot outputprefix sourcefile annots) *)
           end;
           { structure = str;
             coercion;
@@ -3970,25 +3954,6 @@ let save_signature target modname tsg initial_env cmi =
     (Cmt_format.Interface tsg) initial_env (Some cmi) None;
   Cms_format.save_cms  (Unit_info.cmsi target) modname
     (Cmt_format.Interface tsg) initial_env None
-  (* CR sspies: Fix *)
-  (*= Cmt_format.save_cmt  (outputprefix ^ ".cmt") modulename
-            annots (Some sourcefile) initial_env None None;
-          (match !Clflags.native_code with
-           | true -> ()
-           | false ->
-            Cms_format.save_cms  (outputprefix ^ ".cms") modulename
-              (Some sourcefile) None);
-          gen_annot outputprefix sourcefile annots)
-      )
-
-let save_signature modname tsg outputprefix source_file initial_env cmi =
-  Cmt_format.save_cmt  (outputprefix ^ ".cmti") modname
-    (Cmt_format.Interface tsg) (Some source_file) initial_env (Some cmi) None;
-  (match !Clflags.native_code with
-   | true -> ()
-   | false ->
-     Cms_format.save_cms  (outputprefix ^ ".cmsi") modname
-       (Some source_file) None) *)
 
 let cms_register_toplevel_signature_attributes ~sourcefile ~uid ast =
   cms_register_toplevel_attributes ~sourcefile ~uid ast.psg_items
@@ -4108,14 +4073,6 @@ let package_units initial_env objfiles target_cmi modulename =
       (Cmt_format.Packed (sg, objfiles)) initial_env  None (Some shape);
     Cms_format.save_cms  (Unit_info.companion_cms target_cmi) modulename
       (Cmt_format.Packed (sg, objfiles)) initial_env (Some shape);
-    (* CR sspies: Fix this *)
-    (*= Cmt_format.save_cmt  (prefix ^ ".cmt") modulename
-      (Cmt_format.Packed (sg, objfiles)) None initial_env  None (Some shape);
-    (match !Clflags.native_code with
-     | true -> ()
-     | false ->
-      Cms_format.save_cms  (prefix ^ ".cms") modulename
-        None (Some shape)); *)
     cc
   end else begin
     (* Determine imports *)
@@ -4142,15 +4099,6 @@ let package_units initial_env objfiles target_cmi modulename =
         (Cmt_format.Packed (sign, objfiles)) initial_env (Some cmi) (Some shape);
       Cms_format.save_cms (Unit_info.companion_cms target_cmi)  modulename
         (Cmt_format.Packed (sign, objfiles)) initial_env (Some shape);
-      (* CR sspies: fix *)
-      (*=  Cmt_format.save_cmt (prefix ^ ".cmt")  modulename
-        (Cmt_format.Packed (sign, objfiles)) None initial_env
-         (Some cmi) (Some shape);
-      (match !Clflags.native_code with
-       | true -> ()
-       | false ->
-        Cms_format.save_cms (prefix ^ ".cms")  modulename
-          None (Some shape)); *)
     end;
     Tcoerce_none
   end
