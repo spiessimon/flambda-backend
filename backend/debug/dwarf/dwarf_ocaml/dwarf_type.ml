@@ -14,7 +14,7 @@
 
 open! Dwarf_low
 open! Dwarf_high
-module Uid = Flambda2_identifiers.Flambda_uid
+module Uid = Flambda2_identifiers.Flambda_debug_uid
 module DAH = Dwarf_attribute_helpers
 module DS = Dwarf_state
 module SLDL = Simple_location_description_lang
@@ -22,8 +22,10 @@ module SLDL = Simple_location_description_lang
 let cache = Type_shape.Type_shape.Tbl.create 42
 
 let load_decls_from_cms path =
-  let cms_infos = Cms_format.read path in
-  cms_infos.cms_shapes_for_dwarf
+  (* let cms_infos = Cms_format.read path in cms_infos.cms_shapes_for_dwarf *)
+  (* CR sspies: We return an empty table here for now, because we have not yet
+     agumented the [.cms] format to store the relevant shape information. *)
+  Shape.Uid.Tbl.create 0
 
 let map_snd f list = List.map (fun (fst, snd) -> fst, f snd) list
 
