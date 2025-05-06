@@ -1599,6 +1599,17 @@ and add_type_shapes_of_cases cases =
   in
   List.iter add_case cases
 
+and add_type_shapes_of_params params =
+    let add_param (param : Typedtree.function_param) =
+      let pattern = match param.fp_kind with Tparam_pat p -> p | Tparam_optional_default (p, _, _) -> p in
+      let var_list = Typedtree.pat_bound_idents_full Jkind.Sort.Const.value pattern in
+      List.iter (fun (_ident, _loc, type_expr, var_uid, _mode) ->
+        Type_shape.add_to_type_shapes var_uid type_expr
+          (Typedecl.uid_of_path ~env:pattern.pat_env))
+        var_list
+    in
+    List.iter add_param params
+
 and add_type_shapes_of_patterns patterns =
   let add_case (value_binding : Typedtree.value_binding) =
     let var_list = Typedtree.pat_bound_idents_full Jkind.Sort.Const.value value_binding.vb_pat in
@@ -1621,6 +1632,7 @@ and transl_curried_function ~scopes loc repr params body
        | Tfunction_body _ -> param_curries
        | Tfunction_cases fc -> param_curries @ [ Final_arg, fc.fc_arg_mode ])
   in
+  add_type_shapes_of_params params;
   let cases_param, body =
     match body with
     | Tfunction_body body ->
