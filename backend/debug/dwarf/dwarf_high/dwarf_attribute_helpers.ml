@@ -432,3 +432,10 @@ let create_ocaml_cmt_file_digest digest =
 let create_ocaml_offset_record_from_pointer ~value =
   let spec = AS.create (Ocaml_specific Offset_record_from_pointer) Data8 in
   AV.create spec (V.int64 value)
+
+let create_data_location ~location_description =
+  let spec = AS.create Data_location Exprloc in
+  AV.create spec
+    (V.single_location_description
+       (Single_location_description.of_simple_location_description
+          location_description))
