@@ -18,6 +18,7 @@ module Uid = Flambda2_identifiers.Flambda_debug_uid
 module DAH = Dwarf_attribute_helpers
 module DS = Dwarf_state
 module SLDL = Simple_location_description_lang
+module OP = Dwarf_operator
 
 let cache = Type_shape.Type_shape.Tbl.create 42
 
@@ -341,6 +342,36 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
+let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
+    ~attribute =
+  (* We first create an entry for the base type.*)
+  let base_type_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        [ DAH.create_name (name ^ "_data");
+          DAH.create_byte_size_exn ~byte_size:bytes;
+          DAH.create_encoding ~encoding:attribute ]
+      ()
+  in
+  let location_description : Simple_location_description.t =
+    [OP.DW_op_push_object_address; OP.DW_op_lit1; OP.DW_op_plus; OP.DW_op_deref]
+  in
+  (* Then we wrap it in a pointer to make the debugger aware that it is in
+     memory. *)
+  let base_type_ref_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Pointer_type
+      ~attribute_values:[DAH.create_type ~proto_die:base_type_die]
+      ()
+  in
+  (* Finally, we add a typedef to associate it with the correct name. *)
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [ DAH.create_name name;
+        DAH.create_data_location ~location_description;
+        DAH.create_type ~proto_die:base_type_ref_die ]
+    ()
+
 let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     ~parent_proto_die ~fallback_die =
   match Type_shape.Type_shape.Tbl.find_opt cache type_shape with
@@ -364,6 +395,22 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
         true
       | Ts_predef (Unboxed_float, _) ->
         create_unboxed_float_die ~reference ~parent_proto_die;
+        true
+      | Ts_predef (Float, _) ->
+        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"float"
+          ~bytes:8 ~attribute:Encoding_attribute.float;
+        true
+      | Ts_predef (Int32, _) ->
+        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int32"
+          ~bytes:4 ~attribute:Encoding_attribute.signed;
+        true
+      | Ts_predef (Int64, _) ->
+        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int64"
+          ~bytes:8 ~attribute:Encoding_attribute.signed;
+        true
+      | Ts_predef (Nativeint, _) ->
+        create_boxed_base_type_die ~reference ~parent_proto_die
+          ~name:"nativeint" ~bytes:8 ~attribute:Encoding_attribute.signed;
         true
       | Ts_predef (_, _) ->
         create_typedef_die ~reference ~parent_proto_die ~name
