@@ -342,24 +342,19 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
-let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
-    ~attribute =
-  (* We first create an entry for the base type.*)
+(* floats do not have a custom header, so we can just use a base type and wrap
+   it in a reference. *)
+let create_boxed_float_die ~reference ~parent_proto_die =
   let base_type_die =
     Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
       ~attribute_values:
-        [ DAH.create_name (name ^ "_data");
-          DAH.create_byte_size_exn ~byte_size:bytes;
-          DAH.create_encoding ~encoding:attribute ]
+        [ DAH.create_byte_size_exn ~byte_size:8;
+          DAH.create_encoding ~encoding:Encoding_attribute.float ]
       ()
   in
-  let location_description : Simple_location_description.t =
-    [OP.DW_op_push_object_address; OP.DW_op_lit1; OP.DW_op_plus; OP.DW_op_deref]
-  in
-  (* Then we wrap it in a pointer to make the debugger aware that it is in
-     memory. *)
-  let base_type_ref_die =
-    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Pointer_type
+  let float_ref_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Reference_type
       ~attribute_values:[DAH.create_type ~proto_die:base_type_die]
       ()
   in
@@ -367,9 +362,55 @@ let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
   Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
     ~tag:Dwarf_tag.Typedef
     ~attribute_values:
-      [ DAH.create_name name;
-        DAH.create_data_location ~location_description;
-        DAH.create_type ~proto_die:base_type_ref_die ]
+      [DAH.create_name "float"; DAH.create_type ~proto_die:float_ref_die]
+    ()
+
+let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
+    ~attribute =
+  (* We first create an entry for the base type.*)
+  let base_type_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:bytes;
+          DAH.create_encoding ~encoding:attribute ]
+      ()
+  in
+  let custom_block_header_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:8;
+          DAH.create_encoding ~encoding:Encoding_attribute.signed ]
+      ()
+  in
+  let box_type_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:(8 + bytes)]
+      ()
+  in
+  (* Then we wrap it in a pointer to make the debugger aware that it is in
+     memory. *)
+  List.iteri
+    (fun i (field_die, field_name, field_offset) ->
+      let member_attributes =
+        [ DAH.create_type_from_reference ~proto_die_reference:field_die;
+          DAH.create_name field_name;
+          DAH.create_data_member_location_offset ~byte_offset:field_offset ]
+      in
+      Proto_die.create_ignore ~parent:(Some box_type_die) ~tag:Dwarf_tag.Member
+        ~attribute_values:member_attributes ())
+    [ Proto_die.reference custom_block_header_die, name ^ "_header", 0L;
+      Proto_die.reference base_type_die, name ^ "_data", 8L ];
+  let box_ref_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Pointer_type
+      ~attribute_values:[DAH.create_type ~proto_die:box_type_die]
+      ()
+  in
+  (* Finally, we add a typedef to associate it with the correct name. *)
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [DAH.create_name name; DAH.create_type ~proto_die:box_ref_die]
     ()
 
 let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
@@ -397,8 +438,7 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
         create_unboxed_float_die ~reference ~parent_proto_die;
         true
       | Ts_predef (Float, _) ->
-        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"float"
-          ~bytes:8 ~attribute:Encoding_attribute.float;
+        create_boxed_float_die ~reference ~parent_proto_die;
         true
       | Ts_predef (Int32, _) ->
         create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int32"
