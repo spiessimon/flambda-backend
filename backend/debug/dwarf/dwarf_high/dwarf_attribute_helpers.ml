@@ -435,7 +435,8 @@ let create_ocaml_offset_record_from_pointer ~value =
 
 let create_data_location ~location_description =
   let spec = AS.create Data_location Exprloc in
-  AV.create spec
-    (V.single_location_description
-       (Single_location_description.of_simple_location_description
-          location_description))
+  AV.create spec (V.single_location_description location_description)
+
+let create_string_length ~length_description =
+  let spec = AS.create String_length Exprloc in
+  AV.create spec (V.single_location_description length_description)
