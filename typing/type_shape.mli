@@ -3,20 +3,35 @@ module Uid = Shape.Uid
 module Type_shape : sig
   module Predef : sig
     type t =
-      | Array
-      | Bytes
-      | Char
-      | Extension_constructor
-      | Float
-      | Floatarray
       | Int
+      | Char
+      | String
+      | Bytes
+      | Float
+      | Float32
+      | Bool
+      | Unit
+      | Exn
+      | Array
+      | Iarray
+      | List
+      | Option
+      | Nativeint
+      | Int8
+      | Int16
       | Int32
       | Int64
       | Lazy_t
-      | Nativeint
-      | String
+      | Extension_constructor
+      | Floatarray
+      (* Lexing Position *)
       | Unboxed_float
-      | Unit
+      | Unboxed_float32
+      | Unboxed_naitveint
+      | Unboxed_int32
+      | Unboxed_int64
+      (* Or Null *)
+      (* Vector Types *)
   end
 
   type t =
