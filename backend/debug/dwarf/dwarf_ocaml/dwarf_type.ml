@@ -56,26 +56,6 @@ let create_array_die ~reference ~parent_proto_die ~child_die ~name =
     ();
   wrap_die_under_a_pointer ~proto_die:array_die ~reference ~parent_proto_die
 
-let create_char_die ~reference ~parent_proto_die =
-  (* As a char is an immediate value, we have to ignore the first bit.
-     Unfortunately lldb supports bit offsets only on members of structs, so
-     instead, we create a hacky enum containing all possible char values. *)
-  let enum =
-    Proto_die.create ~reference ~parent:(Some parent_proto_die)
-      ~tag:Dwarf_tag.Enumeration_type
-      ~attribute_values:
-        [DAH.create_name "char"; DAH.create_byte_size_exn ~byte_size:8]
-      ()
-  in
-  List.iter
-    (fun i ->
-      Proto_die.create_ignore ~parent:(Some enum) ~tag:Dwarf_tag.Enumerator
-        ~attribute_values:
-          [ DAH.create_const_value ~value:(Int64.of_int ((2 * i) + 1));
-            DAH.create_name (Printf.sprintf "%C" (Char.chr i)) ]
-        ())
-    (List.init 256 (fun i -> i))
-
 let create_unboxed_float_die ~reference ~parent_proto_die =
   Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
     ~tag:Dwarf_tag.Base_type
@@ -421,6 +401,77 @@ let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
       [DAH.create_name name; DAH.create_type ~proto_die:box_ref_die]
     ()
 
+(*= For an int, we efffectively use the following C representation:
+      typedef struct { char : 1; signed long long : 63 } "int";
+
+    The offset char is not explicitly declared, and instead the offset of
+    the second field is set to 1. The name "int" is the name exposed to
+    the debugger.
+ *)
+let create_int_die ~reference ~parent_proto_die =
+  (* We first create an entry for the int base type.*)
+  let int_base_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:8;
+          DAH.create_encoding ~encoding:Encoding_attribute.signed ]
+      ()
+  in
+  let wrapper_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:8]
+      ()
+  in
+  let member_attributes =
+    [ DAH.create_type ~proto_die:int_base_die;
+      DAH.create_bit_size (Numbers.Int8.of_int_exn 63);
+      DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 1) ]
+  in
+  Proto_die.create_ignore ~parent:(Some wrapper_die) ~tag:Dwarf_tag.Member
+    ~attribute_values:member_attributes ();
+  (* Finally, we add a typedef to associate it with the correct name. *)
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [DAH.create_name "int"; DAH.create_type ~proto_die:wrapper_die]
+    ()
+
+(*= For an int, we efffectively use the following C representation:
+      typedef struct { char : 1; char : 8; signed long long : 55 } char;
+
+    The offset char and the padding at the end are not explicitly declared,
+    and instead the offset of the second field is set to 1 and the length to 8.
+ *)
+let create_char_die ~reference ~parent_proto_die =
+  (* We first create an entry for the int base type.*)
+  let char_base_die =
+    Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:1;
+          DAH.create_encoding ~encoding:Encoding_attribute.char ]
+      ()
+  in
+  let wrapper_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:8]
+      ()
+  in
+  let member_attributes =
+    [ DAH.create_type ~proto_die:char_base_die;
+      DAH.create_bit_size (Numbers.Int8.of_int_exn 8);
+      DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 1) ]
+  in
+  Proto_die.create_ignore ~parent:(Some wrapper_die) ~tag:Dwarf_tag.Member
+    ~attribute_values:member_attributes ();
+  (* Finally, we add a typedef to associate it with the correct name. *)
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [DAH.create_name "char"; DAH.create_type ~proto_die:wrapper_die]
+    ()
+
 let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     ~parent_proto_die ~fallback_die =
   match Type_shape.Type_shape.Tbl.find_opt cache type_shape with
@@ -437,6 +488,9 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
           type_shape_to_die element_type_shape ~parent_proto_die ~fallback_die
         in
         create_array_die ~reference ~parent_proto_die ~child_die ~name;
+        true
+      | Ts_predef (Int, _) ->
+        create_int_die ~reference ~parent_proto_die;
         true
       | Ts_predef (Array, _) -> false
       | Ts_predef (Char, _) ->

@@ -24,6 +24,9 @@ val float : t
 
 val unsigned : t
 
+(** Use this for OCaml chars, which (internally) are unsigned.*)
+val char : t
+
 val size : t -> int
 
 val as_dwarf_value : t -> Dwarf_value.t

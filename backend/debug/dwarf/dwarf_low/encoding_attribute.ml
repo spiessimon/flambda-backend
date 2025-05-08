@@ -19,8 +19,11 @@ open! Int_replace_polymorphic_compare [@@ocaml.warning "-66"]
 type t =
   | DW_ATE_boolean
   | DW_ATE_signed
+  | DW_ATE_signed_char
   | DW_ATE_float
   | DW_ATE_unsigned
+  | DW_ATE_unsigned_char
+[@@warning "-37"]
 
 let boolean = DW_ATE_boolean
 
@@ -30,18 +33,24 @@ let float = DW_ATE_float
 
 let unsigned = DW_ATE_unsigned
 
+let char = DW_ATE_unsigned_char
+
 let name t =
   match t with
   | DW_ATE_boolean -> "DW_ATE_boolean"
   | DW_ATE_signed -> "DW_ATE_signed"
   | DW_ATE_float -> "DW_ATE_float"
   | DW_ATE_unsigned -> "DW_ATE_unsigned"
+  | DW_ATE_signed_char -> "DW_ATE_signed_char"
+  | DW_ATE_unsigned_char -> "DW_ATE_unsigned_char"
 
 let encode = function
   | DW_ATE_boolean -> 0x02
   | DW_ATE_float -> 0x04
   | DW_ATE_signed -> 0x05
+  | DW_ATE_unsigned_char -> 0x06
   | DW_ATE_unsigned -> 0x07
+  | DW_ATE_signed_char -> 0x08
 
 let size _t = 1
 
