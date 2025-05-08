@@ -480,6 +480,29 @@ let create_unit_die ~reference ~parent_proto_die =
       [DAH.create_name "unit"; DAH.create_type ~proto_die:enum_die]
     ()
 
+(* For booleans, we use `typedef enum { false = 1, true = 3 } bool;`. *)
+(* CR sspies: Technically, we could just use the type lookup here. But it seems
+   weird not to special case all the predefined types. They should probably be
+   put into a separate file unconditionally. *)
+let create_bool_die ~reference ~parent_proto_die =
+  let enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:8]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+    ~attribute_values:[DAH.create_const_value ~value:1L; DAH.create_name "false"]
+    ();
+  Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+    ~attribute_values:[DAH.create_const_value ~value:3L; DAH.create_name "true"]
+    ();
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [DAH.create_name "bool"; DAH.create_type ~proto_die:enum_die]
+    ()
+
 let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     ~parent_proto_die ~fallback_die =
   match Type_shape.Type_shape.Tbl.find_opt cache type_shape with
@@ -491,44 +514,9 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     let successfully_created =
       match type_shape with
       | Ts_other | Ts_var _ -> false
-      | Ts_predef (Array, [element_type_shape]) ->
-        let child_die =
-          type_shape_to_die element_type_shape ~parent_proto_die ~fallback_die
-        in
-        create_array_die ~reference ~parent_proto_die ~child_die ~name;
-        true
-      | Ts_predef (Int, _) ->
-        create_int_die ~reference ~parent_proto_die;
-        true
-      | Ts_predef (Array, _) -> false
-      | Ts_predef (Char, _) ->
-        create_char_die ~reference ~parent_proto_die;
-        true
-      | Ts_predef (Unboxed_float, _) ->
-        create_unboxed_float_die ~reference ~parent_proto_die;
-        true
-      | Ts_predef (Float, _) ->
-        create_boxed_float_die ~reference ~parent_proto_die;
-        true
-      | Ts_predef (Int32, _) ->
-        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int32"
-          ~bytes:4 ~attribute:Encoding_attribute.signed;
-        true
-      | Ts_predef (Int64, _) ->
-        create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int64"
-          ~bytes:8 ~attribute:Encoding_attribute.signed;
-        true
-      | Ts_predef (Nativeint, _) ->
-        create_boxed_base_type_die ~reference ~parent_proto_die
-          ~name:"nativeint" ~bytes:8 ~attribute:Encoding_attribute.signed;
-        true
-      | Ts_predef (Unit, _) ->
-        create_unit_die ~reference ~parent_proto_die;
-        true
-      | Ts_predef (_, _) ->
-        create_typedef_die ~reference ~parent_proto_die ~name
-          ~child_die:fallback_die;
-        true
+      | Ts_predef (predef_shape, type_args) ->
+        predef_type_shape_to_die predef_shape type_args ~reference
+          ~parent_proto_die ~name ~fallback_die
       | Ts_constr ((type_uid, type_path), shapes) -> (
         match
           Type_shape.find_in_type_decls type_uid type_path ~load_decls_from_cms
@@ -578,6 +566,68 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     let reference = if successfully_created then reference else fallback_die in
     Type_shape.Type_shape.Tbl.add (* replace *) cache type_shape reference;
     reference
+
+and predef_type_shape_to_die (predef_type : Type_shape.Type_shape.Predef.t)
+    (args : Type_shape.Type_shape.t list) ~name ~reference ~parent_proto_die
+    ~fallback_die =
+  match predef_type, args with
+  | Int, _ ->
+    create_int_die ~reference ~parent_proto_die;
+    true
+  | Char, _ ->
+    create_char_die ~reference ~parent_proto_die;
+    true
+  (* String, _ unimplemented *)
+  (* Bytes, _ unimplemented *)
+  | Float, _ ->
+    create_boxed_float_die ~reference ~parent_proto_die;
+    true
+  (* Float32, _ unimplemented *)
+  | Bool, _ ->
+    create_bool_die ~reference ~parent_proto_die;
+    true
+  | Unit, _ ->
+    create_unit_die ~reference ~parent_proto_die;
+    true
+  (* Exn, _ unimplemented *)
+  | Array, [element_type_shape] ->
+    let child_die =
+      type_shape_to_die element_type_shape ~parent_proto_die ~fallback_die
+    in
+    create_array_die ~reference ~parent_proto_die ~child_die ~name;
+    true
+  | Array, _ -> false
+  (* Iarray, _ unimplemented *)
+  (* List unimplemented *)
+  (* Option unimplemented *)
+  | Nativeint, _ ->
+    create_boxed_base_type_die ~reference ~parent_proto_die ~name:"nativeint"
+      ~bytes:8 ~attribute:Encoding_attribute.signed;
+    true
+  (* Int8 unimplemented *)
+  (* Int16 unimplemented *)
+  | Int32, _ ->
+    create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int32"
+      ~bytes:4 ~attribute:Encoding_attribute.signed;
+    true
+  | Int64, _ ->
+    create_boxed_base_type_die ~reference ~parent_proto_die ~name:"int64"
+      ~bytes:8 ~attribute:Encoding_attribute.signed;
+    true
+  (* Lazy_t, _ unimplemented *)
+  (* Extension_constructor, _ unimplemented *)
+  (* Floatarray, _ unimplemented *)
+  | Unboxed_float, _ ->
+    create_unboxed_float_die ~reference ~parent_proto_die;
+    true
+  (* Unboxed_float32, _ unimplemented *)
+  (* Unboxed_nativeint, _ unimplemented *)
+  (* Unboxed_int32, _ unimplemented *)
+  (* Unboxed_int64, _ unimplemented *)
+  | _, _ ->
+    create_typedef_die ~reference ~parent_proto_die ~name
+      ~child_die:fallback_die;
+    true
 
 let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   let fallback_die = Proto_die.reference (DS.value_type_proto_die state) in
