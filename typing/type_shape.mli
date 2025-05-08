@@ -27,7 +27,7 @@ module Type_shape : sig
       (* Lexing Position *)
       | Unboxed_float
       | Unboxed_float32
-      | Unboxed_naitveint
+      | Unboxed_nativeint
       | Unboxed_int32
       | Unboxed_int64
       (* Or Null *)
