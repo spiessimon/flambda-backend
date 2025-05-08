@@ -16,6 +16,7 @@ module Type_shape = struct
       | Nativeint
       | String
       | Unboxed_float
+      | Unit
 
     let to_string = function
       | Array -> "array"
@@ -31,6 +32,7 @@ module Type_shape = struct
       | Nativeint -> "nativeint"
       | String -> "string"
       | Unboxed_float -> "float#"
+      | Unit -> "unit"
 
     let of_string = function
       | "array" -> Some Array
@@ -46,6 +48,7 @@ module Type_shape = struct
       | "lazy_t" -> Some Lazy_t
       | "nativeint" -> Some Nativeint
       | "string" -> Some String
+      | "unit" -> Some Unit
       | _ -> None
   end
 

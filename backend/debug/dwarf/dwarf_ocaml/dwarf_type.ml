@@ -464,6 +464,22 @@ let create_char_die ~reference ~parent_proto_die =
       [DAH.create_name "char"; DAH.create_type ~proto_die:wrapper_die]
     ()
 
+let create_unit_die ~reference ~parent_proto_die =
+  let enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:8]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+    ~attribute_values:[DAH.create_const_value ~value:1L; DAH.create_name "()"]
+    ();
+  Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+    ~tag:Dwarf_tag.Typedef
+    ~attribute_values:
+      [DAH.create_name "unit"; DAH.create_type ~proto_die:enum_die]
+    ()
+
 let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
     ~parent_proto_die ~fallback_die =
   match Type_shape.Type_shape.Tbl.find_opt cache type_shape with
@@ -505,6 +521,9 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
       | Ts_predef (Nativeint, _) ->
         create_boxed_base_type_die ~reference ~parent_proto_die
           ~name:"nativeint" ~bytes:8 ~attribute:Encoding_attribute.signed;
+        true
+      | Ts_predef (Unit, _) ->
+        create_unit_die ~reference ~parent_proto_die;
         true
       | Ts_predef (_, _) ->
         create_typedef_die ~reference ~parent_proto_die ~name
