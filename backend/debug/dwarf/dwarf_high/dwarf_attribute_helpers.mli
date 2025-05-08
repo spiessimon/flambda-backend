@@ -219,5 +219,9 @@ val create_ocaml_offset_record_from_pointer :
   value:Int64.t -> Dwarf_attribute_values.Attribute_value.t
 
 val create_data_location :
-  location_description:Simple_location_description.t ->
+  location_description:Single_location_description.t ->
+  Dwarf_attribute_values.Attribute_value.t
+
+val create_string_length :
+  length_description:Single_location_description.t ->
   Dwarf_attribute_values.Attribute_value.t
