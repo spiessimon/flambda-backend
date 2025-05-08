@@ -5,52 +5,92 @@ module Uid = Shape.Uid
 module Type_shape = struct
   module Predef = struct
     type t =
-      | Array
-      | Bytes
-      | Char
-      | Extension_constructor
-      | Float
-      | Floatarray
       | Int
+      | Char
+      | String
+      | Bytes
+      | Float
+      | Float32
+      | Bool
+      | Unit
+      | Exn
+      | Array
+      | Iarray
+      | List
+      | Option
+      | Nativeint
+      | Int8
+      | Int16
       | Int32
       | Int64
       | Lazy_t
-      | Nativeint
-      | String
+      | Extension_constructor
+      | Floatarray
+      (* Lexing Position *)
       | Unboxed_float
-      | Unit
+      | Unboxed_float32
+      | Unboxed_naitveint
+      | Unboxed_int32
+      | Unboxed_int64
+      (* Or Null *)
+      (* Vector Types *)
 
     let to_string = function
-      | Array -> "array"
-      | Bytes -> "bytes"
-      | Char -> "char"
-      | Extension_constructor -> "extension_constructor"
-      | Float -> "float"
-      | Floatarray -> "floatarray"
       | Int -> "int"
+      | Char -> "char"
+      | String -> "string"
+      | Bytes -> "bytes"
+      | Float -> "float"
+      | Float32 -> "float32"
+      | Bool -> "bool"
+      | Unit -> "unit"
+      | Exn -> "exn"
+      | Array -> "array"
+      | Iarray -> "iarray"
+      | List -> "list"
+      | Option -> "option"
+      | Nativeint -> "nativeint"
+      | Int8 -> "int8"
+      | Int16 -> "int16"
       | Int32 -> "int32"
       | Int64 -> "int64"
       | Lazy_t -> "lazy_t"
-      | Nativeint -> "nativeint"
-      | String -> "string"
+      | Extension_constructor -> "extension_constructor"
+      | Floatarray -> "floatarray"
       | Unboxed_float -> "float#"
-      | Unit -> "unit"
+      | Unboxed_float32 -> "float32#"
+      (* CR sspies: Are the unboxed constructors here correct? *)
+      | Unboxed_naitveint -> "nativeint#"
+      | Unboxed_int32 -> "int32#"
+      | Unboxed_int64 -> "int64#"
 
     let of_string = function
-      | "array" -> Some Array
-      | "bytes" -> Some Bytes
-      | "char" -> Some Char
-      | "extension_constructor" -> Some Extension_constructor
-      | "float" -> Some Float
-      | "float#" -> Some Unboxed_float
-      | "floatarray" -> Some Floatarray
       | "int" -> Some Int
+      | "char" -> Some Char
+      | "string" -> Some String
+      | "bytes" -> Some Bytes
+      | "float" -> Some Float
+      | "float32" -> Some Float32
+      | "bool" -> Some Bool
+      | "unit" -> Some Unit
+      | "exn" -> Some Exn
+      | "array" -> Some Array
+      | "iarray" -> Some Iarray
+      | "list" -> Some List
+      | "option" -> Some Option
+      | "nativeint" -> Some Nativeint
+      | "int8" -> Some Int8
+      | "int16" -> Some Int16
       | "int32" -> Some Int32
       | "int64" -> Some Int64
       | "lazy_t" -> Some Lazy_t
-      | "nativeint" -> Some Nativeint
-      | "string" -> Some String
-      | "unit" -> Some Unit
+      | "extension_constructor" -> Some Extension_constructor
+      | "floatarray" -> Some Floatarray
+      | "float#" -> Some Unboxed_float
+      | "float32#" -> Some Unboxed_float32
+      | "nativeint#" -> Some Unboxed_naitveint
+      | "int32#" -> Some Unboxed_int32
+      | "int64#" -> Some Unboxed_int64
       | _ -> None
   end
 
