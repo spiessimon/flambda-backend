@@ -171,7 +171,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       Proto_die.create ~parent:(Some variant_part_immediate_or_pointer)
         ~attribute_values:
           [ DAH.create_type ~proto_die:enum_immediate_or_pointer;
-            DAH.create_bit_size (Int64.of_int 1);
+            DAH.create_bit_size (Numbers.Int8.of_int_exn 1);
             DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 0);
             DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
             (* Making a member artificial will mark the struct as artificial,
@@ -213,7 +213,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       ~tag:Dwarf_tag.Member
       ~attribute_values:
         [ DAH.create_type ~proto_die:enum_die;
-          DAH.create_bit_size (Int64.of_int 63);
+          DAH.create_bit_size (Numbers.Int8.of_int_exn 63);
           DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
           DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 1) ]
       ()
