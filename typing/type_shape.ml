@@ -27,7 +27,7 @@ module Type_shape = struct
       (* Lexing Position *)
       | Unboxed_float
       | Unboxed_float32
-      | Unboxed_naitveint
+      | Unboxed_nativeint
       | Unboxed_int32
       | Unboxed_int64
       (* Or Null *)
@@ -58,7 +58,7 @@ module Type_shape = struct
       | Unboxed_float -> "float#"
       | Unboxed_float32 -> "float32#"
       (* CR sspies: Are the unboxed constructors here correct? *)
-      | Unboxed_naitveint -> "nativeint#"
+      | Unboxed_nativeint -> "nativeint#"
       | Unboxed_int32 -> "int32#"
       | Unboxed_int64 -> "int64#"
 
@@ -86,7 +86,7 @@ module Type_shape = struct
       | "floatarray" -> Some Floatarray
       | "float#" -> Some Unboxed_float
       | "float32#" -> Some Unboxed_float32
-      | "nativeint#" -> Some Unboxed_naitveint
+      | "nativeint#" -> Some Unboxed_nativeint
       | "int32#" -> Some Unboxed_int32
       | "int64#" -> Some Unboxed_int64
       | _ -> None
