@@ -16,6 +16,7 @@ module Type_shape : sig
       | Nativeint
       | String
       | Unboxed_float
+      | Unit
   end
 
   type t =
