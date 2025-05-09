@@ -11,21 +11,21 @@
 (*   special exception on linking described in the file LICENSE.          *)
 (*                                                                        *)
 (**************************************************************************)
+[@@@ocaml.warning "+a-40-42"]
 
 open! Dwarf_low
 open! Dwarf_high
-module Uid = Flambda2_identifiers.Flambda_uid
+module Uid = Flambda2_identifiers.Flambda_debug_uid
 module DAH = Dwarf_attribute_helpers
 module DS = Dwarf_state
-module SLDL = Simple_location_description_lang
 
-let cache = Type_shape.Type_shape.Tbl.create 42
+let cache = Type_shape.Type_shape.Tbl.create 16
 
-let load_decls_from_cms path =
-  let cms_infos = Cms_format.read path in
-  cms_infos.cms_shapes_for_dwarf
-
-let map_snd f list = List.map (fun (fst, snd) -> fst, f snd) list
+let load_decls_from_cms _path =
+  (* let cms_infos = Cms_format.read path in cms_infos.cms_shapes_for_dwarf *)
+  (* CR sspies: We return an empty table here for now, because we have not yet
+     agumented the [.cms] format to store the relevant shape information. *)
+  Shape.Uid.Tbl.create 0
 
 let wrap_die_under_a_pointer ~proto_die ~reference ~parent_proto_die =
   Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
@@ -132,7 +132,15 @@ let create_simple_variant_die ~reference ~parent_proto_die ~name
     simple_constructors
 
 let create_complex_variant_die ~reference ~parent_proto_die ~name
-    ~simple_constructors ~complex_constructors =
+    ~simple_constructors
+    ~(complex_constructors :
+       Proto_die.reference Type_shape.Type_decl_shape.complex_constructor list)
+    =
+  let complex_constructors_names =
+    List.map
+      (fun { Type_shape.Type_decl_shape.name; args = _ } -> name)
+      complex_constructors
+  in
   let variant_part_immediate_or_pointer =
     let int_or_ptr_structure =
       Proto_die.create ~reference ~parent:(Some parent_proto_die)
@@ -168,7 +176,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       Proto_die.create ~parent:(Some variant_part_immediate_or_pointer)
         ~attribute_values:
           [ DAH.create_type ~proto_die:enum_immediate_or_pointer;
-            DAH.create_bit_size (Int64.of_int 1);
+            DAH.create_bit_size (Numbers.Int8.of_int_exn 1);
             DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 0);
             DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
             (* Making a member artificial will mark the struct as artificial,
@@ -210,7 +218,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       ~tag:Dwarf_tag.Member
       ~attribute_values:
         [ DAH.create_type ~proto_die:enum_die;
-          DAH.create_bit_size (Int64.of_int 63);
+          DAH.create_bit_size (Numbers.Int8.of_int_exn 63);
           DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
           DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 1) ]
       ()
@@ -225,7 +233,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
               ~value:(Int64.of_int (-8));
             DAH.create_name
               ("variant_part " ^ name ^ " "
-              ^ String.concat "," (List.map fst complex_constructors)) ]
+              ^ String.concat "," complex_constructors_names) ]
         ()
     in
     let _attached_structure_to_pointer_variant =
@@ -262,12 +270,11 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
           ~attribute_values:
             [ DAH.create_byte_size_exn ~byte_size:1;
               DAH.create_name
-                (name ^ " "
-                ^ String.concat "," (List.map fst complex_constructors)) ]
+                (name ^ " " ^ String.concat "," complex_constructors_names) ]
           ()
       in
       List.iteri
-        (fun i (name, _constructors) ->
+        (fun i { Type_shape.Type_decl_shape.name; args = _ } ->
           Proto_die.create_ignore ~parent:(Some enum_die)
             ~tag:Dwarf_tag.Enumerator
             ~attribute_values:
@@ -288,7 +295,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
            ~proto_die_reference:(Proto_die.reference discriminant))
     in
     List.iteri
-      (fun i (name, constructors) ->
+      (fun i { Type_shape.Type_decl_shape.name = _; args } ->
         let subvariant =
           Proto_die.create ~parent:(Some variant_part_pointer)
             ~tag:Dwarf_tag.Variant
@@ -296,7 +303,10 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
             ()
         in
         List.iteri
-          (fun i (field_name, field_type) ->
+          (fun i
+               { Type_shape.Type_decl_shape.field_name;
+                 field_value = field_type
+               } ->
             let member_die =
               Proto_die.create ~parent:(Some subvariant) ~tag:Dwarf_tag.Member
                 ~attribute_values:
@@ -312,7 +322,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
               Proto_die.add_or_replace_attribute_value member_die
                 (DAH.create_name name)
             | None -> ())
-          constructors)
+          args)
       complex_constructors
   in
   ()
@@ -363,12 +373,18 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
       | Ts_predef (Unboxed_float, _) ->
         create_unboxed_float_die ~reference ~parent_proto_die;
         true
-      | Ts_predef (_, _) ->
+      | Ts_predef
+          ( ( Bytes | Extension_constructor | Float | Floatarray | Int | Int32
+            | Int64 | Lazy_t | Nativeint | String ),
+            _ ) ->
         create_typedef_die ~reference ~parent_proto_die ~name
           ~child_die:fallback_die;
         true
       | Ts_constr ((type_uid, type_path), shapes) -> (
-        match
+        match(* CR sspies: Somewhat subtly, this case currently also handles
+                [unit], [bool], [option], and [list], because they are not
+                treated as predefined types, but they do have declarations. *)
+             [@warning "-4"]
           Type_shape.find_in_type_decls type_uid type_path ~load_decls_from_cms
         with
         | None | Some { definition = Tds_other; _ } -> false
@@ -387,7 +403,12 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
             true
           | Tds_record fields ->
             let fields =
-              map_snd (type_shape_to_die ~parent_proto_die ~fallback_die) fields
+              List.map
+                (fun (name, type_shape) ->
+                  ( name,
+                    type_shape_to_die ~parent_proto_die ~fallback_die type_shape
+                  ))
+                fields
             in
             create_record_die ~reference ~parent_proto_die ~name ~fields;
             true
@@ -399,8 +420,9 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
               true
             | _ :: _ ->
               let complex_constructors =
-                map_snd
-                  (map_snd (type_shape_to_die ~parent_proto_die ~fallback_die))
+                List.map
+                  (Type_shape.Type_decl_shape.complex_constructor_map
+                     (type_shape_to_die ~parent_proto_die ~fallback_die))
                   complex_constructors
               in
               create_complex_variant_die ~reference ~parent_proto_die ~name
