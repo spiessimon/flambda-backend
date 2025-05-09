@@ -470,29 +470,40 @@ module Shape_reduce = Shape_reduce.Make(struct
 
   end)
 
-let debug = false
+let debug_uid_lookup = false
+(* CR sspies: It is not clear to me whether we want to keep this debugging machinery at
+   all. In its current form, it should at least not slow down the compiler due to dead
+   code elimination. If we determine it is useful, we should perhaps guard it behind a
+   compiler flag. *)
 
 let uid_of_path ~env path =
-  if debug then Format.eprintf "uid_of_path path=%a\n" Path.print path;
+  if debug_uid_lookup then Format.eprintf "uid_of_path path=%a\n" Path.print path;
   let compilation_unit = Type_shape.compilation_unit_from_path path in
   match compilation_unit with
   | None ->
-    if debug then Format.eprintf "I'm in this root\n";
+    if debug_uid_lookup then Format.eprintf "Compilation unit not found\n";
     (match (Env.find_type path env) with
-      | exception Not_found -> if debug then Format.eprintf "None0\n"; None
+      | exception Not_found ->
+        if debug_uid_lookup then Format.eprintf "Type not found -> None\n"; None
       | type_ -> let uid = type_.type_uid in
-        if debug then Format.eprintf "uid = %a\n" Uid.print uid;
+        if debug_uid_lookup then Format.eprintf "Type found -> uid = %a\n" Uid.print uid;
         Some uid
     )
   | Some compilation_unit ->
     let filename = String.uncapitalize_ascii compilation_unit in
     match Load_path.find_normalized (filename ^ ".cms") with
-    | exception Not_found -> if debug then Format.eprintf "None1\n"; None
+    | exception Not_found ->
+      if debug_uid_lookup then Format.eprintf ".cms file not found -> None\n"; None
     | fn ->
       (* CR tnowak: exception? *)
       let cms_infos = Cms_format.read fn in
       match cms_infos.cms_impl_shape with
-      | None -> if debug then Format.eprintf "None2\n"; None
+      | None ->
+        if debug_uid_lookup
+        then Format.eprintf ".cms does not contain implementation shape -> None\n";
+        (* CR sspies: The comment in [cms_format.ml] suggests that this case can not
+           happen, when we load a [.cms] file. Consider throwing an exception instead. *)
+        None
       | Some shape ->
         let shape =
           (* CR tnowak: that might be wrong? *)
@@ -503,8 +514,12 @@ let uid_of_path ~env path =
         in
         let shape = Shape_reduce.reduce env shape in
         match shape.uid with
-        | None -> if debug then Format.eprintf "None3\n"; None
-        | Some uid -> if debug then Format.eprintf "got it uid=%a\n" Uid.print uid; Some uid
+        | None ->
+          if debug_uid_lookup then Format.eprintf "Shape reduction failed -> None\n";
+          None
+        | Some uid ->
+          if debug_uid_lookup then Format.eprintf "Uid from .cms -> uid=%a\n" Uid.print uid;
+          Some uid
 
 
 
