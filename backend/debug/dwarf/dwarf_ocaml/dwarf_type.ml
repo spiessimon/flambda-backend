@@ -18,7 +18,6 @@ open! Dwarf_high
 module Uid = Flambda2_identifiers.Flambda_debug_uid
 module DAH = Dwarf_attribute_helpers
 module DS = Dwarf_state
-module OP = Dwarf_operator
 
 let cache = Type_shape.Type_shape.Tbl.create 16
 
@@ -379,7 +378,7 @@ let create_boxed_base_type_die ~reference ~parent_proto_die ~name ~bytes
   (* Then we wrap it in a pointer to make the debugger aware that it is in
      memory. *)
   List.iteri
-    (fun i (field_die, field_name, field_offset) ->
+    (fun _ (field_die, field_name, field_offset) ->
       let member_attributes =
         [ DAH.create_type_from_reference ~proto_die_reference:field_die;
           DAH.create_name field_name;
@@ -587,7 +586,7 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
 and predef_type_shape_to_die (predef_type : Type_shape.Type_shape.Predef.t)
     (args : Type_shape.Type_shape.t list) ~name ~reference ~parent_proto_die
     ~fallback_die =
-  match predef_type, args with
+  match[@warning "-4"] predef_type, args with
   | Int, _ ->
     create_int_die ~reference ~parent_proto_die;
     true
