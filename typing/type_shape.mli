@@ -72,16 +72,22 @@ module Type_decl_shape : sig
   val replace_tvar : t -> Type_shape.t list -> t
 end
 
+
+type binder_shape = {
+  type_shape : Type_shape.t;
+  type_sort: Jkind_types.Sort.Const.t;
+}
+
 val all_type_decls : Type_decl_shape.t Uid.Tbl.t
 
-val all_type_shapes : Type_shape.t Uid.Tbl.t
+val all_type_shapes : binder_shape Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)
 val add_to_type_decls :
   Path.t -> Types.type_declaration -> (Path.t -> Uid.t option) -> unit
 
 val add_to_type_shapes :
-  Uid.t -> Types.type_expr -> (Path.t -> Uid.t option) -> unit
+  Uid.t -> Types.type_expr -> Jkind_types.Sort.Const.t -> (Path.t -> Uid.t option) -> unit
 
 val find_in_type_decls :
   Uid.t ->

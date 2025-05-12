@@ -355,9 +355,17 @@ module Type_decl_shape = struct
       { type_params = []; path = t.path; definition = Tds_other }
 end
 
+
+
+type binder_shape = {
+  type_shape : Type_shape.t;
+  type_sort: Jkind_types.Sort.Const.t;
+}
+
+
 let (all_type_decls : Type_decl_shape.t Uid.Tbl.t) = Uid.Tbl.create 16
 
-let (all_type_shapes : Type_shape.t Uid.Tbl.t) = Uid.Tbl.create 16
+let (all_type_shapes : binder_shape Uid.Tbl.t) = Uid.Tbl.create 16
 
 let add_to_type_decls path (type_decl : Types.type_declaration) uid_of_path =
   let type_decl_shape =
@@ -365,9 +373,9 @@ let add_to_type_decls path (type_decl : Types.type_declaration) uid_of_path =
   in
   Uid.Tbl.add all_type_decls type_decl.type_uid type_decl_shape
 
-let add_to_type_shapes var_uid type_expr uid_of_path =
+let add_to_type_shapes var_uid type_expr sort uid_of_path =
   let type_shape = Type_shape.of_type_expr type_expr uid_of_path in
-  Uid.Tbl.add all_type_shapes var_uid type_shape
+  Uid.Tbl.add all_type_shapes var_uid { type_shape; type_sort = sort }
 
 let tuple_to_string (strings : string list) =
   match strings with
