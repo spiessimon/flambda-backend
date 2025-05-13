@@ -4,6 +4,13 @@ module Uid = Shape.Uid
 
 module Type_shape = struct
   module Predef = struct
+    type unboxed =
+      | Unboxed_float
+      | Unboxed_float32
+      | Unboxed_nativeint
+      | Unboxed_int64
+      | Unboxed_int32
+
     type t =
       | Array
       | Bytes
@@ -17,7 +24,17 @@ module Type_shape = struct
       | Lazy_t
       | Nativeint
       | String
-      | Unboxed_float
+      (* Unboxed types *)
+      | Unboxed of unboxed
+
+    (* name of the type without the hash *)
+    let unboxed_to_string (u : unboxed) =
+      match u with
+      | Unboxed_float -> "float"
+      | Unboxed_float32 -> "float32"
+      | Unboxed_nativeint -> "nativeint"
+      | Unboxed_int64 -> "int64"
+      | Unboxed_int32 -> "int32"
 
     let to_string = function
       | Array -> "array"
@@ -32,7 +49,15 @@ module Type_shape = struct
       | Lazy_t -> "lazy_t"
       | Nativeint -> "nativeint"
       | String -> "string"
-      | Unboxed_float -> "float#"
+      | Unboxed u -> unboxed_to_string u ^ "#"
+
+    let unboxed_of_string = function
+      | "float#" -> Some Unboxed_float
+      | "float32#" -> Some Unboxed_float32
+      | "nativeint#" -> Some Unboxed_nativeint
+      | "int64#" -> Some Unboxed_int64
+      | "int32#" -> Some Unboxed_int32
+      | _ -> None
 
     let of_string = function
       | "array" -> Some Array
@@ -40,7 +65,6 @@ module Type_shape = struct
       | "char" -> Some Char
       | "extension_constructor" -> Some Extension_constructor
       | "float" -> Some Float
-      | "float#" -> Some Unboxed_float
       | "floatarray" -> Some Floatarray
       | "int" -> Some Int
       | "int32" -> Some Int32
@@ -48,7 +72,10 @@ module Type_shape = struct
       | "lazy_t" -> Some Lazy_t
       | "nativeint" -> Some Nativeint
       | "string" -> Some String
-      | _ -> None
+      | s -> (
+        match unboxed_of_string s with
+        | Some u -> Some (Unboxed u)
+        | None -> None)
   end
 
   type t =
@@ -264,8 +291,11 @@ module Type_decl_shape = struct
             Tds_record
               (List.map
                  (fun (lbl : Types.label_declaration) ->
-                   Ident.name lbl.ld_id, Type_shape.Ts_predef (Unboxed_float, []))
+                   ( Ident.name lbl.ld_id,
+                     Type_shape.Ts_predef (Unboxed Unboxed_float, []) ))
                  lbl_list)
+            (* CR sspies: This seems dangerous. We probably want something to mark
+               this better. *)
           | Record_mixed _ ->
             (* CR sspies: Mixed records are currently not supported. *)
             Tds_other
@@ -541,7 +571,6 @@ let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
       | Tds_alias shape -> Tds_alias (attach_to_shape shape)
       | Tds_other -> Tds_other)
   }
-
 
 let print_table ppf (columns : (string * string list) list) =
   if List.length columns = 0 then Misc.fatal_errorf "print_table: empty table";

@@ -374,10 +374,9 @@ let rec value_type_shape_to_die (type_shape : Type_shape.Type_shape.t)
       | Ts_predef (Char, _) ->
         create_char_die ~reference ~parent_proto_die;
         true
-      | Ts_predef (Unboxed_float, _) ->
-        Misc.fatal_error
-          "Unboxed float does not have OCaml value layout; it has layout \
-           float64."
+      | Ts_predef ((Unboxed _ as predef), _) ->
+        Misc.fatal_errorf "Unboxed type %s does not have OCaml value layout."
+          (Type_shape.Type_shape.Predef.to_string predef)
       | Ts_predef
           ( ( Bytes | Extension_constructor | Float | Floatarray | Int | Int32
             | Int64 | Lazy_t | Nativeint | String ),
@@ -501,7 +500,6 @@ let flatten_sort (sort : Jkind_types.Sort.Const.t) : Jkind_types.Sort.Const.t =
 
 let type_shape_to_die (type_shape : Type_shape.Type_shape.t option)
     (sort : Jkind_types.Sort.Const.t) ~parent_proto_die ~fallback_die =
-  Format.eprintf "type_shape_to_die %a@." Jkind_types.Sort.Const.format sort;
   match sort with
   | Base Value -> (
     match type_shape with
@@ -514,7 +512,7 @@ let type_shape_to_die (type_shape : Type_shape.Type_shape.t option)
     create_unboxed_base_type_to_die base type_shape ~parent_proto_die
   | Product _ ->
     Misc.fatal_error
-      "products should have been destructed by the time we reach assembly code"
+      "products should have been destructed by the time we reach assembly code."
 
 let rec extract_unboxed_record_field_type_shape
     (type_shape : Type_shape.Type_shape.t) (length : int) (field : int) =

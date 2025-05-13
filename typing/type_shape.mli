@@ -2,6 +2,13 @@ module Uid = Shape.Uid
 
 module Type_shape : sig
   module Predef : sig
+    type unboxed =
+      | Unboxed_float
+      | Unboxed_float32
+      | Unboxed_nativeint
+      | Unboxed_int64
+      | Unboxed_int32
+
     type t =
       | Array
       | Bytes
@@ -15,7 +22,9 @@ module Type_shape : sig
       | Lazy_t
       | Nativeint
       | String
-      | Unboxed_float
+      | Unboxed of unboxed
+
+    val to_string : t -> string
   end
 
   type t =
