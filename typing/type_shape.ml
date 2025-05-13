@@ -54,6 +54,7 @@ module Type_shape = struct
   type t =
     | Ts_constr of (Uid.t * Path.t) * t list
     | Ts_tuple of t list
+    | Ts_unboxed_tuple of t list
     | Ts_var of string option
     | Ts_predef of Predef.t * t list
     | Ts_other
@@ -92,6 +93,8 @@ module Type_shape = struct
       | Tvar { name; _ } -> Ts_var name
       | Tpoly (type_expr, []) ->
         of_type_expr_go ~depth ~visited type_expr uid_of_path
+      | Tunboxed_tuple exprs ->
+        Ts_unboxed_tuple (map_expr_list (List.map snd exprs))
       | _ -> Ts_other
 
   let of_type_expr (expr : Types.type_expr) uid_of_path =
@@ -113,6 +116,12 @@ module Type_shape = struct
         shapes
     | Ts_tuple shapes ->
       Format.fprintf ppf "Ts_tuple (%a)"
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+           print)
+        shapes
+    | Ts_unboxed_tuple shapes ->
+      Format.fprintf ppf "Ts_unboxed_tuple (%a)"
         (Format.pp_print_list
            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
            print)
@@ -139,6 +148,8 @@ module Type_shape = struct
         Ts_constr (uid, List.map (replace_tvar ~pairs) shape_list)
       | Ts_tuple shape_list ->
         Ts_tuple (List.map (replace_tvar ~pairs) shape_list)
+      | Ts_unboxed_tuple shape_list ->
+        Ts_unboxed_tuple (List.map (replace_tvar ~pairs) shape_list)
       | Ts_var name -> Ts_var name
       | Ts_predef (predef, shape_list) -> Ts_predef (predef, shape_list)
       | Ts_other -> Ts_other)
@@ -384,6 +395,12 @@ let tuple_to_string (strings : string list) =
   | hd :: [] -> hd
   | _ :: _ :: _ -> "(" ^ String.concat " * " strings ^ ")"
 
+let unboxed_tuple_to_string (strings : string list) =
+  match strings with
+  | [] -> ""
+  | hd :: [] -> hd
+  | _ :: _ :: _ -> "(" ^ String.concat " & " strings ^ ")"
+
 let shapes_to_string (strings : string list) =
   match strings with
   | [] -> ""
@@ -455,6 +472,8 @@ let rec type_name (type_shape : Type_shape.t)
     "unknown"
   | Ts_tuple shapes ->
     tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
+  | Ts_unboxed_tuple shapes ->
+    unboxed_tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
   | Ts_var name -> "'" ^ Option.value name ~default:"?"
   | Ts_constr ((type_uid, type_path), shapes) -> (
     match[@warning "-4"]

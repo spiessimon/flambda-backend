@@ -21,6 +21,7 @@ module Type_shape : sig
   type t =
     | Ts_constr of (Uid.t * Path.t) * t list
     | Ts_tuple of t list
+    | Ts_unboxed_tuple of t list
     | Ts_var of string option
     | Ts_predef of Predef.t * t list
     | Ts_other
