@@ -67,7 +67,8 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
        files we haven't seen before? *)
   in
   let debug_print_shapes_and_decls = false in
-  let print_binder_shape ppf ({ type_shape; type_sort } : Type_shape.binder_shape) =
+  let print_binder_shape ppf
+      ({ type_shape; type_sort } : Type_shape.binder_shape) =
     Type_shape.Type_shape.print ppf type_shape;
     Format.fprintf ppf " ";
     Jkind_types.Sort.Const.format ppf type_sort
