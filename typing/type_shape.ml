@@ -84,6 +84,7 @@ module Type_shape = struct
     | Ts_unboxed_tuple of t list
     | Ts_var of string option
     | Ts_predef of Predef.t * t list
+    | Ts_arrow of t * t
     | Ts_other
 
   (* Similarly to [value_kind], we track a set of visited types to avoid cycles
@@ -128,7 +129,10 @@ module Type_shape = struct
       | Tlink _ | Tsubst _ ->
         Misc.fatal_error "linking and substitution should not reach this stage."
       | Tvariant _ -> Ts_other (* CR sspies: Support polymorphic variants. *)
-      | Tarrow _ -> Ts_other (* CR sspies: Support function types. *)
+      | Tarrow (_, arg, ret, _) ->
+        Ts_arrow
+          ( of_type_expr_go ~depth ~visited arg uid_of_path,
+            of_type_expr_go ~depth ~visited ret uid_of_path )
       | Tunivar { name; _ } -> Ts_var name
       | Tpackage _ -> Ts_other (* CR sspies: Support first-class modules. *)
 
@@ -165,6 +169,8 @@ module Type_shape = struct
       Format.fprintf ppf "Ts_var (%a)"
         (fun ppf opt -> Format.pp_print_option Format.pp_print_string ppf opt)
         name
+    | Ts_arrow (arg, ret) ->
+      Format.fprintf ppf "Ts_arrow (%a, %a)" print arg print ret
     | Ts_other -> Format.fprintf ppf "Ts_other"
 
   (* CR sspies: This function looks very different from a regular substitution.
@@ -187,6 +193,8 @@ module Type_shape = struct
         Ts_unboxed_tuple (List.map (replace_tvar ~pairs) shape_list)
       | Ts_var name -> Ts_var name
       | Ts_predef (predef, shape_list) -> Ts_predef (predef, shape_list)
+      | Ts_arrow (arg, ret) ->
+        Ts_arrow (replace_tvar ~pairs arg, replace_tvar ~pairs ret)
       | Ts_other -> Ts_other)
 
   include Identifiable.Make (struct
@@ -513,6 +521,10 @@ let rec type_name (type_shape : Type_shape.t)
   | Ts_unboxed_tuple shapes ->
     unboxed_tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
   | Ts_var name -> "'" ^ Option.value name ~default:"?"
+  | Ts_arrow (shape1, shape2) ->
+    let arg_name = type_name ~load_decls_from_cms shape1 in
+    let ret_name = type_name ~load_decls_from_cms shape2 in
+    arg_name ^ " -> " ^ ret_name
   | Ts_constr ((type_uid, type_path), shapes) -> (
     match[@warning "-4"]
       find_in_type_decls type_uid type_path ~load_decls_from_cms

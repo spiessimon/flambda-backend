@@ -456,7 +456,13 @@ let rec type_shape_layout_to_die (type_shape : Type_shape.Type_shape.t)
         ~fallback_value_die predef args base
     | Ts_constr ((type_uid, type_path), shapes), _ ->
       type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
-        ~fallback_value_die ~type_uid type_path type_layout shapes);
+        ~fallback_value_die ~type_uid type_path type_layout shapes
+    | Ts_arrow (arg, ret), Value ->
+      type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
+        ~fallback_value_die arg ret
+    | Ts_arrow _, (Void | Float32 | Float64 | Word | Bits32 | Bits64 | Vec128)
+      ->
+      Misc.fatal_errorf "an arrow cannot have base layout %s" layout_name);
     reference
 
 and type_shape_layout_tuple_die ~name ~reference ~parent_proto_die
@@ -580,6 +586,12 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
       ->
       Misc.fatal_errorf "Variant is of layout value, not base layout %s"
         (Jkind_types.Sort.to_string_base type_layout))
+
+and type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
+    ~fallback_value_die _arg _ret =
+  (* There is no need to inspect the argument and return value. *)
+  create_typedef_die ~reference ~parent_proto_die ~name
+    ~child_die:fallback_value_die
 
 let rec flatten_to_base_sorts (sort : Jkind_types.Sort.Const.t) :
     Jkind_types.Sort.base list =

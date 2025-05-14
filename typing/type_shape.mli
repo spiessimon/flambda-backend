@@ -33,6 +33,7 @@ module Type_shape : sig
     | Ts_unboxed_tuple of t list
     | Ts_var of string option
     | Ts_predef of Predef.t * t list
+    | Ts_arrow of t * t
     | Ts_other
 
   include Identifiable.S with type t := t
