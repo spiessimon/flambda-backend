@@ -107,8 +107,7 @@ module Type_shape = struct
           (fun expr -> of_type_expr_go ~depth ~visited expr uid_of_path)
           exprs
       in
-      match[@warning "-4"] desc with
-      (* CR sspies: Extend this match to handle more type constructor cases. *)
+      match desc with
       | Tconstr (path, constrs, _abbrev_memo) -> (
         match Predef.of_string (Path.name path) with
         | Some predef -> Ts_predef (predef, map_expr_list constrs)
