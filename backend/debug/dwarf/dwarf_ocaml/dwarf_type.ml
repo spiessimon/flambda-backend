@@ -418,6 +418,8 @@ let rec type_shape_layout_to_die (type_shape : Type_shape.Type_shape.t)
     (* We add the combination of shape and layout early in case of recursive
        types, which can then look up their reference, before it is fully
        defined. *)
+    (* CR sspies: Is this comment correct? Test with list. It might be that our
+       shapes truncate them, in which case we would need to fix this. *)
     Shape_and_layout_cache.Tbl.add reference_cache (type_shape, type_layout)
       reference;
     let type_name = Type_shape.type_name type_shape ~load_decls_from_cms in

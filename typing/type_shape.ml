@@ -118,11 +118,20 @@ module Type_shape = struct
           | None -> Ts_other))
       | Ttuple exprs -> Ts_tuple (map_expr_list (List.map snd exprs))
       | Tvar { name; _ } -> Ts_var name
-      | Tpoly (type_expr, []) ->
+      | Tpoly (type_expr, _type_vars) ->
+        (* CR sspies: At the moment, we simply ignore the polymorphic variables.
+           This code used to only work for [_type_vars = []]. *)
         of_type_expr_go ~depth ~visited type_expr uid_of_path
       | Tunboxed_tuple exprs ->
         Ts_unboxed_tuple (map_expr_list (List.map snd exprs))
-      | _ -> Ts_other
+      | Tobject _ | Tnil | Tfield _ ->
+        Ts_other (* Objects are currently not supported in the debugger. *)
+      | Tlink _ | Tsubst _ ->
+        Misc.fatal_error "linking and substitution should not reach this stage."
+      | Tvariant _ -> Ts_other (* CR sspies: Support polymorphic variants. *)
+      | Tarrow _ -> Ts_other (* CR sspies: Support function types. *)
+      | Tunivar { name; _ } -> Ts_var name
+      | Tpackage _ -> Ts_other (* CR sspies: Support first-class modules. *)
 
   let of_type_expr (expr : Types.type_expr) uid_of_path =
     of_type_expr_go ~visited:Numbers.Int.Set.empty ~depth:(-1) expr uid_of_path
@@ -512,10 +521,12 @@ let rec type_name (type_shape : Type_shape.t)
     | None ->
       if debug_type_search
       then Format.eprintf "unknown type (declaration not found)\n";
-      "unknown"
+      (* CR sspies: This used to be unknown, perhaps we just want the Path.name? *)
+      Format.asprintf "unknown(%s)" (Path.name type_path)
     | Some { definition = Tds_other; _ } ->
       if debug_type_search then Format.eprintf "type has shape Tds_other\n";
-      "unknown"
+      (* CR sspies: This used to be unknown, perhaps we just want the Path.name? *)
+      Format.asprintf "unknown(%s)" (Path.name type_path)
     | Some type_decl_shape ->
       (* We have found type instantiation shapes [shapes] and a typing
          declaration shape [type_decl_shape]. *)
