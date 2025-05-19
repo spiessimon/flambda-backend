@@ -1,4 +1,5 @@
 module Uid = Shape.Uid
+module Layout = Jkind_types.Sort.Const
 
 module Type_shape : sig
   module Predef : sig
@@ -25,18 +26,30 @@ module Type_shape : sig
       | Unboxed of unboxed
 
     val to_string : t -> string
+
+    val unboxed_type_to_layout : unboxed -> Jkind_types.Sort.base
+
+    val predef_to_layout : t -> Layout.t
   end
 
-  type t =
-    | Ts_constr of (Uid.t * Path.t) * t list
-    | Ts_tuple of t list
-    | Ts_unboxed_tuple of t list
-    | Ts_var of string option
-    | Ts_predef of Predef.t * t list
-    | Ts_arrow of t * t
-    | Ts_other
+  type without_layout
 
-  include Identifiable.S with type t := t
+  type 'a t =
+    | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
+    | Ts_tuple of 'a t list
+    | Ts_unboxed_tuple of 'a t list
+    | Ts_var of string option * 'a
+    | Ts_predef of Predef.t * without_layout t list
+    | Ts_arrow of without_layout t * without_layout t
+    | Ts_other of 'a
+
+  val shape_layout : Layout.t t -> Layout.t
+
+  val shape_with_layout : layout:Layout.t -> without_layout t -> Layout.t t
+
+  module With_layout : sig
+    include Identifiable.S with type t := Jkind_types.Sort.Const.t t
+  end
 end
 
 module Type_decl_shape : sig
@@ -53,13 +66,18 @@ module Type_decl_shape : sig
   val complex_constructor_map :
     ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
 
+  (* For type substitution to work as expected, we store the layouts in the declaration
+     alongside the shapes instead of directly going for the substituted version. *)
   type tds =
     | Tds_variant of
         { simple_constructors : string list;
               (** The string is the name of the constructor. The runtime representation of
                 the constructor at index [i] in this list is [2 * i + 1]. See
                 [dwarf_type.ml] for more details. *)
-          complex_constructors : Type_shape.t complex_constructor list
+          complex_constructors :
+            (Type_shape.without_layout Type_shape.t * Layout.t)
+            complex_constructor
+            list
               (** All constructors in this category are represented as blocks. The index [i]
                 in the list indicates the tag at runtime. The length of the constructor
                 argument list [args] determines the size of the block. *)
@@ -68,29 +86,25 @@ module Type_decl_shape : sig
           (simple constructors) and blocks (complex constructors). Thus, even though the
           order is disturbed by separating them into two lists, the runtime shape is still
           uniquely determined, because the two representations are disjoint. *)
-    | Tds_record of (string * Type_shape.t) list
-    | Tds_alias of Type_shape.t
+    | Tds_record of
+        (string * Type_shape.without_layout Type_shape.t * Layout.t) list
+    | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
   type t =
     { path : Path.t;
       definition : tds;
-      type_params : Type_shape.t list
+      type_params : Type_shape.without_layout Type_shape.t list
     }
 
   val print : Format.formatter -> t -> unit
 
-  val replace_tvar : t -> Type_shape.t list -> t
+  val replace_tvar : t -> Type_shape.without_layout Type_shape.t list -> t
 end
-
-type binder_shape =
-  { type_shape : Type_shape.t;
-    type_sort : Jkind_types.Sort.Const.t
-  }
 
 val all_type_decls : Type_decl_shape.t Uid.Tbl.t
 
-val all_type_shapes : binder_shape Uid.Tbl.t
+val all_type_shapes : Layout.t Type_shape.t Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)
 val add_to_type_decls :
@@ -110,7 +124,8 @@ val find_in_type_decls :
   Type_decl_shape.t option
 
 val type_name :
-  Type_shape.t ->
+  'a.
+  'a Type_shape.t ->
   load_decls_from_cms:(string -> Type_decl_shape.t Uid.Tbl.t) ->
   string
 

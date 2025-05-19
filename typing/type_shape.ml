@@ -1,6 +1,7 @@
 [@@@ocaml.warning "+a-40-42"]
 
 module Uid = Shape.Uid
+module Layout = Jkind_types.Sort.Const
 
 module Type_shape = struct
   module Predef = struct
@@ -76,16 +77,51 @@ module Type_shape = struct
         match unboxed_of_string s with
         | Some u -> Some (Unboxed u)
         | None -> None)
+
+    let unboxed_type_to_layout (b : unboxed) : Jkind_types.Sort.base =
+      match b with
+      | Unboxed_float -> Float64
+      | Unboxed_float32 -> Float32
+      | Unboxed_nativeint -> Word
+      | Unboxed_int64 -> Bits64
+      | Unboxed_int32 -> Bits32
+
+    let predef_to_layout = function
+      | Array -> Layout.Base Value
+      | Bytes -> Layout.Base Value
+      | Char -> Layout.Base Value
+      | Extension_constructor -> Layout.Base Value
+      | Float -> Layout.Base Value
+      | Floatarray -> Layout.Base Value
+      | Int -> Layout.Base Value
+      | Int32 -> Layout.Base Value
+      | Int64 -> Layout.Base Value
+      | Lazy_t -> Layout.Base Value
+      | Nativeint -> Layout.Base Value
+      | String -> Layout.Base Value
+      | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
   end
 
-  type t =
-    | Ts_constr of (Uid.t * Path.t) * t list
-    | Ts_tuple of t list
-    | Ts_unboxed_tuple of t list
-    | Ts_var of string option
-    | Ts_predef of Predef.t * t list
-    | Ts_arrow of t * t
-    | Ts_other
+  type without_layout = Layout_to_be_determined
+
+  type 'a t =
+    | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
+    | Ts_tuple of 'a t list
+    | Ts_unboxed_tuple of 'a t list
+    | Ts_var of string option * 'a
+    | Ts_predef of Predef.t * without_layout t list
+    | Ts_arrow of without_layout t * without_layout t
+    | Ts_other of 'a
+
+  let rec shape_layout (sh : Layout.t t) =
+    match sh with
+    | Ts_constr ((_, _, ly), _) -> ly
+    | Ts_tuple _ -> Layout.Base Value
+    | Ts_unboxed_tuple shapes -> Layout.Product (List.map shape_layout shapes)
+    | Ts_var (_, ly) -> ly
+    | Ts_predef (predef, _) -> Predef.predef_to_layout predef
+    | Ts_arrow _ -> Layout.Base Value
+    | Ts_other ly -> ly
 
   (* Similarly to [value_kind], we track a set of visited types to avoid cycles
      in the lookup and we, additionally, carry a maximal depth for the recursion.
@@ -98,7 +134,7 @@ module Type_shape = struct
       Numbers.Int.Set.mem (Types.get_id expr) visited || depth >= 10
     in
     if cannot_proceed ()
-    then Ts_other
+    then Ts_other Layout_to_be_determined
     else
       let visited = Numbers.Int.Set.add (Types.get_id expr) visited in
       let depth = depth + 1 in
@@ -114,10 +150,12 @@ module Type_shape = struct
         | Some predef -> Ts_predef (predef, map_expr_list constrs)
         | None -> (
           match uid_of_path path with
-          | Some uid -> Ts_constr ((uid, path), map_expr_list constrs)
-          | None -> Ts_other))
+          | Some uid ->
+            Ts_constr
+              ((uid, path, Layout_to_be_determined), map_expr_list constrs)
+          | None -> Ts_other Layout_to_be_determined))
       | Ttuple exprs -> Ts_tuple (map_expr_list (List.map snd exprs))
-      | Tvar { name; _ } -> Ts_var name
+      | Tvar { name; _ } -> Ts_var (name, Layout_to_be_determined)
       | Tpoly (type_expr, _type_vars) ->
         (* CR sspies: At the moment, we simply ignore the polymorphic variables.
            This code used to only work for [_type_vars = []]. *)
@@ -125,28 +163,82 @@ module Type_shape = struct
       | Tunboxed_tuple exprs ->
         Ts_unboxed_tuple (map_expr_list (List.map snd exprs))
       | Tobject _ | Tnil | Tfield _ ->
-        Ts_other (* Objects are currently not supported in the debugger. *)
+        Ts_other Layout_to_be_determined
+        (* Objects are currently not supported in the debugger. *)
       | Tlink _ | Tsubst _ ->
         Misc.fatal_error "linking and substitution should not reach this stage."
-      | Tvariant _ -> Ts_other (* CR sspies: Support polymorphic variants. *)
+      | Tvariant _ ->
+        Ts_other
+          Layout_to_be_determined (* CR sspies: Support polymorphic variants. *)
       | Tarrow (_, arg, ret, _) ->
         Ts_arrow
           ( of_type_expr_go ~depth ~visited arg uid_of_path,
             of_type_expr_go ~depth ~visited ret uid_of_path )
-      | Tunivar { name; _ } -> Ts_var name
-      | Tpackage _ -> Ts_other (* CR sspies: Support first-class modules. *)
+      | Tunivar { name; _ } -> Ts_var (name, Layout_to_be_determined)
+      | Tpackage _ ->
+        Ts_other
+          Layout_to_be_determined (* CR sspies: Support first-class modules. *)
 
   let of_type_expr (expr : Types.type_expr) uid_of_path =
     of_type_expr_go ~visited:Numbers.Int.Set.empty ~depth:(-1) expr uid_of_path
 
-  let rec print ppf = function
+  let rec shape_with_layout ~(layout : Layout.t) (sh : without_layout t) :
+      Layout.t t =
+    match sh, layout with
+    | Ts_constr ((uid, path, Layout_to_be_determined), shapes), _ ->
+      Ts_constr ((uid, path, layout), shapes)
+    | Ts_tuple shapes, Base Value ->
+      let layouted_shapes =
+        List.map (shape_with_layout ~layout:(Layout.Base Value)) shapes
+      in
+      Ts_tuple layouted_shapes
+    | ( Ts_tuple _,
+        ( Product _
+        | Base (Void | Bits32 | Bits64 | Float64 | Float32 | Word | Vec128) ) )
+      ->
+      Misc.fatal_errorf "tuple shape must have layout value, but has layout %a"
+        Layout.format layout
+    | Ts_unboxed_tuple shapes, Product lys
+      when List.length shapes = List.length lys ->
+      let shapes_and_layouts = List.combine shapes lys in
+      let layouted_shapes =
+        List.map
+          (fun (shape, layout) -> shape_with_layout ~layout shape)
+          shapes_and_layouts
+      in
+      Ts_unboxed_tuple layouted_shapes
+    | Ts_unboxed_tuple shapes, Product lys ->
+      Misc.fatal_errorf "unboxed tuple shape has %d shapes, but %d layouts"
+        (List.length shapes) (List.length lys)
+    | ( Ts_unboxed_tuple _,
+        Base (Void | Value | Float32 | Float64 | Word | Bits32 | Bits64 | Vec128)
+      ) ->
+      Misc.fatal_errorf
+        "unboxed tuple must have unboxed product layout, but has layout %a"
+        Layout.format layout
+    | Ts_var (name, Layout_to_be_determined), _ -> Ts_var (name, layout)
+    | Ts_arrow (arg, ret), Base Value -> Ts_arrow (arg, ret)
+    | Ts_arrow _, _ ->
+      Misc.fatal_errorf "function type shape must have layout value"
+    | Ts_predef (predef, shapes), _ when Predef.predef_to_layout predef = layout
+      ->
+      Ts_predef (predef, shapes)
+    | Ts_predef (predef, _), _ ->
+      Misc.fatal_errorf
+        "predef has layout %a, but is expected to have layout %a" Layout.format
+        (Predef.predef_to_layout predef)
+        Layout.format layout
+    | Ts_other Layout_to_be_determined, _ -> Ts_other layout
+
+  let rec print : type a. Format.formatter -> a t -> unit =
+   fun ppf -> function
     | Ts_predef (predef, shapes) ->
       Format.fprintf ppf "Ts_predef %s (%a)" (Predef.to_string predef)
         (Format.pp_print_list
            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
            print)
         shapes
-    | Ts_constr ((uid, path), shapes) ->
+    | Ts_constr ((uid, path, _), shapes) ->
       Format.fprintf ppf "Ts_constr uid=%a path=%a (%a)" Uid.print uid
         Path.print path
         (Format.pp_print_list
@@ -165,18 +257,18 @@ module Type_shape = struct
            ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
            print)
         shapes
-    | Ts_var name ->
+    | Ts_var (name, _) ->
       Format.fprintf ppf "Ts_var (%a)"
         (fun ppf opt -> Format.pp_print_option Format.pp_print_string ppf opt)
         name
     | Ts_arrow (arg, ret) ->
       Format.fprintf ppf "Ts_arrow (%a, %a)" print arg print ret
-    | Ts_other -> Format.fprintf ppf "Ts_other"
+    | Ts_other _ -> Format.fprintf ppf "Ts_other"
 
   (* CR sspies: This function looks very different from a regular substitution.
      It seems to replace an entire type description, and it uses polymorphic
      equality to determine which one. *)
-  let rec replace_tvar t ~(pairs : (t * t) list) =
+  let rec replace_tvar t ~(pairs : (without_layout t * without_layout t) list) =
     match
       List.filter_map
         (fun (from, to_) -> if t = from then Some to_ else None)
@@ -191,25 +283,27 @@ module Type_shape = struct
         Ts_tuple (List.map (replace_tvar ~pairs) shape_list)
       | Ts_unboxed_tuple shape_list ->
         Ts_unboxed_tuple (List.map (replace_tvar ~pairs) shape_list)
-      | Ts_var name -> Ts_var name
+      | Ts_var (name, ly) -> Ts_var (name, ly)
       | Ts_predef (predef, shape_list) -> Ts_predef (predef, shape_list)
       | Ts_arrow (arg, ret) ->
         Ts_arrow (replace_tvar ~pairs arg, replace_tvar ~pairs ret)
-      | Ts_other -> Ts_other)
+      | Ts_other ly -> Ts_other ly)
 
-  include Identifiable.Make (struct
-    type nonrec t = t
+  module With_layout = struct
+    include Identifiable.Make (struct
+      type nonrec t = Layout.t t
 
-    let compare = Stdlib.compare
+      let compare = Stdlib.compare
 
-    let print = print
+      let print = print
 
-    let hash = Hashtbl.hash
+      let hash = Hashtbl.hash
 
-    let equal (x : t) y = x = y
+      let equal (x : t) y = x = y
 
-    let output _oc _t = Misc.fatal_error "unimplemented"
-  end)
+      let output _oc _t = Misc.fatal_error "unimplemented"
+    end)
+  end
 end
 
 module Type_decl_shape = struct
@@ -226,16 +320,20 @@ module Type_decl_shape = struct
   type tds =
     | Tds_variant of
         { simple_constructors : string list;
-          complex_constructors : Type_shape.t complex_constructor list
+          complex_constructors :
+            (Type_shape.without_layout Type_shape.t * Layout.t)
+            complex_constructor
+            list
         }
-    | Tds_record of (string * Type_shape.t) list
-    | Tds_alias of Type_shape.t
+    | Tds_record of
+        (string * Type_shape.without_layout Type_shape.t * Layout.t) list
+    | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
   type t =
     { path : Path.t;
       definition : tds;
-      type_params : Type_shape.t list
+      type_params : Type_shape.without_layout Type_shape.t list
     }
 
   let complex_constructor_map f { name; args } =
@@ -252,16 +350,19 @@ module Type_decl_shape = struct
     match cstr_args.cd_args with
     | Cstr_tuple list ->
       List.map
-        (fun ({ ca_type = type_expr; _ } : Types.constructor_argument) ->
+        (fun ({ ca_type = type_expr; ca_sort = type_layout; _ } :
+               Types.constructor_argument) ->
           { field_name = None;
-            field_value = Type_shape.of_type_expr type_expr uid_of_path
+            field_value =
+              Type_shape.of_type_expr type_expr uid_of_path, type_layout
           })
         list
     | Cstr_record list ->
       List.map
         (fun (lbl : Types.label_declaration) ->
           { field_name = Some (Ident.name lbl.ld_id);
-            field_value = Type_shape.of_type_expr lbl.ld_type uid_of_path
+            field_value =
+              Type_shape.of_type_expr lbl.ld_type uid_of_path, lbl.ld_sort
           })
         list
 
@@ -301,21 +402,29 @@ module Type_decl_shape = struct
               (List.map
                  (fun (lbl : Types.label_declaration) ->
                    ( Ident.name lbl.ld_id,
-                     Type_shape.of_type_expr lbl.ld_type uid_of_path ))
+                     Type_shape.of_type_expr lbl.ld_type uid_of_path,
+                     lbl.ld_sort ))
                  lbl_list)
           | Record_float ->
             Tds_record
               (List.map
                  (fun (lbl : Types.label_declaration) ->
                    ( Ident.name lbl.ld_id,
-                     Type_shape.Ts_predef (Unboxed Unboxed_float, []) ))
+                     Type_shape.Ts_predef (Unboxed Unboxed_float, []),
+                     Layout.Base Float64 ))
                  lbl_list)
             (* CR sspies: This seems dangerous. We probably want something to mark
                this better. *)
           | Record_mixed _ ->
-            (* CR sspies: Mixed records are currently not supported. *)
+            (* CR sspies: Mixed records are currently not supported.
+               This requires further investigation of how and when the fields
+               are reordered in mixed records.
+            *)
             Tds_other
-          | Record_inlined _ | Record_unboxed | Record_ufloat -> Tds_other)
+          | Record_inlined _ | Record_unboxed | Record_ufloat ->
+            Tds_other
+            (* CR sspies: Unboxed records and ufloats can now probably be implemented. *)
+          )
         | Type_abstract _ -> Tds_other
         | Type_open -> Tds_other
         | Type_record_unboxed_product _ ->
@@ -346,7 +455,10 @@ module Type_decl_shape = struct
          (print_one_entry print_value))
       args
 
-  let print_field ppf (name, shape) =
+  let print_only_shape ppf (shape, _) = Type_shape.print ppf shape
+
+  let print_field ppf
+      ((name, shape, _) : _ * Type_shape.without_layout Type_shape.t * _) =
     Format.fprintf ppf "%a: %a" Format.pp_print_string name Type_shape.print
       shape
 
@@ -358,7 +470,7 @@ module Type_decl_shape = struct
            Format.pp_print_string)
         simple_constructors
         (Format.pp_print_list ~pp_sep:(print_sep_string " | ")
-           (print_complex_constructor Type_shape.print))
+           (print_complex_constructor print_only_shape))
         complex_constructors
     | Tds_record field_list ->
       Format.fprintf ppf "Tds_record { %a }"
@@ -372,12 +484,11 @@ module Type_decl_shape = struct
     Format.fprintf ppf "path=%a, definition=(%a)" Path.print t.path print_tds
       t.definition
 
-  let map_snd f list = List.map (fun (fst, snd) -> fst, f snd) list
-
   (* CR sspies: This function is probably meant to instantiate the polymorphic
      variables in the type declarations. There must be functionality in the
      type checker for this. *)
-  let replace_tvar (t : t) (shapes : Type_shape.t list) =
+  let replace_tvar (t : t)
+      (shapes : Type_shape.without_layout Type_shape.t list) =
     let debug = false in
     if debug
     then
@@ -388,9 +499,8 @@ module Type_decl_shape = struct
         t.type_params;
     match List.length t.type_params == List.length shapes with
     | true ->
-      let replace_tvar =
-        Type_shape.replace_tvar ~pairs:(List.combine t.type_params shapes)
-      in
+      let subst = List.combine t.type_params shapes in
+      let replace_tvar (sh, ly) = Type_shape.replace_tvar ~pairs:subst sh, ly in
       let ret =
         { type_params = [];
           path = t.path;
@@ -405,8 +515,13 @@ module Type_decl_shape = struct
                       complex_constructors
                 }
             | Tds_record field_list ->
-              Tds_record (map_snd replace_tvar field_list)
-            | Tds_alias type_shape -> Tds_alias (replace_tvar type_shape)
+              Tds_record
+                (List.map
+                   (fun (name, sh, ly) ->
+                     name, Type_shape.replace_tvar ~pairs:subst sh, ly)
+                   field_list)
+            | Tds_alias type_shape ->
+              Tds_alias (Type_shape.replace_tvar ~pairs:subst type_shape)
             | Tds_other -> Tds_other)
         }
       in
@@ -416,14 +531,9 @@ module Type_decl_shape = struct
       { type_params = []; path = t.path; definition = Tds_other }
 end
 
-type binder_shape =
-  { type_shape : Type_shape.t;
-    type_sort : Jkind_types.Sort.Const.t
-  }
-
 let (all_type_decls : Type_decl_shape.t Uid.Tbl.t) = Uid.Tbl.create 16
 
-let (all_type_shapes : binder_shape Uid.Tbl.t) = Uid.Tbl.create 16
+let (all_type_shapes : Layout.t Type_shape.t Uid.Tbl.t) = Uid.Tbl.create 16
 
 let add_to_type_decls path (type_decl : Types.type_declaration) uid_of_path =
   let type_decl_shape =
@@ -433,7 +543,8 @@ let add_to_type_decls path (type_decl : Types.type_declaration) uid_of_path =
 
 let add_to_type_shapes var_uid type_expr sort uid_of_path =
   let type_shape = Type_shape.of_type_expr type_expr uid_of_path in
-  Uid.Tbl.add all_type_shapes var_uid { type_shape; type_sort = sort }
+  let type_shape = Type_shape.shape_with_layout ~layout:sort type_shape in
+  Uid.Tbl.add all_type_shapes var_uid type_shape
 
 let tuple_to_string (strings : string list) =
   match strings with
@@ -507,25 +618,27 @@ let find_in_type_decls (type_uid : Uid.t) (type_path : Path.t)
 
 (* CR sspies: This seems to not perform caching. I think [load_decls_from_cms]
    always goes to the file and loads it the original code. *)
-let rec type_name (type_shape : Type_shape.t)
-    ~(load_decls_from_cms : string -> Type_decl_shape.t Shape.Uid.Tbl.t) =
+let rec type_name : 'a. 'a Type_shape.t -> _ =
+ fun type_shape
+     ~(load_decls_from_cms : string -> Type_decl_shape.t Shape.Uid.Tbl.t) ->
   match type_shape with
   | Ts_predef (predef, shapes) ->
     shapes_to_string (List.map (type_name ~load_decls_from_cms) shapes)
     ^ Type_shape.Predef.to_string predef
-  | Ts_other ->
+  | Ts_other _ ->
     if debug_type_search then Format.eprintf "unknown type (Tds_other)\n";
     "unknown"
   | Ts_tuple shapes ->
-    tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
+    tuple_to_string
+      (List.map (fun sh -> type_name ~load_decls_from_cms sh) shapes)
   | Ts_unboxed_tuple shapes ->
     unboxed_tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
-  | Ts_var name -> "'" ^ Option.value name ~default:"?"
+  | Ts_var (name, _) -> "'" ^ Option.value name ~default:"?"
   | Ts_arrow (shape1, shape2) ->
     let arg_name = type_name ~load_decls_from_cms shape1 in
     let ret_name = type_name ~load_decls_from_cms shape2 in
     arg_name ^ " -> " ^ ret_name
-  | Ts_constr ((type_uid, type_path), shapes) -> (
+  | Ts_constr ((type_uid, type_path, _), shapes) -> (
     match[@warning "-4"]
       find_in_type_decls type_uid type_path ~load_decls_from_cms
     with
@@ -565,15 +678,13 @@ let attach_compilation_unit_to_path (path : Path.t)
       (Compilation_unit.to_global_ident_for_bytecode compilation_unit)
   | Some _ -> path
 
-let map_snd f list = List.map (fun (a, b) -> a, f b) list
-
 (* CR sspies: I don't know what this function does. *)
 let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
     ~(compilation_unit : Compilation_unit.t) =
   let[@warning "-4"] attach_to_shape = function
-    | Type_shape.Ts_constr ((uid, path), ts) ->
+    | Type_shape.Ts_constr ((uid, path, ly), ts) ->
       Type_shape.Ts_constr
-        ((uid, attach_compilation_unit_to_path path compilation_unit), ts)
+        ((uid, attach_compilation_unit_to_path path compilation_unit, ly), ts)
     | _ as x -> x
   in
   { Type_decl_shape.path =
@@ -586,10 +697,13 @@ let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
           { simple_constructors;
             complex_constructors =
               List.map
-                (Type_decl_shape.complex_constructor_map attach_to_shape)
+                (Type_decl_shape.complex_constructor_map (fun (sh, ly) ->
+                     attach_to_shape sh, ly))
                 complex_constructors
           }
-      | Tds_record list -> Tds_record (map_snd attach_to_shape list)
+      | Tds_record list ->
+        Tds_record
+          (List.map (fun (name, sh, ly) -> name, attach_to_shape sh, ly) list)
       | Tds_alias shape -> Tds_alias (attach_to_shape shape)
       | Tds_other -> Tds_other)
   }
@@ -656,10 +770,11 @@ let print_table_all_type_shapes ppf =
   let entries = List.sort (fun (a, _) (b, _) -> Uid.compare a b) entries in
   let entries =
     List.map
-      (fun (k, { type_shape; type_sort }) ->
+      (fun (k, type_shape) ->
         ( Format.asprintf "%a" Uid.print k,
           ( Format.asprintf "%a" Type_shape.print type_shape,
-            Format.asprintf "%a" Jkind_types.Sort.Const.format type_sort ) ))
+            Format.asprintf "%a" Jkind_types.Sort.Const.format
+              (Type_shape.shape_layout type_shape) ) ))
       entries
   in
   let uids, rest = List.split entries in
