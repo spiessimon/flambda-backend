@@ -524,8 +524,6 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
               type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
                 type_shape' ))
           fields
-        (* CR sspies: Ideally, these should all simply have their layout
-           annotated if it is not value. *)
       in
       create_record_die ~reference ~parent_proto_die ~name ~fields
     | Tds_variant { simple_constructors; complex_constructors } -> (
@@ -541,7 +539,6 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
                  let sh = Type_shape.Type_shape.shape_with_layout ~layout sh in
                  type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
                    sh))
-            (* CR sspies: Can we be sure that these are always values? *)
             complex_constructors
         in
         create_complex_variant_die ~reference ~parent_proto_die ~name

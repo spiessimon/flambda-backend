@@ -484,9 +484,10 @@ module Type_decl_shape = struct
     Format.fprintf ppf "path=%a, definition=(%a)" Path.print t.path print_tds
       t.definition
 
-  (* CR sspies: This function is probably meant to instantiate the polymorphic
-     variables in the type declarations. There must be functionality in the
-     type checker for this. *)
+  (* CR sspies: This function instantiates the polymorphic variables in the type
+     declarations. The corresponding functionality in the type checker is [Ctype.apply]
+     for [Type_shape.replace_tvar]. The problem we are facing here is that we do this
+     after conversion to shapes. Consider doing this pre conversion to shapes. *)
   let replace_tvar (t : t)
       (shapes : Type_shape.without_layout Type_shape.t list) =
     let debug = false in
