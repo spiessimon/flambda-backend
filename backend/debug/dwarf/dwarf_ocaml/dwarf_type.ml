@@ -728,10 +728,6 @@ let rec flatten_shape
                 Type_shape.Type_shape.shape_with_layout ~layout:ly sh)
               fields
           in
-          Format.eprintf "shapes = %a\n%!"
-            (Format.pp_print_list ~pp_sep:Format.pp_print_space
-               Type_shape.Type_shape.With_layout.print)
-            shapes;
           List.concat_map flatten_shape shapes
         | Product _ -> Misc.fatal_error "unboxed record field mismatch"
         | Base _ -> Misc.fatal_error "unboxed record must have product layout")
