@@ -442,7 +442,11 @@ module Type_decl_shape = struct
             in
             record_of_labels ~uid_of_path Record_floats lbl_list
           | Record_inlined _ ->
-            Tds_other (* CR sspies: Inlined records are not supported yet. *))
+            Misc.fatal_error "inlined records not allowed here"
+            (* Inline records of this form should not occur as part of type delcarations.
+               They do not exist for top-level declarations, but they do exist tempoarily
+               such as inside of a match (e.g., [t] is an inline record in
+               [match e with Foo t -> ...]). *))
         | Type_abstract _ -> Tds_other
         | Type_open -> Tds_other
         | Type_record_unboxed_product (lbl_list, _, _) ->
