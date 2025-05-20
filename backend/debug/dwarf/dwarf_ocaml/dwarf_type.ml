@@ -93,12 +93,12 @@ let create_typedef_die ~reference ~parent_proto_die ~child_die ~name =
         DAH.create_type_from_reference ~proto_die_reference:child_die ]
     ()
 
-let create_record_die ~reference ~parent_proto_die ~name ~fields =
+let create_record_die ~reference ~parent_proto_die ~name ~fields ~field_size =
   let structure =
     Proto_die.create ~parent:(Some parent_proto_die)
       ~tag:Dwarf_tag.Structure_type
       ~attribute_values:
-        [ DAH.create_byte_size_exn ~byte_size:(8 * List.length fields);
+        [ DAH.create_byte_size_exn ~byte_size:(field_size * List.length fields);
           DAH.create_name name ]
       ()
   in
@@ -109,10 +109,30 @@ let create_record_die ~reference ~parent_proto_die ~name ~fields =
           [ DAH.create_name field_name;
             DAH.create_type_from_reference ~proto_die_reference:field_die;
             DAH.create_data_member_location_offset
-              ~byte_offset:(Int64.of_int (8 * i)) ]
+              ~byte_offset:(Int64.of_int (field_size * i)) ]
         ())
     fields;
   wrap_die_under_a_pointer ~proto_die:structure ~reference ~parent_proto_die
+
+(* Contrary to how one might assume from the name, the following function only
+   creates one kind of unboxed record. The record for [[@@unboxed]]. The records
+   of the form [#{ ... }] are destructed into their component parts by
+   unarization. *)
+let create_unboxed_record_die ~reference ~parent_proto_die ~name ~field_die
+    ~field_name ~field_size =
+  let structure =
+    Proto_die.create ~reference ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:
+        [DAH.create_byte_size_exn ~byte_size:field_size; DAH.create_name name]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some structure) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_name field_name;
+        DAH.create_type_from_reference ~proto_die_reference:field_die;
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0) ]
+    ()
 
 let create_simple_variant_die ~reference ~parent_proto_die ~name
     ~simple_constructors =
@@ -350,39 +370,45 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
+let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
+  match sort with
+  | Void -> 0
+  | Float64 -> 8
+  | Float32 -> 4
+  | Word -> Arch.size_addr
+  | Bits32 -> 4
+  | Bits64 -> 8
+  | Vec128 -> 16
+  | Value -> Arch.size_addr
+
 let create_base_layout_type ~reference (sort : Jkind_types.Sort.base) ~name
     ~parent_proto_die ~fallback_value_die =
+  let byte_size = base_layout_to_byte_size sort in
   match sort with
   | Value ->
     create_typedef_die ~reference ~parent_proto_die ~name
       ~child_die:fallback_value_die
   | Void ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:0 ~encoding:Encoding_attribute.signed
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.signed
   | Float64 ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:8 ~encoding:Encoding_attribute.float
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.float
   | Float32 ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:4 ~encoding:Encoding_attribute.float
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.float
   | Word ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:Arch.size_addr ~encoding:Encoding_attribute.signed
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.signed
   | Bits32 ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:4 ~encoding:Encoding_attribute.signed
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.signed
   | Bits64 ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:8 ~encoding:Encoding_attribute.signed
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.signed
   | Vec128 ->
-    (*= CR sspies: 128-bit vectors can have very different layouts. If we do
-      have the type available, we should turn this into a struct with the
-      right fields. For example:
-        int8x16   -> struct {int8#; ...; int8#}
-        float64x2 -> struct {float64#; float64#}
-    *)
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name
-      ~byte_size:16 ~encoding:Encoding_attribute.unsigned
+    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
+      ~encoding:Encoding_attribute.unsigned
 
 module Cache = Type_shape.Type_shape.With_layout.Tbl
 
@@ -512,7 +538,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
           ~fallback_value_die
       in
       create_typedef_die ~reference ~parent_proto_die ~child_die:alias_die ~name
-    | Tds_record fields ->
+    | Tds_record { fields; kind = Record_boxed | Record_floats } ->
       let fields =
         List.map
           (fun (name, type_shape, type_layout) ->
@@ -525,7 +551,34 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
                 type_shape' ))
           fields
       in
-      create_record_die ~reference ~parent_proto_die ~name ~fields
+      create_record_die ~reference ~parent_proto_die ~name ~fields ~field_size:8
+    | Tds_record { fields = _; kind = Record_unboxed_product } ->
+      Misc.fatal_error
+        "Unboxed records should not reach this stage. They are deconstructed \
+         by unarization in earlier stages of the compiler."
+    | Tds_record
+        { fields = [(field_name, sh, Base base_layout)]; kind = Record_unboxed }
+      ->
+      let field_shape =
+        Type_shape.Type_shape.shape_with_layout ~layout:(Base base_layout) sh
+      in
+      let field_die =
+        type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
+          field_shape
+      in
+      let field_size = base_layout_to_byte_size base_layout in
+      create_unboxed_record_die ~reference ~parent_proto_die ~name ~field_die
+        ~field_name ~field_size
+      (* The two cases below are filtered out by the flattening of shapes in
+         [flatten_shape]. *)
+    | Tds_record { fields = [] | _ :: _ :: _; kind = Record_unboxed } ->
+      assert false
+    | Tds_record { fields = [(_, _, Product _)]; kind = Record_unboxed } ->
+      assert false
+    | Tds_record { fields = _; kind = Record_mixed } ->
+      (* CR sspies: [Record_mixed] not supported yet. *)
+      create_typedef_die ~reference ~parent_proto_die
+        ~child_die:fallback_value_die ~name
     | Tds_variant { simple_constructors; complex_constructors } -> (
       match complex_constructors with
       | [] ->
@@ -603,10 +656,46 @@ let rec flatten_shape
            and the like. If this ever causes trouble or the behvior of the
            compiler changes with respect to recursive types, we can add a bound
            on the maximal recursion depth. *)
-      | Tds_record _ -> (
+      | Tds_record
+          { fields = _; kind = Record_boxed | Record_mixed | Record_floats }
+        -> (
         match layout with
         | Base Value -> [`Known type_shape]
         | _ -> Misc.fatal_error "record must have value layout")
+      | Tds_record { fields = [(_, sh, ly)]; kind = Record_unboxed }
+        when ly = layout -> (
+        match layout with
+        | Product _ ->
+          flatten_shape (Type_shape.Type_shape.shape_with_layout ~layout sh)
+        (* for unboxed products of the form [{ field: ty } [@@unboxed]] where
+           [ty] is of product sort, we simply look through the unboxed product.
+           Otherwise, we will create an additional DWARF entry for it. *)
+        | Base _ -> [`Known type_shape])
+      | Tds_record { fields = [_]; kind = Record_unboxed } ->
+        Misc.fatal_error "unboxed record at different layout than its field"
+      | Tds_record
+          { fields = ([] | _ :: _ :: _) as fields; kind = Record_unboxed } ->
+        Misc.fatal_errorf "unboxed record must have exactly one field, found %a"
+          (Format.pp_print_list ~pp_sep:Format.pp_print_space
+             Format.pp_print_string)
+          (List.map (fun (name, _, _) -> name) fields)
+      | Tds_record { fields; kind = Record_unboxed_product } -> (
+        match layout with
+        | Product prod_shapes when List.length prod_shapes = List.length fields
+          ->
+          let shapes =
+            List.map
+              (fun (_, sh, ly) ->
+                Type_shape.Type_shape.shape_with_layout ~layout:ly sh)
+              fields
+          in
+          Format.eprintf "shapes = %a\n%!"
+            (Format.pp_print_list ~pp_sep:Format.pp_print_space
+               Type_shape.Type_shape.With_layout.print)
+            shapes;
+          List.concat_map flatten_shape shapes
+        | Product _ -> Misc.fatal_error "unboxed record field mismatch"
+        | Base _ -> Misc.fatal_error "unboxed record must have product layout")
       | Tds_variant _ -> (
         match layout with
         | Base Value -> [`Known type_shape]

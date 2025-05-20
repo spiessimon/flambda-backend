@@ -317,6 +317,13 @@ module Type_decl_shape = struct
       field_value : 'a
     }
 
+  type record_kind =
+    | Record_unboxed
+    | Record_unboxed_product
+    | Record_boxed
+    | Record_mixed
+    | Record_floats
+
   type tds =
     | Tds_variant of
         { simple_constructors : string list;
@@ -326,7 +333,10 @@ module Type_decl_shape = struct
             list
         }
     | Tds_record of
-        (string * Type_shape.without_layout Type_shape.t * Layout.t) list
+        { fields :
+            (string * Type_shape.without_layout Type_shape.t * Layout.t) list;
+          kind : record_kind
+        }
     | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
@@ -374,6 +384,18 @@ module Type_decl_shape = struct
     in
     length = 0
 
+  let record_of_labels ~uid_of_path kind labels =
+    Tds_record
+      { fields =
+          List.map
+            (fun (lbl : Types.label_declaration) ->
+              ( Ident.name lbl.ld_id,
+                Type_shape.of_type_expr lbl.ld_type uid_of_path,
+                lbl.ld_sort ))
+            labels;
+        kind
+      }
+
   let of_type_declaration path (type_declaration : Types.type_declaration)
       uid_of_path =
     let definition =
@@ -397,39 +419,34 @@ module Type_decl_shape = struct
           Tds_variant { simple_constructors; complex_constructors }
         | Type_record (lbl_list, record_repr, _unsafe_mode_crossing) -> (
           match record_repr with
+          (* CR sspies: Why is there another copy of the layouts of the fields
+             here? Which one should we use? Shouldn't they both be just values? *)
           | Record_boxed _ ->
-            Tds_record
-              (List.map
-                 (fun (lbl : Types.label_declaration) ->
-                   ( Ident.name lbl.ld_id,
-                     Type_shape.of_type_expr lbl.ld_type uid_of_path,
-                     lbl.ld_sort ))
-                 lbl_list)
-          | Record_float ->
-            Tds_record
-              (List.map
-                 (fun (lbl : Types.label_declaration) ->
-                   ( Ident.name lbl.ld_id,
-                     Type_shape.Ts_predef (Unboxed Unboxed_float, []),
-                     Layout.Base Float64 ))
-                 lbl_list)
-            (* CR sspies: This seems dangerous. We probably want something to mark
-               this better. *)
+            record_of_labels ~uid_of_path Record_boxed lbl_list
           | Record_mixed _ ->
-            (* CR sspies: Mixed records are currently not supported.
-               This requires further investigation of how and when the fields
-               are reordered in mixed records.
-            *)
-            Tds_other
-          | Record_inlined _ | Record_unboxed | Record_ufloat ->
-            Tds_other
-            (* CR sspies: Unboxed records and ufloats can now probably be implemented. *)
-          )
+            record_of_labels ~uid_of_path Record_mixed lbl_list
+          | Record_unboxed ->
+            record_of_labels ~uid_of_path Record_unboxed lbl_list
+          | Record_float | Record_ufloat ->
+            let lbl_list =
+              List.map
+                (fun (lbl : Types.label_declaration) ->
+                  { lbl with
+                    ld_sort = Base Float64;
+                    ld_type = Predef.type_unboxed_float
+                  })
+                  (* CR sspies: We are changing the type and the layout here. Consider
+                     adding a name for the types of the fields instead of replacing
+                     it with [float#]. *)
+                lbl_list
+            in
+            record_of_labels ~uid_of_path Record_floats lbl_list
+          | Record_inlined _ ->
+            Tds_other (* CR sspies: Inlined records are not supported yet. *))
         | Type_abstract _ -> Tds_other
         | Type_open -> Tds_other
-        | Type_record_unboxed_product _ ->
-          (* CR sspies: Unboxed products are currently not supported.*)
-          Tds_other)
+        | Type_record_unboxed_product (lbl_list, _, _) ->
+          record_of_labels ~uid_of_path Record_unboxed_product lbl_list)
     in
     let type_params =
       List.map
@@ -462,6 +479,13 @@ module Type_decl_shape = struct
     Format.fprintf ppf "%a: %a" Format.pp_print_string name Type_shape.print
       shape
 
+  let print_record_type = function
+    | Record_boxed -> "_boxed"
+    | Record_floats -> "_floats"
+    | Record_mixed -> "_mixed"
+    | Record_unboxed -> " [@@unboxed]"
+    | Record_unboxed_product -> "_unboxed_product"
+
   let print_tds ppf = function
     | Tds_variant { simple_constructors; complex_constructors } ->
       Format.fprintf ppf
@@ -472,10 +496,10 @@ module Type_decl_shape = struct
         (Format.pp_print_list ~pp_sep:(print_sep_string " | ")
            (print_complex_constructor print_only_shape))
         complex_constructors
-    | Tds_record field_list ->
-      Format.fprintf ppf "Tds_record { %a }"
+    | Tds_record { fields; kind } ->
+      Format.fprintf ppf "Tds_record%s { %a }" (print_record_type kind)
         (Format.pp_print_list ~pp_sep:(print_sep_string "; ") print_field)
-        field_list
+        fields
     | Tds_alias type_shape ->
       Format.fprintf ppf "Tds_alias %a" Type_shape.print type_shape
     | Tds_other -> Format.fprintf ppf "Tds_other"
@@ -515,12 +539,15 @@ module Type_decl_shape = struct
                       (complex_constructor_map replace_tvar)
                       complex_constructors
                 }
-            | Tds_record field_list ->
+            | Tds_record { fields; kind } ->
               Tds_record
-                (List.map
-                   (fun (name, sh, ly) ->
-                     name, Type_shape.replace_tvar ~pairs:subst sh, ly)
-                   field_list)
+                { fields =
+                    List.map
+                      (fun (name, sh, ly) ->
+                        name, Type_shape.replace_tvar ~pairs:subst sh, ly)
+                      fields;
+                  kind
+                }
             | Tds_alias type_shape ->
               Tds_alias (Type_shape.replace_tvar ~pairs:subst type_shape)
             | Tds_other -> Tds_other)
@@ -702,9 +729,14 @@ let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
                      attach_to_shape sh, ly))
                 complex_constructors
           }
-      | Tds_record list ->
+      | Tds_record { fields; kind } ->
         Tds_record
-          (List.map (fun (name, sh, ly) -> name, attach_to_shape sh, ly) list)
+          { fields =
+              List.map
+                (fun (name, sh, ly) -> name, attach_to_shape sh, ly)
+                fields;
+            kind
+          }
       | Tds_alias shape -> Tds_alias (attach_to_shape shape)
       | Tds_other -> Tds_other)
   }

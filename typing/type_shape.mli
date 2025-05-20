@@ -66,7 +66,20 @@ module Type_decl_shape : sig
   val complex_constructor_map :
     ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
 
-  (* For type substitution to work as expected, we store the layouts in the declaration
+  type record_kind =
+    | Record_unboxed
+        (** Somewhat counterintuitively, [Record_unboxed] is the case for single-field
+            records declared with [@@unboxed], whose runtime representation is simply its
+            contents without any indirection. *)
+    | Record_unboxed_product
+        (** [Record_unboxed_product] is the truly unboxed record that corresponds to
+            [#{ ... }]. *)
+    | Record_boxed
+    | Record_mixed
+    | Record_floats
+        (** Basically the same as [Record_mixed], but we don't reorder the fields. *)
+
+  (** For type substitution to work as expected, we store the layouts in the declaration
      alongside the shapes instead of directly going for the substituted version. *)
   type tds =
     | Tds_variant of
@@ -87,7 +100,10 @@ module Type_decl_shape : sig
           order is disturbed by separating them into two lists, the runtime shape is still
           uniquely determined, because the two representations are disjoint. *)
     | Tds_record of
-        (string * Type_shape.without_layout Type_shape.t * Layout.t) list
+        { fields :
+            (string * Type_shape.without_layout Type_shape.t * Layout.t) list;
+          kind : record_kind
+        }
     | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
