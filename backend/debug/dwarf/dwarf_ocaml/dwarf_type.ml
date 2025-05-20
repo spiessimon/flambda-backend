@@ -62,8 +62,8 @@ let create_char_die ~reference ~parent_proto_die ~name =
       ~tag:Dwarf_tag.Enumeration_type
       ~attribute_values:
         [DAH.create_name name; DAH.create_byte_size_exn ~byte_size:8]
-        (* CR sspies: Potentially add a type def here to avoid the enum having
-           name [enum char] or the like. *)
+        (* CR sspies: The name here is displayed as ["enum " ^ name] in gdb, but
+           correctly as [name] in lldb. *)
       ()
   in
   List.iter
@@ -556,6 +556,12 @@ let rec flatten_to_base_sorts (sort : Jkind_types.Sort.Const.t) :
   | Base b -> [b]
   | Product sorts -> List.concat_map flatten_to_base_sorts sorts
 
+(* This function performs the counterpart of unarization in the rest of the
+   compiler. We flatten the type into a sequence that corresponds to the fields
+   after unarization. In some cases, the type cannot be broken up (e.g., for
+   type variables). In these cases, we produce the corresponding number of
+   entries of the form [`Unknown base_layout] for the fields. Otherwise, when
+   the type is known, we produce [`Known type_shape] for the fields. *)
 let rec flatten_shape
     (type_shape : Jkind_types.Sort.Const.t Type_shape.Type_shape.t) =
   let unknown_base_layouts layout =
@@ -591,8 +597,12 @@ let rec flatten_shape
           Type_shape.Type_shape.shape_with_layout ~layout alias_shape
         in
         flatten_shape alias_shape
-        (* CR sspies: We still need to project out the field, so we recurse. We
-           might want to add a bound here to avoid issues with type t = t *)
+        (* At first glance, this recursion could potentially diverge, for direct
+           cycles between type aliases and the defintion of the type. However,
+           it seems the compiler disallows direct cycles such as [type t = t]
+           and the like. If this ever causes trouble or the behvior of the
+           compiler changes with respect to recursive types, we can add a bound
+           on the maximal recursion depth. *)
       | Tds_record _ -> (
         match layout with
         | Base Value -> [`Known type_shape]
@@ -603,7 +613,9 @@ let rec flatten_shape
         | _ -> Misc.fatal_error "variant must have value layout")))
 
 let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
-  let fallback_die = Proto_die.reference (DS.value_type_proto_die state) in
+  let fallback_value_die =
+    Proto_die.reference (DS.value_type_proto_die state)
+  in
   (* Once we reach the backend, layouts such as Product [Product [Bits64;
      Bits64]; Float64] have de facto been flattened into a sequence of base
      layouts [Bits64; Bits64; Float64]. Below, we compute the index into the
@@ -617,7 +629,7 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   | None ->
     Format.eprintf "variable_to_die: no type shape for %a@." Shape.Uid.print
       uid_to_lookup;
-    fallback_die
+    fallback_value_die
   (* CR sspies: This is somewhat dangerous, since this is a variable for which
      we seem to have no declaration, and we also do not know the layout. Perhaps
      we should simply not emit any DWARF information for this variable
@@ -634,11 +646,10 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
     in
     match type_shape with
     | `Known type_shape ->
-      type_shape_layout_to_die type_shape ~parent_proto_die
-        ~fallback_value_die:fallback_die
+      type_shape_layout_to_die type_shape ~parent_proto_die ~fallback_value_die
     | `Unknown base_layout ->
       let reference = Proto_die.create_reference () in
       create_base_layout_type ~reference ~parent_proto_die
         ~name:("unknown @ " ^ Jkind_types.Sort.to_string_base base_layout)
-        ~fallback_value_die:fallback_die base_layout;
+        ~fallback_value_die base_layout;
       reference)
