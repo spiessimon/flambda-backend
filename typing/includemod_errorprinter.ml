@@ -58,8 +58,8 @@ module Context = struct
         Format.fprintf ppf " :@ %a" context_mty cxt
   and argname = function
     | Types.Unit -> ""
-    | Types.Named (None, _) -> "_"
-    | Types.Named (Some id, _) -> Ident.name id
+    | Types.Named (None, _, _) -> "_"
+    | Types.Named (Some id, _, _) -> Ident.name id
 
   let alt_pp ppf cxt =
     if cxt = [] then () else
@@ -154,7 +154,7 @@ module Illegal_permutation = struct
             find env (Context.Module id :: ctx) q md.md_type
         | _ -> raise Not_found
         end
-    | Mty_functor(Named (_,mt) as arg,_), InArg :: q ->
+    | Mty_functor(Named (_,_,mt) as arg,_), InArg :: q ->
         find env (Context.Arg arg :: ctx) q mt
     | Mty_functor(arg, mt), InBody :: q ->
         find env (Context.Body arg :: ctx) q mt
@@ -295,7 +295,7 @@ module With_shorthand = struct
 
   let functor_param (ua : _ named) = match ua.item with
     | Types.Unit -> Unit
-    | Types.Named (from, mty) ->
+    | Types.Named (from, _from_duid, mty) ->
         Named (from, modtype { ua with item = mty })
 
   (** Printing of arguments with shorthands *)
@@ -370,8 +370,8 @@ module Functor_suberror = struct
   open Err
 
   let param_id x = match x.With_shorthand.item with
-    | Types.Named (Some _ as x,_) -> x
-    | Types.(Unit | Named(None,_)) -> None
+    | Types.Named (Some _ as x,_,_) -> x
+    | Types.(Unit | Named(None,_,_)) -> None
 
   (** Print the list of params with style *)
   let pretty_params sep proj printer patch =
@@ -505,7 +505,7 @@ module Functor_suberror = struct
       let _arg, mty = g.With_shorthand.item in
       let e = match e.With_shorthand.item with
         | Types.Unit -> Format.dprintf "()"
-        | Types.Named(_, mty) -> dmodtype mty
+        | Types.Named(_, _, mty) -> dmodtype mty
       in
       Format.dprintf
         "Modules do not match:@ @[%t@]@;<1 -2>\

@@ -979,19 +979,18 @@ and transl_exp0 ~in_new_scope ~scopes sort e =
                             (Lvar cpy) (Lvar id) expr, rem))
              modifs
              (Lvar cpy))
-  | Texp_letmodule(None, loc, Mp_present, modl, body) ->
+  | Texp_letmodule(None, _, loc, Mp_present, modl, body) ->
       let lam = !transl_module ~scopes Tcoerce_none None modl in
       Lsequence(Lprim(Pignore, [lam], of_location ~scopes loc.loc),
                 transl_exp ~scopes sort body)
-  | Texp_letmodule(Some id, _loc, Mp_present, modl, body) ->
+  | Texp_letmodule(Some id, id_duid, _loc, Mp_present, modl, body) ->
       let defining_expr =
         let mod_scopes = enter_module_definition ~scopes id in
         !transl_module ~scopes:mod_scopes Tcoerce_none None modl
       in
-      (* CR sspies: Consider adding a [debug_uid]. *)
-      Llet(Strict, Lambda.layout_module, id, Lambda.debug_uid_none,
+      Llet(Strict, Lambda.layout_module, id, id_duid,
           defining_expr, transl_exp ~scopes sort body)
-  | Texp_letmodule(_, _, Mp_absent, _, body) ->
+  | Texp_letmodule(_, _, _, Mp_absent, _, body) ->
       transl_exp ~scopes sort body
   | Texp_letexception(cd, body) ->
       Llet(Strict, Lambda.layout_block,

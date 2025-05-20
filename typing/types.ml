@@ -785,7 +785,7 @@ module type Wrapped = sig
 
   and functor_parameter =
   | Unit
-  | Named of Ident.t option * module_type
+  | Named of Ident.t option * Shape.Uid.t (* debugging uid *) * module_type
 
   and signature = signature_item list wrapped
 
@@ -843,7 +843,7 @@ module Map_wrapped(From : Wrapped)(To : Wrapped) = struct
 
   and functor_parameter m = function
       | Unit -> To.Unit
-      | Named (id,mty) -> To.Named (id, module_type m mty)
+      | Named (id,duid,mty) -> To.Named (id, duid, module_type m mty)
 
   let value_description m {val_type; val_modalities; val_kind; val_zero_alloc;
                            val_attributes; val_loc; val_uid} =

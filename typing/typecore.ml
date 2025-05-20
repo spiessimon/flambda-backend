@@ -3696,7 +3696,7 @@ let rec final_subexpression exp =
   | Texp_try (e, _)
   | Texp_ifthenelse (_, e, _)
   | Texp_match (_, _, {c_rhs=e} :: _, _)
-  | Texp_letmodule (_, _, _, _, e)
+  | Texp_letmodule (_, _, _, _, _, e)
   | Texp_letexception (_, e)
   | Texp_open (_, e)
     -> final_subexpression e
@@ -4246,7 +4246,7 @@ let rec is_nonexpansive exp =
       Vars.fold (fun _ (mut,_,_) b -> decr count; b && mut = Asttypes.Immutable)
         vars true &&
       !count = 0
-  | Texp_letmodule (_, _, _, mexp, e)
+  | Texp_letmodule (_, _, _, _, mexp, e)
   | Texp_open ({ open_expr = mexp; _}, e) ->
       is_nonexpansive_mod mexp && is_nonexpansive e
   | Texp_pack mexp ->
@@ -4670,7 +4670,7 @@ let check_statement exp =
         | Texp_let (_, _, e)
         | Texp_sequence (_, _, e)
         | Texp_letexception (_, e)
-        | Texp_letmodule (_, _, _, _, e) ->
+        | Texp_letmodule (_, _, _, _, _, e) ->
             loop e
         | _ ->
             let loc =
@@ -4738,7 +4738,7 @@ let check_partial_application ~statement exp =
             | Texp_ifthenelse (_, e1, Some e2) ->
                 check e1; check e2
             | Texp_let (_, _, e) | Texp_sequence (_, _, e) | Texp_open (_, e)
-            | Texp_letexception (_, e) | Texp_letmodule (_, _, _, _, e)
+            | Texp_letexception (_, e) | Texp_letmodule (_, _, _, _, _, e)
             | Texp_exclave e ->
                 check e
             | Texp_apply _ | Texp_send _ | Texp_new _ | Texp_letop _ ->
@@ -6478,9 +6478,9 @@ and type_expect_
       end
   | Pexp_letmodule(name, smodl, sbody) ->
       let lv = get_current_level () in
-      let (id, pres, modl, _, body) =
+      let (id, duid, pres, modl, _, body) =
         with_local_level begin fun () ->
-          let modl, pres, id, new_env =
+          let modl, pres, id, duid, new_env =
             Typetexp.TyVarEnv.with_local_scope begin fun () ->
               let modl, md_shape, locks = !type_module env smodl in
               Mtype.lower_nongen lv modl.mod_type;
@@ -6497,17 +6497,19 @@ and type_expect_
                   md_loc = name.loc;
                   md_uid; }
               in
-              let (id, new_env) =
+              let (id, duid, new_env) =
                 match name.txt with
-                | None -> None, env
+                | None -> None, Lambda.debug_uid_none, env
                 | Some name ->
                     let id, env =
                       Env.enter_module_declaration
                         ~scope ~shape:md_shape name pres md ~locks env
                     in
-                    Some id, env
+                    Some id, md_uid, env
+                    (* CR sspies: Is this the correct uid to give back here? Or should we
+                       create a new one? *)
               in
-              modl, pres, id, new_env
+              modl, pres, id, duid, new_env
             end
           in
           (* Ideally, we should catch Expr_type_clash errors
@@ -6516,16 +6518,16 @@ and type_expect_
              Scoping_let_module errors
            *)
           let body = type_expect new_env expected_mode sbody ty_expected_explained in
-          (id, pres, modl, new_env, body)
+          (id, duid, pres, modl, new_env, body)
         end
-        ~post: begin fun (_id, _pres, _modl, new_env, body) ->
+        ~post: begin fun (_id, _duid, _pres, _modl, new_env, body) ->
           (* Ensure that local definitions do not leak. *)
           (* required for implicit unpack *)
           enforce_current_level new_env body.exp_type
         end
       in
       re {
-        exp_desc = Texp_letmodule(id, name, pres, modl, body);
+        exp_desc = Texp_letmodule(id, duid, name, pres, modl, body);
         exp_loc = loc; exp_extra = [];
         exp_type = body.exp_type;
         exp_attributes = sexp.pexp_attributes;

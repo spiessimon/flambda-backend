@@ -280,8 +280,8 @@ and expression_desc =
   | Texp_setinstvar of Path.t * Path.t * string loc * expression
   | Texp_override of Path.t * (Ident.t * string loc * expression) list
   | Texp_letmodule of
-      Ident.t option * string option loc * Types.module_presence * module_expr *
-        expression
+      Ident.t option * Shape.Uid.t (* debug uid *) * string option loc *
+      Types.module_presence * module_expr * expression
   | Texp_letexception of extension_constructor * expression
   | Texp_assert of expression * Location.t
   | Texp_lazy of expression

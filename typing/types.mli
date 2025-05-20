@@ -964,7 +964,7 @@ module type Wrapped = sig
 
   and functor_parameter =
   | Unit
-  | Named of Ident.t option * module_type
+  | Named of Ident.t option  * Shape.Uid.t (* debugging uid *) * module_type
 
   and signature = signature_item list wrapped
 

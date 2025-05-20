@@ -904,12 +904,12 @@ and subst_lazy_modtype scoping s = function
       Mty_signature(subst_lazy_signature scoping s sg)
   | Mty_functor(Unit, res) ->
       Mty_functor(Unit, subst_lazy_modtype scoping s res)
-  | Mty_functor(Named (None, arg), res) ->
-      Mty_functor(Named (None, (subst_lazy_modtype scoping s) arg),
+  | Mty_functor(Named (None, duid, arg), res) ->
+      Mty_functor(Named (None, duid, (subst_lazy_modtype scoping s) arg),
                    subst_lazy_modtype scoping s res)
-  | Mty_functor(Named (Some id, arg), res) ->
+  | Mty_functor(Named (Some id, duid, arg), res) ->
       let id' = Ident.rename id in
-      Mty_functor(Named (Some id', (subst_lazy_modtype scoping s) arg),
+      Mty_functor(Named (Some id', duid, (subst_lazy_modtype scoping s) arg),
                   subst_lazy_modtype scoping (add_module id (Pident id') s) res)
   | Mty_alias p ->
       Mty_alias (module_path s p)

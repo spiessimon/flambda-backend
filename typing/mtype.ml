@@ -46,14 +46,15 @@ let rec reduce_strengthen_lazy ~aliasable mty p =
     Mty_signature sg ->
       Some (Mty_signature(strengthen_lazy_sig ~aliasable sg p))
 
-  | Mty_functor(Named (Some param, arg), res)
+  | Mty_functor(Named (Some param, param_duid, arg), res)
     when !Clflags.applicative_functors ->
-      Some (Mty_functor(Named (Some param, arg),
+      Some (Mty_functor(Named (Some param, param_duid, arg),
         strengthen_lazy ~aliasable:false res (Papply(p, Pident param))))
-  | Mty_functor(Named (None, arg), res)
+  | Mty_functor(Named (None, _duid, arg), res)
     when !Clflags.applicative_functors ->
       let param = Ident.create_scoped ~scope:(Path.scope p) "Arg" in
-      Some (Mty_functor(Named (Some param, arg),
+      (* We drop the [debug_uid] here, because [Arg] is not a user visible variable. *)
+      Some (Mty_functor(Named (Some param, Lambda.debug_uid_none, arg),
         strengthen_lazy ~aliasable:false res (Papply(p, Pident param))))
 
   | Mty_strengthen (mty,q,Not_aliasable) when aliasable ->
@@ -234,14 +235,14 @@ let rec expand_paths_lazy paths env =
   | Mty_functor (param,res) ->
       let param, env = match param with
         Unit -> Unit, env
-      | Named (name,mty) ->
+      | Named (name,name_duid,mty) ->
           let mty = expand_paths_lazy paths env mty in
           let env = match name with
             | Some param when !Clflags.applicative_functors ->
                 Env.add_module_lazy ~update_summary:false param Mp_present mty env
             | Some _ | None -> env
           in
-          Named (name, mty), env
+          Named (name, name_duid,mty), env
       in
       let res = expand_paths_lazy paths env res in
       Mty_functor (param,res)
@@ -464,7 +465,7 @@ let rec nondep_mty_with_presence env va ids pres mty =
       pres, mty
   | Mty_functor(Unit, res) ->
       pres, Mty_functor(Unit, nondep_mty env va ids res)
-  | Mty_functor(Named (param, arg), res) ->
+  | Mty_functor(Named (param, param_duid, arg), res) ->
       let var_inv =
         match va with Co -> Contra | Contra -> Co | Strict -> Strict in
       let res_env =
@@ -473,7 +474,7 @@ let rec nondep_mty_with_presence env va ids pres mty =
         | Some param -> Env.add_module ~arg:true param Mp_present arg env
       in
       let mty =
-        Mty_functor(Named (param, nondep_mty env var_inv ids arg),
+        Mty_functor(Named (param, param_duid, nondep_mty env var_inv ids arg),
                     nondep_mty res_env va ids res)
       in
       pres, mty

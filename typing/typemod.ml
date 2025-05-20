@@ -139,7 +139,7 @@ let extract_sig_open env loc mty =
 let extract_sig_functor_open funct_body env loc mty sig_acc =
   let sig_acc = List.rev sig_acc in
   match Mtype.scrape_alias env mty with
-  | Mty_functor (Named (param, mty_param),mty_result) as mty_func ->
+  | Mty_functor (Named (param, _param_duid, mty_param),mty_result) as mty_func ->
       let sg_param =
         match Mtype.scrape env mty_param with
         | Mty_signature sg_param -> sg_param
@@ -383,7 +383,7 @@ let iterator_with_env env =
       let env_before = !env in
       begin match param with
       | Unit -> ()
-      | Named (param, mty_arg) ->
+      | Named (param, _param_duid, mty_arg) ->
         self.Btype.it_module_type self mty_arg;
         match param with
         | None -> ()
@@ -403,7 +403,7 @@ let retype_applicative_functor_type ~loc env funct arg =
   let mty_arg = (Env.find_module arg env).md_type in
   let mty_param =
     match Mtype.scrape_alias env mty_functor with
-    | Mty_functor (Named (_, mty_param), _) -> mty_param
+    | Mty_functor (Named (_, _, mty_param), _) -> mty_param
     | _ -> assert false (* could trigger due to MPR#7611 *)
   in
   Includemod.check_modtype_inclusion ~loc env mty_arg arg mty_param
@@ -625,12 +625,12 @@ and remove_modality_and_zero_alloc_variables_mty env ~zap_modality mty =
   | Mty_functor (param, mty) ->
     let param : Types.functor_parameter =
       match param with
-      | Named (id, mty) ->
+      | Named (id, id_duid, mty) ->
           let mty =
             remove_modality_and_zero_alloc_variables_mty env
               ~zap_modality:Mode.Modality.Value.to_const_exn mty
           in
-          Named (id, mty)
+          Named (id, id_duid, mty)
       | Unit -> Unit
     in
     let mty =
@@ -1114,17 +1114,19 @@ let rec approx_modtype env smty =
         match param with
         | Unit -> Types.Unit, env
         | Named (param, sarg, marg) ->
+          let param_duid = Lambda.debug_uid_none in
+          (* CR sspies: Fix this to retrieve the right uid from the environment. *)
           check_no_modal_modules ~env marg;
           let arg = approx_modtype env sarg in
           match param.txt with
-          | None -> Types.Named (None, arg), env
+          | None -> Types.Named (None, param_duid, arg), env
           | Some name ->
             let rarg = Mtype.scrape_for_functor_arg env arg in
             let scope = Ctype.create_scope () in
             let (id, newenv) =
               Env.enter_module ~scope ~arg:true name Mp_present rarg env
             in
-            Types.Named (Some id, arg), newenv
+            Types.Named (Some id, param_duid, arg), newenv
       in
       let res = approx_modtype newenv sres in
       Mty_functor(param, res)
@@ -1698,7 +1700,8 @@ and transl_modtype_aux env smty =
               in
               Some id, newenv
           in
-          Named (id, param, arg), Types.Named (id, arg.mty_type), newenv
+          Named (id, param, arg), Types.Named (id, Lambda.debug_uid_none, arg.mty_type), newenv
+          (* CR sspies: extract the uid from above. *)
       in
       let res = transl_modtype newenv sres in
       mkmty (Tmty_functor (t_arg, res))
@@ -2268,8 +2271,8 @@ let rec nongen_modtype env f = function
       let env =
         match arg_opt with
         | Unit
-        | Named (None, _) -> env
-        | Named (Some id, param) ->
+        | Named (None, _, _) -> env
+        | Named (Some id, _, param) ->
             Env.add_module ~arg:true id Mp_present param env
       in
       nongen_modtype env f body
@@ -2685,8 +2688,8 @@ and type_module_aux ~alias ~hold_locks sttn funct_body anchor env smod =
               in
               Some id, newenv, id
           in
-          Named (id, param, mty), Types.Named (id, mty.mty_type), newenv,
-          var, true
+          Named (id, param, mty), Types.Named (id, Lambda.debug_uid_none, mty.mty_type),
+          newenv, var, true (* CR sspies: propagate debug uid here *)
       in
       let body, body_shape = type_module true funct_body None newenv sbody in
       { mod_desc = Tmod_functor(t_arg, body);
@@ -2880,7 +2883,7 @@ and type_one_application ~ctx:(apply_loc,sfunct,md_f,args)
         mod_attributes = app_view.attributes;
         mod_loc = funct.mod_loc },
       Shape.app funct_shape ~arg:Shape.dummy_mod
-  | Mty_functor (Named (param, mty_param), mty_res) as mty_functor ->
+  | Mty_functor (Named (param, _, mty_param), mty_res) as mty_functor ->
       let apply_error () =
         let args = List.map simplify_app_summary args in
         let mty_f = md_f.mod_type in
