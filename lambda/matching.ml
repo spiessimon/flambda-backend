@@ -3727,24 +3727,20 @@ let rec comp_match_handlers layout comp_fun partial ctx first_match next_matches
 
 (* To find reasonable names for variables *)
 
-(* CR rtjoa: extract uid from var/alias *)
 let rec name_pattern default = function
   | ((pat, _), _) :: rem -> (
       match pat.pat_desc with
-      | Tpat_var (id, _, _, _) -> id
-      | Tpat_alias (_, id, _, _, _, _) -> id
+      | Tpat_var (id, _, uid, _) -> id, uid
+      | Tpat_alias (_, id, _, uid, _, _) -> id, uid
       | _ -> name_pattern default rem
     )
-  | _ -> Ident.create_local default
+  | _ -> Ident.create_local default, Lambda.debug_uid_none
 
 let arg_to_var arg cls =
   match arg with
   | Lvar v -> (v, Lambda.debug_uid_none, arg)
-  (* CR sspies: This seems like a place where we could be able to actually
-     get a debug uid. *)
   | _ ->
-      let v = name_pattern "*match*" cls in
-      let v_duid = Lambda.debug_uid_none in
+      let v, v_duid = name_pattern "*match*" cls in
       (v, v_duid, Lvar v)
 
 (*
@@ -4445,8 +4441,7 @@ let do_for_multiple_match ~scopes ~return_layout loc paraml mode pat_act_list pa
       List.map (function
         | Lvar id as lid, sort, layout ->
           (id, Lambda.debug_uid_none, layout), (lid, Alias, sort, layout)
-        (* CR sspies: This seems like a place where we should be able to actually
-           get a debug uid. The variable is used for a smart let binding below. *)
+        (* CR sspies: Can we get a better [debug_uid] here? *)
         | _, sort, layout ->
           let id = Ident.create_local "*match*" in
           let id_uid = Lambda.debug_uid_none in
@@ -4473,8 +4468,7 @@ let do_for_multiple_match ~scopes ~return_layout loc paraml mode pat_act_list pa
 let param_to_var (param, sort, layout) =
   match param with
   | Lvar v -> (v, Lambda.debug_uid_none, sort, layout, None)
-  (* CR sspies: Another one of these places that looks like
-     we could get a debug uid here. *)
+  (* CR sspies: Can we get a better [debug_uid] here? *)
   | _ -> (Ident.create_local "*match*",
           Lambda.debug_uid_none, sort, layout, Some param)
 

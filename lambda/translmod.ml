@@ -1847,7 +1847,6 @@ let toploop_setvalue_id id = toploop_setvalue id (Lvar id)
 let close_toplevel_term (lam, ()) =
   Ident.Set.fold (fun id l -> Llet(Strict, Lambda.layout_any_value, id,
                                   Lambda.debug_uid_none,
-                                  (* CR sspies: Seems like this is an internal use. *)
                                   toploop_getvalue id, l))
                 (free_variables lam) lam
 
