@@ -321,7 +321,7 @@ module Type_decl_shape = struct
     | Record_unboxed
     | Record_unboxed_product
     | Record_boxed
-    | Record_mixed
+    | Record_mixed of Types.mixed_product_shape
     | Record_floats
 
   type tds =
@@ -423,8 +423,8 @@ module Type_decl_shape = struct
              here? Which one should we use? Shouldn't they both be just values? *)
           | Record_boxed _ ->
             record_of_labels ~uid_of_path Record_boxed lbl_list
-          | Record_mixed _ ->
-            record_of_labels ~uid_of_path Record_mixed lbl_list
+          | Record_mixed fields ->
+            record_of_labels ~uid_of_path (Record_mixed fields) lbl_list
           | Record_unboxed ->
             record_of_labels ~uid_of_path Record_unboxed lbl_list
           | Record_float | Record_ufloat ->
@@ -482,7 +482,7 @@ module Type_decl_shape = struct
   let print_record_type = function
     | Record_boxed -> "_boxed"
     | Record_floats -> "_floats"
-    | Record_mixed -> "_mixed"
+    | Record_mixed _ -> "_mixed"
     | Record_unboxed -> " [@@unboxed]"
     | Record_unboxed_product -> "_unboxed_product"
 

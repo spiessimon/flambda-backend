@@ -75,7 +75,7 @@ module Type_decl_shape : sig
         (** [Record_unboxed_product] is the truly unboxed record that corresponds to
             [#{ ... }]. *)
     | Record_boxed
-    | Record_mixed
+    | Record_mixed of Types.mixed_product_shape
     | Record_floats
         (** Basically the same as [Record_mixed], but we don't reorder the fields. *)
 

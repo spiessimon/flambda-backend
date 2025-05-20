@@ -93,24 +93,28 @@ let create_typedef_die ~reference ~parent_proto_die ~child_die ~name =
         DAH.create_type_from_reference ~proto_die_reference:child_die ]
     ()
 
-let create_record_die ~reference ~parent_proto_die ~name ~fields ~field_size =
+let create_record_die ~reference ~parent_proto_die ~name ~fields =
+  let total_size =
+    List.fold_left (fun acc (_, field_size, _) -> acc + field_size) 0 fields
+  in
   let structure =
     Proto_die.create ~parent:(Some parent_proto_die)
       ~tag:Dwarf_tag.Structure_type
       ~attribute_values:
-        [ DAH.create_byte_size_exn ~byte_size:(field_size * List.length fields);
-          DAH.create_name name ]
+        [DAH.create_byte_size_exn ~byte_size:total_size; DAH.create_name name]
       ()
   in
-  List.iteri
-    (fun i (field_name, field_die) ->
+  let offset = ref 0 in
+  List.iter
+    (fun (field_name, field_size, field_die) ->
       Proto_die.create_ignore ~parent:(Some structure) ~tag:Dwarf_tag.Member
         ~attribute_values:
           [ DAH.create_name field_name;
             DAH.create_type_from_reference ~proto_die_reference:field_die;
             DAH.create_data_member_location_offset
-              ~byte_offset:(Int64.of_int (field_size * i)) ]
-        ())
+              ~byte_offset:(Int64.of_int !offset) ]
+        ();
+      offset := !offset + field_size)
     fields;
   wrap_die_under_a_pointer ~proto_die:structure ~reference ~parent_proto_die
 
@@ -547,11 +551,13 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
                 type_shape
             in
             ( name,
+              Arch.size_addr,
+              (* field size for values*)
               type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
                 type_shape' ))
           fields
       in
-      create_record_die ~reference ~parent_proto_die ~name ~fields ~field_size:8
+      create_record_die ~reference ~parent_proto_die ~name ~fields
     | Tds_record { fields = _; kind = Record_unboxed_product } ->
       Misc.fatal_error
         "Unboxed records should not reach this stage. They are deconstructed \
@@ -575,10 +581,43 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
       assert false
     | Tds_record { fields = [(_, _, Product _)]; kind = Record_unboxed } ->
       assert false
-    | Tds_record { fields = _; kind = Record_mixed } ->
-      (* CR sspies: [Record_mixed] not supported yet. *)
-      create_typedef_die ~reference ~parent_proto_die
-        ~child_die:fallback_value_die ~name
+    | Tds_record { fields; kind = Record_mixed layouts } ->
+      (* we first compute the *)
+      let fields =
+        List.map
+          (fun (name, type_shape, type_layout) ->
+            let type_shape' =
+              Type_shape.Type_shape.shape_with_layout ~layout:type_layout
+                type_shape
+            in
+            match (type_layout : Layout.t) with
+            | Base base_layout ->
+              ( name,
+                Int.max (base_layout_to_byte_size base_layout) Arch.size_addr,
+                (* field sizes; these are all base layouts, and they are padded
+                   to be at least 8-bytes long. *)
+                type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
+                  type_shape' )
+            | Product _ ->
+              Misc.fatal_error "mixed products must contain base layouts")
+          fields
+      in
+      let reordering =
+        Mixed_block_shape.of_mixed_block_elements
+          (Lambda.transl_mixed_product_shape
+             ~get_value_kind:(fun _ -> Lambda.generic_value)
+             (* We don't care about the value kind of values, because it is
+                dropped again immediately afterwards. We only care about the
+                layout remapping. We only need the reordering to get the fields
+                right below. *)
+             layouts)
+      in
+      let fields =
+        List.init (List.length fields) (fun i ->
+            List.nth fields
+              (Mixed_block_shape.new_index_to_old_index reordering i))
+      in
+      create_record_die ~reference ~parent_proto_die ~name ~fields
     | Tds_variant { simple_constructors; complex_constructors } -> (
       match complex_constructors with
       | [] ->
@@ -657,7 +696,7 @@ let rec flatten_shape
            compiler changes with respect to recursive types, we can add a bound
            on the maximal recursion depth. *)
       | Tds_record
-          { fields = _; kind = Record_boxed | Record_mixed | Record_floats }
+          { fields = _; kind = Record_boxed | Record_mixed _ | Record_floats }
         -> (
         match layout with
         | Base Value -> [`Known type_shape]
