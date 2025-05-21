@@ -25,6 +25,21 @@ let load_decls_from_cms _path =
      agumented the [.cms] format to store the relevant shape information. *)
   Shape.Uid.Tbl.create 0
 
+let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
+  match sort with
+  | Void -> 0
+  | Float64 -> 8
+  | Float32 -> 4
+  | Word -> Arch.size_addr
+  | Bits32 -> 4
+  | Bits64 -> 8
+  | Vec128 -> 16
+  | Value -> Arch.size_addr
+
+(* smaller entries in mixed blocks are expanded to be of, at least, word size *)
+let base_layout_to_byte_size_in_mixed_block (sort : Jkind_types.Sort.base) =
+  Int.max (base_layout_to_byte_size sort) Arch.size_addr
+
 let wrap_die_under_a_pointer ~proto_die ~reference ~parent_proto_die =
   Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
     ~tag:Dwarf_tag.Reference_type
@@ -156,21 +171,49 @@ let create_simple_variant_die ~reference ~parent_proto_die ~name
         ())
     simple_constructors
 
+let reorder_record_fields_for_mixed_record ~mixed_block_shapes fields =
+  (* We go into arrays and back, because it makes the reordering of the fields
+     via accesses O(n) instead of O(n^2) *)
+  let fields = Array.of_list fields in
+  let reordering =
+    Mixed_block_shape.of_mixed_block_elements
+      (Lambda.transl_mixed_product_shape
+         ~get_value_kind:(fun _ -> Lambda.generic_value)
+         (* We don't care about the value kind of values, because it is dropped
+            again immediately afterwards. We only care about the layout
+            remapping. We only need the reordering to get the fields right
+            below. *)
+         mixed_block_shapes)
+  in
+  let fields =
+    Array.init (Array.length fields) (fun i ->
+        Array.get fields (Mixed_block_shape.new_index_to_old_index reordering i))
+  in
+  Array.to_list fields
+
+let variant_constructor_reorder_fields fields kind =
+  match kind with
+  | Types.Constructor_uniform_value -> fields
+  | Types.Constructor_mixed mixed_block_shapes ->
+    reorder_record_fields_for_mixed_record ~mixed_block_shapes fields
+
 let create_complex_variant_die ~reference ~parent_proto_die ~name
     ~simple_constructors
     ~(complex_constructors :
-       Proto_die.reference Type_shape.Type_decl_shape.complex_constructor list)
-    =
+       (Proto_die.reference * Jkind_types.Sort.base)
+       Type_shape.Type_decl_shape.complex_constructor
+       list) =
   let complex_constructors_names =
     List.map
-      (fun { Type_shape.Type_decl_shape.name; args = _ } -> name)
+      (fun { Type_shape.Type_decl_shape.name; kind = _; args = _ } -> name)
       complex_constructors
   in
+  let value_size = Arch.size_addr in
   let variant_part_immediate_or_pointer =
     let int_or_ptr_structure =
       Proto_die.create ~reference ~parent:(Some parent_proto_die)
         ~attribute_values:
-          [DAH.create_byte_size_exn ~byte_size:8; DAH.create_name name]
+          [DAH.create_byte_size_exn ~byte_size:value_size; DAH.create_name name]
         ~tag:Dwarf_tag.Structure_type ()
     in
     Proto_die.create ~parent:(Some int_or_ptr_structure) ~attribute_values:[]
@@ -181,7 +224,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       Proto_die.create ~parent:(Some parent_proto_die)
         ~tag:Dwarf_tag.Enumeration_type
         ~attribute_values:
-          [ DAH.create_byte_size_exn ~byte_size:8;
+          [ DAH.create_byte_size_exn ~byte_size:value_size;
             DAH.create_name ("Enum ptr/immediate case " ^ name) ]
         ()
     in
@@ -218,7 +261,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       Proto_die.create ~parent:(Some parent_proto_die)
         ~tag:Dwarf_tag.Enumeration_type
         ~attribute_values:
-          [ DAH.create_byte_size_exn ~byte_size:8;
+          [ DAH.create_byte_size_exn ~byte_size:value_size;
             DAH.create_name
               (name ^ " simple constructor enum "
               ^ String.concat "," simple_constructors) ]
@@ -243,7 +286,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       ~tag:Dwarf_tag.Member
       ~attribute_values:
         [ DAH.create_type ~proto_die:enum_die;
-          DAH.create_bit_size (Numbers.Int8.of_int_exn 63);
+          DAH.create_bit_size (Numbers.Int8.of_int_exn ((value_size * 8) - 1));
           DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
           DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 1) ]
       ()
@@ -253,9 +296,9 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
       Proto_die.create ~parent:(Some parent_proto_die)
         ~tag:Dwarf_tag.Structure_type
         ~attribute_values:
-          [ DAH.create_byte_size_exn ~byte_size:8;
+          [ DAH.create_byte_size_exn ~byte_size:value_size;
             DAH.create_ocaml_offset_record_from_pointer
-              ~value:(Int64.of_int (-8));
+              ~value:(Int64.of_int (-value_size));
             DAH.create_name
               ("variant_part " ^ name ^ " "
               ^ String.concat "," complex_constructors_names) ]
@@ -266,7 +309,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
         Proto_die.create ~parent:(Some parent_proto_die)
           ~tag:Dwarf_tag.Reference_type
           ~attribute_values:
-            [ DAH.create_byte_size_exn ~byte_size:8;
+            [ DAH.create_byte_size_exn ~byte_size:value_size;
               DAH.create_type ~proto_die:ptr_case_structure ]
           ()
       in
@@ -299,7 +342,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
           ()
       in
       List.iteri
-        (fun i { Type_shape.Type_decl_shape.name; args = _ } ->
+        (fun i { Type_shape.Type_decl_shape.name; kind = _; args = _ } ->
           Proto_die.create_ignore ~parent:(Some enum_die)
             ~tag:Dwarf_tag.Enumerator
             ~attribute_values:
@@ -320,28 +363,37 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
            ~proto_die_reference:(Proto_die.reference discriminant))
     in
     List.iteri
-      (fun i { Type_shape.Type_decl_shape.name = _; args } ->
+      (fun i
+           { Type_shape.Type_decl_shape.name = _;
+             kind = constructor_kind;
+             args
+           } ->
         let subvariant =
           Proto_die.create ~parent:(Some variant_part_pointer)
             ~tag:Dwarf_tag.Variant
             ~attribute_values:[DAH.create_discr_value ~value:(Int64.of_int i)]
             ()
         in
-        List.iteri
-          (fun i
-               { Type_shape.Type_decl_shape.field_name;
-                 field_value = field_type
+        let args = variant_constructor_reorder_fields args constructor_kind in
+        let offset = ref 0 in
+        List.iter
+          (fun { Type_shape.Type_decl_shape.field_name;
+                 field_value = field_type, ly
                } ->
+            let member_size = base_layout_to_byte_size_in_mixed_block ly in
             let member_die =
               Proto_die.create ~parent:(Some subvariant) ~tag:Dwarf_tag.Member
                 ~attribute_values:
                   [ DAH.create_data_member_location_offset
-                      ~byte_offset:(Int64.of_int (8 * (1 + i)));
-                    DAH.create_byte_size_exn ~byte_size:8;
+                      ~byte_offset:(Int64.of_int (!offset + value_size));
+                    (* members start after the block header, hence we add
+                       [value_size] *)
+                    DAH.create_byte_size_exn ~byte_size:member_size;
                     DAH.create_type_from_reference
                       ~proto_die_reference:field_type ]
                 ()
             in
+            offset := !offset + member_size;
             match field_name with
             | Some name ->
               Proto_die.add_or_replace_attribute_value member_die
@@ -373,17 +425,6 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
     fields;
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
-
-let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
-  match sort with
-  | Void -> 0
-  | Float64 -> 8
-  | Float32 -> 4
-  | Word -> Arch.size_addr
-  | Bits32 -> 4
-  | Bits64 -> 8
-  | Vec128 -> 16
-  | Value -> Arch.size_addr
 
 let create_base_layout_type ~reference (sort : Jkind_types.Sort.base) ~name
     ~parent_proto_die ~fallback_value_die =
@@ -581,8 +622,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
       assert false
     | Tds_record { fields = [(_, _, Product _)]; kind = Record_unboxed } ->
       assert false
-    | Tds_record { fields; kind = Record_mixed layouts } ->
-      (* we first compute the *)
+    | Tds_record { fields; kind = Record_mixed mixed_block_shapes } ->
       let fields =
         List.map
           (fun (name, type_shape, type_layout) ->
@@ -593,29 +633,15 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
             match (type_layout : Layout.t) with
             | Base base_layout ->
               ( name,
-                Int.max (base_layout_to_byte_size base_layout) Arch.size_addr,
-                (* field sizes; these are all base layouts, and they are padded
-                   to be at least 8-bytes long. *)
+                base_layout_to_byte_size_in_mixed_block base_layout,
                 type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
                   type_shape' )
             | Product _ ->
               Misc.fatal_error "mixed products must contain base layouts")
           fields
       in
-      let reordering =
-        Mixed_block_shape.of_mixed_block_elements
-          (Lambda.transl_mixed_product_shape
-             ~get_value_kind:(fun _ -> Lambda.generic_value)
-             (* We don't care about the value kind of values, because it is
-                dropped again immediately afterwards. We only care about the
-                layout remapping. We only need the reordering to get the fields
-                right below. *)
-             layouts)
-      in
       let fields =
-        List.init (List.length fields) (fun i ->
-            List.nth fields
-              (Mixed_block_shape.new_index_to_old_index reordering i))
+        reorder_record_fields_for_mixed_record ~mixed_block_shapes fields
       in
       create_record_die ~reference ~parent_proto_die ~name ~fields
     | Tds_variant { simple_constructors; complex_constructors } -> (
@@ -628,9 +654,17 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
           List.map
             (Type_shape.Type_decl_shape.complex_constructor_map
                (fun (sh, layout) ->
-                 let sh = Type_shape.Type_shape.shape_with_layout ~layout sh in
-                 type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
-                   sh))
+                 match layout with
+                 | Jkind_types.Sort.Const.Base ly ->
+                   let sh =
+                     Type_shape.Type_shape.shape_with_layout ~layout sh
+                   in
+                   ( type_shape_layout_to_die ~parent_proto_die
+                       ~fallback_value_die sh,
+                     ly )
+                 | Jkind_types.Sort.Const.Product _ ->
+                   Misc.fatal_error
+                     "unboxed product in complex constructor is not allowed"))
             complex_constructors
         in
         create_complex_variant_die ~reference ~parent_proto_die ~name

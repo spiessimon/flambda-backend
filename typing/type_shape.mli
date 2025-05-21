@@ -55,6 +55,7 @@ end
 module Type_decl_shape : sig
   type 'a complex_constructor =
     { name : string;
+      kind : Types.constructor_representation;
       args : 'a complex_constructor_arguments list
     }
 

@@ -309,6 +309,7 @@ end
 module Type_decl_shape = struct
   type 'a complex_constructor =
     { name : string;
+      kind : Types.constructor_representation;
       args : 'a complex_constructor_arguments list
     }
 
@@ -346,35 +347,75 @@ module Type_decl_shape = struct
       type_params : Type_shape.without_layout Type_shape.t list
     }
 
-  let complex_constructor_map f { name; args } =
+  let complex_constructor_map f { name; kind; args } =
     let args =
       List.map
         (fun { field_name; field_value } ->
           { field_name; field_value = f field_value })
         args
     in
-    { name; args }
+    { name; kind; args }
 
-  let get_variant_constructors (cstr_args : Types.constructor_declaration)
-      uid_of_path =
-    match cstr_args.cd_args with
-    | Cstr_tuple list ->
-      List.map
-        (fun ({ ca_type = type_expr; ca_sort = type_layout; _ } :
-               Types.constructor_argument) ->
-          { field_name = None;
-            field_value =
-              Type_shape.of_type_expr type_expr uid_of_path, type_layout
-          })
-        list
-    | Cstr_record list ->
-      List.map
-        (fun (lbl : Types.label_declaration) ->
-          { field_name = Some (Ident.name lbl.ld_id);
-            field_value =
-              Type_shape.of_type_expr lbl.ld_type uid_of_path, lbl.ld_sort
-          })
-        list
+  let mixed_block_shape_to_base_layout = function
+    | Types.Value -> Jkind_types.Sort.Value
+    | Types.Float_boxed ->
+      Jkind_types.Sort.Float64
+      (* [Float_boxed] records are unboxed in the variant at runtime, contrary to the name.*)
+    | Types.Float64 -> Jkind_types.Sort.Float64
+    | Types.Float32 -> Jkind_types.Sort.Float32
+    | Types.Bits32 -> Jkind_types.Sort.Bits32
+    | Types.Bits64 -> Jkind_types.Sort.Bits64
+    | Types.Vec128 -> Jkind_types.Sort.Vec128
+    | Types.Word -> Jkind_types.Sort.Word
+
+  let of_variant_constructor_with_args name
+      (cstr_args : Types.constructor_declaration)
+      ((constructor_repr, _) : Types.constructor_representation * _) uid_of_path
+      =
+    let args =
+      match cstr_args.cd_args with
+      | Cstr_tuple list ->
+        List.map
+          (fun ({ ca_type = type_expr; ca_sort = type_layout; _ } :
+                 Types.constructor_argument) ->
+            { field_name = None;
+              field_value =
+                Type_shape.of_type_expr type_expr uid_of_path, type_layout
+            })
+          list
+      | Cstr_record list ->
+        List.map
+          (fun (lbl : Types.label_declaration) ->
+            { field_name = Some (Ident.name lbl.ld_id);
+              field_value =
+                Type_shape.of_type_expr lbl.ld_type uid_of_path, lbl.ld_sort
+            })
+          list
+    in
+    (match constructor_repr with
+    | Constructor_mixed shapes ->
+      let shapes_and_fields = List.combine (Array.to_list shapes) args in
+      List.iter
+        (fun (mix_shape, { field_name = _; field_value = _, ly }) ->
+          let ly2 = Layout.Base (mixed_block_shape_to_base_layout mix_shape) in
+          if not (Layout.equal ly ly2)
+          then
+            Misc.fatal_errorf
+              "Type_shape: variant constructor with mismatched layout, has %a \
+               but expected %a"
+              Layout.format ly Layout.format ly2)
+        shapes_and_fields
+    | Constructor_uniform_value ->
+      List.iter
+        (fun { field_name = _; field_value = _, ly } ->
+          if not (Layout.equal ly (Layout.Base Value))
+          then
+            Misc.fatal_errorf
+              "Type_shape: variant constructor with mismatched layout, has %a \
+               but expected value"
+              Layout.format ly)
+        args);
+    { name; kind = constructor_repr; args }
 
   let is_empty_constructor_list (cstr_args : Types.constructor_declaration) =
     let length =
@@ -404,19 +445,29 @@ module Type_decl_shape = struct
         Tds_alias (Type_shape.of_type_expr type_expr uid_of_path)
       | None -> (
         match type_declaration.type_kind with
-        | Type_variant (cstr_list, _variant_repr, _unsafe_mode_crossing) ->
+        | Type_variant (cstr_list, Variant_boxed layouts, _unsafe_mode_crossing)
+          ->
+          let cstrs_with_layouts =
+            List.combine cstr_list (Array.to_list layouts)
+          in
           let simple_constructors, complex_constructors =
             List.partition_map
-              (fun (cstr : Types.constructor_declaration) ->
+              (fun ((cstr, arg_layouts) : Types.constructor_declaration * _) ->
                 let name = Ident.name cstr.cd_id in
                 match is_empty_constructor_list cstr with
                 | true -> Left name
                 | false ->
                   Right
-                    { name; args = get_variant_constructors cstr uid_of_path })
-              cstr_list
+                    (of_variant_constructor_with_args name cstr arg_layouts
+                       uid_of_path))
+              cstrs_with_layouts
           in
           Tds_variant { simple_constructors; complex_constructors }
+        | Type_variant
+            ( _,
+              (Variant_extensible | Variant_unboxed | Variant_with_null),
+              _unsafe_mode_crossing ) ->
+          Tds_other (* CR sspies: These variants are not yet supported. *)
         | Type_record (lbl_list, record_repr, _unsafe_mode_crossing) -> (
           match record_repr with
           (* CR sspies: Why is there another copy of the layouts of the fields
@@ -470,7 +521,7 @@ module Type_decl_shape = struct
         field_value
     | None -> Format.fprintf ppf "%a" print_value field_value
 
-  let print_complex_constructor print_value ppf { name; args } =
+  let print_complex_constructor print_value ppf { name; kind = _; args } =
     Format.fprintf ppf "(%a of %a)" Format.pp_print_string name
       (Format.pp_print_list ~pp_sep:(print_sep_string " * ")
          (print_one_entry print_value))
