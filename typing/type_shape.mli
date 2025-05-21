@@ -1,7 +1,15 @@
 module Uid = Shape.Uid
+module Layout = Jkind_types.Sort.Const
 
 module Type_shape : sig
   module Predef : sig
+    type unboxed =
+      | Unboxed_float
+      | Unboxed_float32
+      | Unboxed_nativeint
+      | Unboxed_int64
+      | Unboxed_int32
+
     type t =
       | Array
       | Bytes
@@ -15,22 +23,39 @@ module Type_shape : sig
       | Lazy_t
       | Nativeint
       | String
-      | Unboxed_float
+      | Unboxed of unboxed
+
+    val to_string : t -> string
+
+    val unboxed_type_to_layout : unboxed -> Jkind_types.Sort.base
+
+    val predef_to_layout : t -> Layout.t
   end
 
-  type t =
-    | Ts_constr of (Uid.t * Path.t) * t list
-    | Ts_tuple of t list
-    | Ts_var of string option
-    | Ts_predef of Predef.t * t list
-    | Ts_other
+  type without_layout
 
-  include Identifiable.S with type t := t
+  type 'a t =
+    | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
+    | Ts_tuple of 'a t list
+    | Ts_unboxed_tuple of 'a t list
+    | Ts_var of string option * 'a
+    | Ts_predef of Predef.t * without_layout t list
+    | Ts_arrow of without_layout t * without_layout t
+    | Ts_other of 'a
+
+  val shape_layout : Layout.t t -> Layout.t
+
+  val shape_with_layout : layout:Layout.t -> without_layout t -> Layout.t t
+
+  module With_layout : sig
+    include Identifiable.S with type t := Jkind_types.Sort.Const.t t
+  end
 end
 
 module Type_decl_shape : sig
   type 'a complex_constructor =
     { name : string;
+      kind : Types.constructor_representation;
       args : 'a complex_constructor_arguments list
     }
 
@@ -42,43 +67,68 @@ module Type_decl_shape : sig
   val complex_constructor_map :
     ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
 
+  type record_kind =
+    | Record_unboxed
+        (** [Record_unboxed] is the case for single-field records declared with
+            [@@unboxed], whose runtime representation is simply its contents
+            without any indirection. *)
+    | Record_unboxed_product
+        (** [Record_unboxed_product] is the truly unboxed record that corresponds to
+            [#{ ... }]. *)
+    | Record_boxed
+    | Record_mixed of Types.mixed_product_shape
+    | Record_floats
+        (** Basically the same as [Record_mixed], but we don't reorder the fields. *)
+
+  (** For type substitution to work as expected, we store the layouts in the declaration
+     alongside the shapes instead of directly going for the substituted version. *)
   type tds =
     | Tds_variant of
         { simple_constructors : string list;
               (** The string is the name of the constructor. The runtime
                   representation of the constructor at index [i] in this list is
                   [2 * i + 1]. See [dwarf_type.ml] for more details. *)
-          complex_constructors : Type_shape.t complex_constructor list
+          complex_constructors :
+            (Type_shape.without_layout Type_shape.t * Layout.t)
+            complex_constructor
+            list
               (** All constructors in this category are represented as blocks.
                   The index [i] in the list indicates the tag at runtime. The
                   length of the constructor argument list [args] determines the
                   size of the block. *)
         }
-    | Tds_record of (string * Type_shape.t) list
-    | Tds_alias of Type_shape.t
+    | Tds_variant_unboxed of
+        { name : string;
+          arg_name : string option;
+              (** if this is [None], we are looking at a singleton tuple;
+                otherwise, it is a singleton record. *)
+          arg_shape : Type_shape.without_layout Type_shape.t;
+          arg_layout : Layout.t
+        }
+        (** An unboxed variant corresponds to the [@@unboxed] annotation.
+          It must have a single, complex constructor. *)
+    | Tds_record of
+        { fields :
+            (string * Type_shape.without_layout Type_shape.t * Layout.t) list;
+          kind : record_kind
+        }
+    | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
   type t =
     { path : Path.t;
       definition : tds;
-      type_params : Type_shape.t list
+      type_params : Type_shape.without_layout Type_shape.t list
     }
 
   val print : Format.formatter -> t -> unit
 
-  val replace_tvar : t -> Type_shape.t list -> t
+  val replace_tvar : t -> Type_shape.without_layout Type_shape.t list -> t
 end
-
-(* CR sspies: For now, we bundle the shape together with its layout. In
-   subsequent PRs, the layouts will be integrated into the shape type. *)
-type binder_shape =
-  { type_shape : Type_shape.t;
-    type_sort : Jkind_types.Sort.Const.t
-  }
 
 val all_type_decls : Type_decl_shape.t Uid.Tbl.t
 
-val all_type_shapes : binder_shape Uid.Tbl.t
+val all_type_shapes : Layout.t Type_shape.t Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)
 val add_to_type_decls :
@@ -93,7 +143,7 @@ val add_to_type_shapes :
 
 val find_in_type_decls : Uid.t -> Type_decl_shape.t option
 
-val type_name : Type_shape.t -> string
+val type_name : 'a. 'a Type_shape.t -> string
 
 val print_table_all_type_decls : Format.formatter -> unit
 
