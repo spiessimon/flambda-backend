@@ -68,10 +68,11 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
   in
   let debug_print_shapes_and_decls = false in
   let print_binder_shape ppf
-      ({ type_shape; type_sort } : Type_shape.binder_shape) =
-    Type_shape.Type_shape.print ppf type_shape;
+      (type_shape : Jkind_types.Sort.Const.t Type_shape.Type_shape.t) =
+    Type_shape.Type_shape.With_layout.print ppf type_shape;
     Format.fprintf ppf " ";
-    Jkind_types.Sort.Const.format ppf type_sort
+    Jkind_types.Sort.Const.format ppf
+      (Type_shape.Type_shape.shape_layout type_shape)
   in
   if debug_print_shapes_and_decls
   then (
