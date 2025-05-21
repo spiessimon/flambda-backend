@@ -100,6 +100,16 @@ module Type_decl_shape : sig
           (simple constructors) and blocks (complex constructors). Thus, even though the
           order is disturbed by separating them into two lists, the runtime shape is still
           uniquely determined, because the two representations are disjoint. *)
+    | Tds_variant_unboxed of
+        { name : string;
+          arg_name : string option;
+              (** if this is [None], we are looking at a singleton tuple;
+                otherwise, it is a singleton record. *)
+          arg_shape : Type_shape.without_layout Type_shape.t;
+          arg_layout : Layout.t
+        }
+        (** An unboxed variant corresponds to the [@@unboxed] annotation.
+          It must have a single, complex constructor. *)
     | Tds_record of
         { fields :
             (string * Type_shape.without_layout Type_shape.t * Layout.t) list;

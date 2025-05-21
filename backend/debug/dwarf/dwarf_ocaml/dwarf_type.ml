@@ -197,6 +197,80 @@ let variant_constructor_reorder_fields fields kind =
   | Types.Constructor_mixed mixed_block_shapes ->
     reorder_record_fields_for_mixed_record ~mixed_block_shapes fields
 
+(* CR sspies: This is a very hacky way of doing an unboxed variant with just a
+   single constructor. DWARF variants expect to have a discriminator. So what we
+   do is pick the first bit of the contents of the unboxed variant as the
+   discriminator and then we simply ouput the same DWARF information for both
+   cases. *)
+let create_unboxed_variant_die ~reference ~parent_proto_die ~name ~constr_name
+    ~arg_name ~arg_layout ~arg_die =
+  let base_layout =
+    match arg_layout with
+    | Jkind_types.Sort.Const.Base base_layout -> base_layout
+    | Jkind_types.Sort.Const.Product _ -> Misc.fatal_error "Not a base layout"
+  in
+  let width = base_layout_to_byte_size base_layout in
+  let structure_ref = reference in
+  let variant_part_ref = Proto_die.create_reference () in
+  let variant_member_ref = Proto_die.create_reference () in
+  let enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:
+        [DAH.create_byte_size_exn ~byte_size:width; DAH.create_name name]
+      ()
+  in
+  let structure_die =
+    Proto_die.create ~reference:structure_ref ~parent:(Some parent_proto_die)
+      ~attribute_values:
+        [DAH.create_byte_size_exn ~byte_size:width; DAH.create_name name]
+      ~tag:Dwarf_tag.Structure_type ()
+  in
+  let variant_part_die =
+    Proto_die.create ~reference:variant_part_ref ~parent:(Some structure_die)
+      ~attribute_values:
+        [DAH.create_discr ~proto_die_reference:variant_member_ref]
+      ~tag:Dwarf_tag.Variant_part ()
+  in
+  Proto_die.create_ignore ~reference:variant_member_ref
+    ~parent:(Some variant_part_die) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference
+          ~proto_die_reference:(Proto_die.reference enum_die);
+        DAH.create_bit_size (Numbers.Int8.of_int_exn 1);
+        DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 0);
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0) ]
+    ();
+  for i = 0 to 1 do
+    (* We create two identical discriminants. First, we create an enum case for
+       both with the constructor name. *)
+    Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+      ~attribute_values:
+        [ DAH.create_const_value ~value:(Int64.of_int i);
+          DAH.create_name constr_name ]
+      ();
+    (* Then we create variant entries of the variant parts with the same
+       discriminant. *)
+    let constructor_variant =
+      Proto_die.create ~parent:(Some variant_part_die) ~tag:Dwarf_tag.Variant
+        ~attribute_values:[DAH.create_discr_value ~value:(Int64.of_int i)]
+        ()
+    in
+    (* Lastly, we add the constructor argument as a member to the variant. *)
+    let member_name =
+      match arg_name with Some name -> [DAH.create_name name] | None -> []
+    in
+    Proto_die.create_ignore ~parent:(Some constructor_variant)
+      ~tag:Dwarf_tag.Member
+      ~attribute_values:
+        ([ DAH.create_type_from_reference ~proto_die_reference:arg_die;
+           DAH.create_byte_size_exn ~byte_size:width;
+           DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0)
+         ]
+        @ member_name)
+      ()
+  done
+
 let create_complex_variant_die ~reference ~parent_proto_die ~name
     ~simple_constructors
     ~(complex_constructors :
@@ -668,7 +742,17 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
             complex_constructors
         in
         create_complex_variant_die ~reference ~parent_proto_die ~name
-          ~simple_constructors ~complex_constructors))
+          ~simple_constructors ~complex_constructors)
+    | Tds_variant_unboxed
+        { name = constr_name; arg_name; arg_shape; arg_layout } ->
+      let arg_shape =
+        Type_shape.Type_shape.shape_with_layout ~layout:arg_layout arg_shape
+      in
+      let arg_die =
+        type_shape_layout_to_die ~parent_proto_die ~fallback_value_die arg_shape
+      in
+      create_unboxed_variant_die ~reference ~parent_proto_die ~name ~constr_name
+        ~arg_name ~arg_layout ~arg_die)
 
 and type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
     ~fallback_value_die _arg _ret =
@@ -768,7 +852,14 @@ let rec flatten_shape
       | Tds_variant _ -> (
         match layout with
         | Base Value -> [`Known type_shape]
-        | _ -> Misc.fatal_error "variant must have value layout")))
+        | _ -> Misc.fatal_error "variant must have value layout")
+      | Tds_variant_unboxed
+          { name = _; arg_name = _; arg_layout; arg_shape = _ } ->
+        if Layout.equal arg_layout layout
+        then [`Known type_shape]
+        else
+          Misc.fatal_error
+            "unboxed variant must have same layout as its contents"))
 
 let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   let fallback_value_die =

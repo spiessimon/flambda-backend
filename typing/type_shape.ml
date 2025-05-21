@@ -333,6 +333,16 @@ module Type_decl_shape = struct
             complex_constructor
             list
         }
+    | Tds_variant_unboxed of
+        { name : string;
+          arg_name : string option;
+              (** if this is [None], we are looking at a singleton tuple;
+              otherwise, it is a singleton record. *)
+          arg_shape : Type_shape.without_layout Type_shape.t;
+          arg_layout : Layout.t
+        }
+        (** An unboxed variant corresponds to the [@@unboxed] annotation.
+        It must have a single, complex constructor. *)
     | Tds_record of
         { fields :
             (string * Type_shape.without_layout Type_shape.t * Layout.t) list;
@@ -463,10 +473,30 @@ module Type_decl_shape = struct
               cstrs_with_layouts
           in
           Tds_variant { simple_constructors; complex_constructors }
+        | Type_variant ([cstr], Variant_unboxed, _unsafe_mode_crossing)
+          when not (is_empty_constructor_list cstr) ->
+          let name = Ident.name cstr.cd_id in
+          let field_name, type_expr, layout =
+            match cstr.cd_args with
+            | Cstr_tuple [ca] -> None, ca.ca_type, ca.ca_sort
+            | Cstr_record [ld] ->
+              Some (Ident.name ld.ld_id), ld.ld_type, ld.ld_sort
+            | Cstr_tuple _ | Cstr_record _ ->
+              Misc.fatal_error "Unboxed variant must have exactly one argument."
+          in
+          Tds_variant_unboxed
+            { name;
+              arg_name = field_name;
+              arg_layout = layout;
+              arg_shape = Type_shape.of_type_expr type_expr uid_of_path
+            }
+        | Type_variant ([_], Variant_unboxed, _unsafe_mode_crossing) ->
+          Misc.fatal_error "Unboxed variant must have constructor arguments."
+        | Type_variant (([] | _ :: _ :: _), Variant_unboxed, _) ->
+          Misc.fatal_error "Unboxed variant must have exactly one constructor."
         | Type_variant
-            ( _,
-              (Variant_extensible | Variant_unboxed | Variant_with_null),
-              _unsafe_mode_crossing ) ->
+            (_, (Variant_extensible | Variant_with_null), _unsafe_mode_crossing)
+          ->
           Tds_other (* CR sspies: These variants are not yet supported. *)
         | Type_record (lbl_list, record_repr, _unsafe_mode_crossing) -> (
           match record_repr with
@@ -551,6 +581,12 @@ module Type_decl_shape = struct
         (Format.pp_print_list ~pp_sep:(print_sep_string " | ")
            (print_complex_constructor print_only_shape))
         complex_constructors
+    | Tds_variant_unboxed { name; arg_name; arg_shape; arg_layout } ->
+      Format.fprintf ppf
+        "Tds_variant_unboxed name=%s arg_name=%s arg_shape=%a arg_layout=%a"
+        name
+        (Option.value ~default:"None" arg_name)
+        Type_shape.print arg_shape Layout.format arg_layout
     | Tds_record { fields; kind } ->
       Format.fprintf ppf "Tds_record%s { %a }" (print_record_type kind)
         (Format.pp_print_list ~pp_sep:(print_sep_string "; ") print_field)
@@ -593,6 +629,13 @@ module Type_decl_shape = struct
                     List.map
                       (complex_constructor_map replace_tvar)
                       complex_constructors
+                }
+            | Tds_variant_unboxed { name; arg_name; arg_shape; arg_layout } ->
+              Tds_variant_unboxed
+                { name;
+                  arg_name;
+                  arg_shape = Type_shape.replace_tvar ~pairs:subst arg_shape;
+                  arg_layout
                 }
             | Tds_record { fields; kind } ->
               Tds_record
@@ -784,6 +827,9 @@ let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
                      attach_to_shape sh, ly))
                 complex_constructors
           }
+      | Tds_variant_unboxed { name; arg_name; arg_shape; arg_layout } ->
+        Tds_variant_unboxed
+          { name; arg_name; arg_shape = attach_to_shape arg_shape; arg_layout }
       | Tds_record { fields; kind } ->
         Tds_record
           { fields =
