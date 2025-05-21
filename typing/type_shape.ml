@@ -220,8 +220,8 @@ module Type_shape = struct
     | Ts_arrow (arg, ret), Base Value -> Ts_arrow (arg, ret)
     | Ts_arrow _, _ ->
       Misc.fatal_errorf "function type shape must have layout value"
-    | Ts_predef (predef, shapes), _ when Predef.predef_to_layout predef = layout
-      ->
+    | Ts_predef (predef, shapes), _
+      when Layout.equal (Predef.predef_to_layout predef) layout ->
       Ts_predef (predef, shapes)
     | Ts_predef (predef, _), _ ->
       Misc.fatal_errorf
@@ -577,7 +577,7 @@ module Type_decl_shape = struct
         shapes
         (Format.pp_print_list ~pp_sep:Format.pp_print_space Type_shape.print)
         t.type_params;
-    match List.length t.type_params == List.length shapes with
+    match List.length t.type_params = List.length shapes with
     | true ->
       let subst = List.combine t.type_params shapes in
       let replace_tvar (sh, ly) = Type_shape.replace_tvar ~pairs:subst sh, ly in

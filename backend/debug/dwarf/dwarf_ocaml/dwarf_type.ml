@@ -736,7 +736,7 @@ let rec flatten_shape
         | Base Value -> [`Known type_shape]
         | _ -> Misc.fatal_error "record must have value layout")
       | Tds_record { fields = [(_, sh, ly)]; kind = Record_unboxed }
-        when ly = layout -> (
+        when Layout.equal ly layout -> (
         match layout with
         | Product _ ->
           flatten_shape (Type_shape.Type_shape.shape_with_layout ~layout sh)
