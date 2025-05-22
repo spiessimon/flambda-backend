@@ -37,6 +37,7 @@ module Type_shape = struct
       | Int64x2
       | Float32x4
       | Float64x2
+      | Exception
       (* Unboxed types *)
       | Unboxed of unboxed
 
@@ -74,6 +75,7 @@ module Type_shape = struct
       | Int64x2 -> "int64x2"
       | Float32x4 -> "float32x4"
       | Float64x2 -> "float64x2"
+      | Exception -> "exn"
       | Unboxed u -> unboxed_to_string u ^ "#"
 
     let unboxed_of_string = function
@@ -109,6 +111,7 @@ module Type_shape = struct
       | "float32x4" -> Some Float32x4
       | "float64x2" -> Some Float64x2
       | "string" -> Some String
+      | "exn" -> Some Exception
       | s -> (
         match unboxed_of_string s with
         | Some u -> Some (Unboxed u)
@@ -147,6 +150,7 @@ module Type_shape = struct
       | Int64x2 -> Layout.Base Value
       | Float32x4 -> Layout.Base Value
       | Float64x2 -> Layout.Base Value
+      | Exception -> Layout.Base Value
       | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
   end
 

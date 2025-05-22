@@ -35,6 +35,7 @@ module Type_shape : sig
       | Int64x2
       | Float32x4
       | Float64x2
+      | Exception
       | Unboxed of unboxed
 
     val to_string : t -> string

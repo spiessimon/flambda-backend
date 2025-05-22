@@ -533,7 +533,7 @@ let predef_type_to_vec128_split (m : Type_shape.Type_shape.Predef.t) =
   | Float32x4 -> Some Float32x4
   | Float64x2 -> Some Float64x2
   | Array | Char | Unboxed _ | Extension_constructor | Float | String | Lazy_t
-  | Bytes | Floatarray | Int | Int32 | Int64 | Nativeint ->
+  | Bytes | Floatarray | Exception | Int | Int32 | Int64 | Nativeint ->
     None
 
 let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
@@ -718,8 +718,10 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
           DAH.create_name name ]
       ()
   | ( ( Bytes | Extension_constructor | Float | Floatarray | Int | Int32 | Int64
-      | Lazy_t | Nativeint | String ),
+      | Lazy_t | Nativeint | Exception | String ),
       _ ) ->
+    (* CR sspies: What should we do about exceptions? We currently do not have a
+       mapping of runtime exception values to constructors. *)
     create_base_layout_type ~reference Value ~name ~parent_proto_die
       ~fallback_value_die
 
