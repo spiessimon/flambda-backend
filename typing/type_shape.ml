@@ -11,6 +11,12 @@ module Type_shape = struct
       | Unboxed_nativeint
       | Unboxed_int64
       | Unboxed_int32
+      | Unboxed_float32x4
+      | Unboxed_float64x2
+      | Unboxed_int8x16
+      | Unboxed_int16x8
+      | Unboxed_int32x4
+      | Unboxed_int64x2
 
     type t =
       | Array
@@ -25,6 +31,12 @@ module Type_shape = struct
       | Lazy_t
       | Nativeint
       | String
+      | Int8x16
+      | Int16x8
+      | Int32x4
+      | Int64x2
+      | Float32x4
+      | Float64x2
       (* Unboxed types *)
       | Unboxed of unboxed
 
@@ -36,6 +48,12 @@ module Type_shape = struct
       | Unboxed_nativeint -> "nativeint"
       | Unboxed_int64 -> "int64"
       | Unboxed_int32 -> "int32"
+      | Unboxed_float32x4 -> "float32x4"
+      | Unboxed_float64x2 -> "float64x2"
+      | Unboxed_int8x16 -> "int8x16"
+      | Unboxed_int16x8 -> "int16x8"
+      | Unboxed_int32x4 -> "int32x4"
+      | Unboxed_int64x2 -> "int64x2"
 
     let to_string = function
       | Array -> "array"
@@ -50,6 +68,12 @@ module Type_shape = struct
       | Lazy_t -> "lazy_t"
       | Nativeint -> "nativeint"
       | String -> "string"
+      | Int8x16 -> "int8x16"
+      | Int16x8 -> "int16x8"
+      | Int32x4 -> "int32x4"
+      | Int64x2 -> "int64x2"
+      | Float32x4 -> "float32x4"
+      | Float64x2 -> "float64x2"
       | Unboxed u -> unboxed_to_string u ^ "#"
 
     let unboxed_of_string = function
@@ -58,6 +82,12 @@ module Type_shape = struct
       | "nativeint#" -> Some Unboxed_nativeint
       | "int64#" -> Some Unboxed_int64
       | "int32#" -> Some Unboxed_int32
+      | "float32x4#" -> Some Unboxed_float32x4
+      | "float64x2#" -> Some Unboxed_float64x2
+      | "int8x16#" -> Some Unboxed_int8x16
+      | "int16x8#" -> Some Unboxed_int16x8
+      | "int32x4#" -> Some Unboxed_int32x4
+      | "int64x2#" -> Some Unboxed_int64x2
       | _ -> None
 
     let of_string = function
@@ -72,6 +102,12 @@ module Type_shape = struct
       | "int64" -> Some Int64
       | "lazy_t" -> Some Lazy_t
       | "nativeint" -> Some Nativeint
+      | "int8x16" -> Some Int8x16
+      | "int16x8" -> Some Int16x8
+      | "int32x4" -> Some Int32x4
+      | "int64x2" -> Some Int64x2
+      | "float32x4" -> Some Float32x4
+      | "float64x2" -> Some Float64x2
       | "string" -> Some String
       | s -> (
         match unboxed_of_string s with
@@ -85,6 +121,12 @@ module Type_shape = struct
       | Unboxed_nativeint -> Word
       | Unboxed_int64 -> Bits64
       | Unboxed_int32 -> Bits32
+      | Unboxed_float32x4 -> Vec128
+      | Unboxed_float64x2 -> Vec128
+      | Unboxed_int8x16 -> Vec128
+      | Unboxed_int16x8 -> Vec128
+      | Unboxed_int32x4 -> Vec128
+      | Unboxed_int64x2 -> Vec128
 
     let predef_to_layout = function
       | Array -> Layout.Base Value
@@ -99,6 +141,12 @@ module Type_shape = struct
       | Lazy_t -> Layout.Base Value
       | Nativeint -> Layout.Base Value
       | String -> Layout.Base Value
+      | Int8x16 -> Layout.Base Value
+      | Int16x8 -> Layout.Base Value
+      | Int32x4 -> Layout.Base Value
+      | Int64x2 -> Layout.Base Value
+      | Float32x4 -> Layout.Base Value
+      | Float64x2 -> Layout.Base Value
       | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
   end
 

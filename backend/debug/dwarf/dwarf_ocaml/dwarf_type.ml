@@ -503,8 +503,85 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
-let create_base_layout_type ~reference (sort : Jkind_types.Sort.base) ~name
-    ~parent_proto_die ~fallback_value_die =
+type vec128_splits =
+  | Int8x16
+  | Int16x8
+  | Int32x4
+  | Int64x2
+  | Float32x4
+  | Float64x2
+
+let unboxed_base_type_to_vec128_split (x : Type_shape.Type_shape.Predef.unboxed)
+    =
+  match x with
+  | Type_shape.Type_shape.Predef.Unboxed_int8x16 -> Some Int8x16
+  | Unboxed_int16x8 -> Some Int16x8
+  | Unboxed_int32x4 -> Some Int32x4
+  | Unboxed_int64x2 -> Some Int64x2
+  | Unboxed_float32x4 -> Some Float32x4
+  | Unboxed_float64x2 -> Some Float64x2
+  | Unboxed_float | Unboxed_float32 | Unboxed_nativeint | Unboxed_int64
+  | Unboxed_int32 ->
+    None
+
+let predef_type_to_vec128_split (m : Type_shape.Type_shape.Predef.t) =
+  match m with
+  | Int8x16 -> Some Int8x16
+  | Int16x8 -> Some Int16x8
+  | Int32x4 -> Some Int32x4
+  | Int64x2 -> Some Int64x2
+  | Float32x4 -> Some Float32x4
+  | Float64x2 -> Some Float64x2
+  | Array | Char | Unboxed _ | Extension_constructor | Float | String | Lazy_t
+  | Bytes | Floatarray | Int | Int32 | Int64 | Nativeint ->
+    None
+
+let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
+  let maybe_name = List.map DAH.create_name (Option.to_list name) in
+  match split with
+  | None ->
+    Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Base_type
+      ~attribute_values:
+        ([ DAH.create_encoding ~encoding:Encoding_attribute.unsigned;
+           DAH.create_byte_size_exn ~byte_size:16 ]
+        @ maybe_name)
+      ()
+  | Some vec_split ->
+    let structure =
+      Proto_die.create ~reference ~parent:(Some parent_proto_die)
+        ~tag:Dwarf_tag.Structure_type
+        ~attribute_values:([DAH.create_byte_size_exn ~byte_size:16] @ maybe_name)
+        ()
+    in
+    let encoding, count, size =
+      match vec_split with
+      | Int8x16 -> Encoding_attribute.signed, 16, 1
+      | Int16x8 -> Encoding_attribute.signed, 8, 2
+      | Int32x4 -> Encoding_attribute.signed, 4, 4
+      | Int64x2 -> Encoding_attribute.signed, 2, 8
+      | Float32x4 -> Encoding_attribute.float, 4, 4
+      | Float64x2 -> Encoding_attribute.float, 2, 8
+    in
+    let base_type =
+      Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
+        ~attribute_values:
+          [ DAH.create_encoding ~encoding;
+            DAH.create_byte_size_exn ~byte_size:size ]
+        ()
+    in
+    for i = 0 to count - 1 do
+      Proto_die.create_ignore ~parent:(Some structure) ~tag:Dwarf_tag.Member
+        ~attribute_values:
+          [ DAH.create_type_from_reference
+              ~proto_die_reference:(Proto_die.reference base_type);
+            DAH.create_data_member_location_offset
+              ~byte_offset:(Int64.of_int (i * size)) ]
+        ()
+    done
+
+let create_base_layout_type ?(vec128_split = None) ~reference
+    (sort : Jkind_types.Sort.base) ~name ~parent_proto_die ~fallback_value_die =
   let byte_size = base_layout_to_byte_size sort in
   match sort with
   | Value ->
@@ -529,8 +606,8 @@ let create_base_layout_type ~reference (sort : Jkind_types.Sort.base) ~name
     create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
       ~encoding:Encoding_attribute.signed
   | Vec128 ->
-    create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
-      ~encoding:Encoding_attribute.unsigned
+    create_vec128_base_layout_die ~reference ~parent_proto_die ~name:(Some name)
+      ~split:vec128_split
 
 module Cache = Type_shape.Type_shape.With_layout.Tbl
 
@@ -621,10 +698,25 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
   | Char, _ -> create_char_die ~reference ~parent_proto_die ~name
   | Unboxed b, _ ->
     let type_layout = Type_shape.Type_shape.Predef.unboxed_type_to_layout b in
-    create_base_layout_type ~reference type_layout ~name ~parent_proto_die
-      ~fallback_value_die
+    create_base_layout_type
+      ~vec128_split:(unboxed_base_type_to_vec128_split b)
+      ~reference type_layout ~name ~parent_proto_die ~fallback_value_die
     (* CR sspies: Take [b] into account here, perhaps as an optional argument,
        to support int8x16 vs float64x2. *)
+  | ((Int8x16 | Int16x8 | Int32x4 | Int64x2 | Float32x4 | Float64x2) as b), _ ->
+    (* We represent these vectors as pointers of the form [struct {...} *],
+       because their runtime representation are abstract blocks. *)
+    let base_ref = Proto_die.create_reference () in
+    let vec128_split = predef_type_to_vec128_split b in
+    create_vec128_base_layout_die ~split:vec128_split ~reference:base_ref
+      ~name:None ~parent_proto_die;
+    Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Reference_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+          DAH.create_type_from_reference ~proto_die_reference:base_ref;
+          DAH.create_name name ]
+      ()
   | ( ( Bytes | Extension_constructor | Float | Floatarray | Int | Int32 | Int64
       | Lazy_t | Nativeint | String ),
       _ ) ->
