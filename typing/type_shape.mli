@@ -9,6 +9,12 @@ module Type_shape : sig
       | Unboxed_nativeint
       | Unboxed_int64
       | Unboxed_int32
+      | Unboxed_float32x4
+      | Unboxed_float64x2
+      | Unboxed_int8x16
+      | Unboxed_int16x8
+      | Unboxed_int32x4
+      | Unboxed_int64x2
 
     type t =
       | Array
@@ -23,6 +29,12 @@ module Type_shape : sig
       | Lazy_t
       | Nativeint
       | String
+      | Int8x16
+      | Int16x8
+      | Int32x4
+      | Int64x2
+      | Float32x4
+      | Float64x2
       | Unboxed of unboxed
 
     val to_string : t -> string
