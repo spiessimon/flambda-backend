@@ -661,6 +661,9 @@ let rec type_shape_layout_to_die (type_shape : Layout.t Type_shape.Type_shape.t)
         Misc.fatal_errorf
           "only base layouts supported, but found product layout %s" layout_name
       )
+    | Ts_variant (fields, _) ->
+      poly_variant_die ~reference ~name ~parent_proto_die ~fallback_value_die
+        ~constructors:fields
     | Ts_arrow (arg, ret) ->
       type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
         ~fallback_value_die arg ret);
@@ -857,6 +860,30 @@ and type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
   create_typedef_die ~reference ~parent_proto_die ~name
     ~child_die:fallback_value_die
 
+and poly_variant_die ~reference ~parent_proto_die ~fallback_value_die ~name
+    ~constructors:_ =
+  create_typedef_die ~reference ~parent_proto_die ~name
+    ~child_die:fallback_value_die
+
+(*= let enum_die =
+    Proto_die.create ~reference ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:
+        [DAH.create_byte_size_exn ~byte_size:8; DAH.create_name name]
+      ()
+  in
+  List.iter
+    (fun ({ pv_constr_name; _ } :
+           _ Type_shape.Type_shape.poly_variant_constructor) ->
+      let hash = Btype.hash_variant pv_constr_name in
+      let tagged_version = (hash * 2) + 1 in
+      Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+        ~attribute_values:
+          [ DAH.create_const_value ~value:(Int64.of_int tagged_version);
+            DAH.create_name ("`" ^ pv_constr_name) ]
+        ())
+    constructors *)
+
 let rec flatten_to_base_sorts (sort : Jkind_types.Sort.Const.t) :
     Jkind_types.Sort.base list =
   match sort with
@@ -883,6 +910,7 @@ let rec flatten_shape
   | Ts_unboxed_tuple shapes -> List.concat_map flatten_shape shapes
   | Ts_predef _ -> [`Known type_shape]
   | Ts_arrow _ -> [`Known type_shape]
+  | Ts_variant _ -> [`Known type_shape]
   | Ts_other layout ->
     let base_layouts = flatten_to_base_sorts layout in
     List.map (fun layout -> `Unknown layout) base_layouts
