@@ -301,8 +301,8 @@ let compute_result_types ~is_a_functor ~is_opaque ~return_cont_uses
         ~cut_after:(Scope.prev (DE.get_continuation_scope env_at_fork))
         (Continuation_uses.get_uses uses)
         ~is_recursive:false ~params:return_cont_params ~env_at_fork
-        ~consts_lifted_during_body:lifted_consts_this_function
-        ~lifted_cont_extra_params_and_args:EPA.empty
+        ~consts_lifted_after_fork:lifted_consts_this_function
+        ~previous_extra_params_and_args:EPA.empty
     in
     let bound_params_and_results =
       Bound_parameters.append params return_cont_params
@@ -682,7 +682,7 @@ let simplify_and_lift_set_of_closures dacc ~closure_bound_vars_inverse
   let value_slot_types =
     Value_slot.Map.mapi
       (fun value_slot in_slot ->
-        let kind = K.With_subkind.kind (Value_slot.kind value_slot) in
+        let kind = Value_slot.kind value_slot in
         Simple.pattern_match in_slot
           ~const:(fun _ -> T.alias_type_of kind in_slot)
           ~name:(fun name ~coercion ->

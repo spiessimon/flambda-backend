@@ -147,7 +147,7 @@ let pop_all_traps env =
     | Operation.Uncaught -> acc
     | Operation.Specific_trap (lbl, t) -> pop_all (Pop lbl :: acc) t
   in
-  pop_all [] env.trap_stack
+  pop_all [] env.trap_stack |> List.rev
 
 let env_create ~tailrec_label =
   { vars = V.Map.empty;
@@ -508,7 +508,7 @@ module Stack_offset_and_exn = struct
           InstructionId.format instr.id
       | top_trap :: traps ->
         (* CR-soon gyorsh: investigate why this check sometimes fails. *)
-        if false && not (Label.equal lbl_handler top_trap)
+        if not (Label.equal lbl_handler top_trap)
         then
           Misc.fatal_errorf
             "Cfgize.Stack_offset_and_exn.process_basic: poptrap label %a does \
@@ -598,7 +598,7 @@ let insert_debug (_env : environment) sub_cfg basic dbg arg res =
   Sub_cfg.add_instruction sub_cfg basic arg res dbg
 
 let insert_op_debug_returning_id (_env : environment) sub_cfg op dbg arg res =
-  let instr = Cfg.make_instr (Cfg.Op op) arg res dbg in
+  let instr = Sub_cfg.make_instr (Cfg.Op op) arg res dbg in
   Sub_cfg.add_instruction' sub_cfg instr;
   instr.id
 

@@ -121,6 +121,8 @@ module DSL : sig
 
   val emit_reg_v2d : Reg.t -> Arm64_ast.Operand.t
 
+  val emit_reg_v16b : Reg.t -> Arm64_ast.Operand.t
+
   val imm : int -> Arm64_ast.Operand.t
 
   val imm_float : float -> Arm64_ast.Operand.t
@@ -243,6 +245,8 @@ end = struct
   let emit_reg_v4s reg = reg_v4s (reg_index reg)
 
   let emit_reg_v2d reg = reg_v2d (reg_index reg)
+
+  let emit_reg_v16b reg = reg_v16b (reg_index reg)
 
   let emit_reg_w reg = reg_w (reg_index reg)
 
@@ -613,9 +617,7 @@ let instr_for_int_operation = function
   | Ilsl -> I.LSL
   | Ilsr -> I.LSR
   | Iasr -> I.ASR
-  | Iclz { arg_is_non_zero = _ } -> I.CLZ
-  | Ipopcnt -> I.CNT
-  | Ictz _ | Icomp _ | Imod | Imulh _ -> assert false
+  | Iclz _ | Ictz _ | Ipopcnt | Icomp _ | Imod | Imulh _ -> assert false
 
 (* Decompose an integer constant into four 16-bit shifted fragments. Omit the
    fragments that are equal to "default" (16 zeros or 16 ones). *)
@@ -998,11 +1000,12 @@ module BR = Branch_relaxation.Make (struct
     | Lop (Intop Imod) -> 2
     | Lop (Intop (Imulh _)) -> 1
     | Lop (Intop (Iclz _)) -> 1
-    | Lop (Intop (Ictz _)) -> 2
+    | Lop (Intop (Ictz _)) -> if !Arch.feat_cssc then 1 else 2
+    | Lop (Intop Ipopcnt) -> if !Arch.feat_cssc then 1 else 4
     | Lop
         (Intop
-          ( Iadd | Isub | Imul | Idiv | Iand | Ior | Ixor | Ilsl | Ilsr | Iasr
-          | Ipopcnt )) ->
+          (Iadd | Isub | Imul | Idiv | Iand | Ior | Ixor | Ilsl | Ilsr | Iasr))
+      ->
       1
     | Lop
         (Intop_imm
@@ -1264,7 +1267,7 @@ let move (src : Reg.t) (dst : Reg.t) =
     | Float, Reg _, Float, Reg _ | Float32, Reg _, Float32, Reg _ ->
       DSL.ins I.FMOV [| DSL.emit_reg dst; DSL.emit_reg src |]
     | (Vec128 | Valx2), Reg _, (Vec128 | Valx2), Reg _ ->
-      DSL.ins I.MOV [| DSL.emit_reg_v2d dst; DSL.emit_reg_v2d src |]
+      DSL.ins I.MOV [| DSL.emit_reg_v16b dst; DSL.emit_reg_v16b src |]
     | (Int | Val | Addr), Reg _, (Int | Val | Addr), Reg _ ->
       DSL.ins I.MOV [| DSL.emit_reg dst; DSL.emit_reg src |]
     | _, Reg _, _, Stack _ ->
@@ -1675,18 +1678,30 @@ let emit_instr i =
          DSL.emit_reg i.arg.(0);
          DSL.emit_reg i.arg.(1)
       |]
+  | Lop (Intop Ipopcnt) ->
+    if !Arch.feat_cssc
+    then DSL.ins I.CNT [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |]
+    else
+      let tmp = 7 in
+      let tmp_v8b = Arm64_ast.DSL.reg_v8b tmp in
+      DSL.ins I.FMOV [| Arm64_ast.DSL.reg_d tmp; DSL.emit_reg i.arg.(0) |];
+      DSL.ins I.CNT [| tmp_v8b; tmp_v8b |];
+      DSL.ins I.ADDV [| Arm64_ast.DSL.reg_b tmp; tmp_v8b |];
+      DSL.ins I.FMOV [| DSL.emit_reg i.res.(0); Arm64_ast.DSL.reg_s tmp |]
   | Lop (Intop (Ictz _)) ->
-    (* emit_printf "ctz Rd, Rn" is optionally supported from Armv8.7, but rbit
-       and clz are supported in all ARMv8 CPUs. *)
-    DSL.ins I.RBIT [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |];
-    DSL.ins I.CLZ [| DSL.emit_reg i.res.(0); DSL.emit_reg i.res.(0) |]
-  | Lop (Intop (Iclz _ as op)) ->
-    let instr = instr_for_int_operation op in
-    DSL.ins instr [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |]
+    (* [ctz Rd, Rn] is optionally supported from Armv8.7, but rbit and clz are
+       supported in all ARMv8 CPUs. *)
+    if !Arch.feat_cssc
+    then DSL.ins I.CTZ [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |]
+    else (
+      DSL.ins I.RBIT [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |];
+      DSL.ins I.CLZ [| DSL.emit_reg i.res.(0); DSL.emit_reg i.res.(0) |])
+  | Lop (Intop (Iclz _)) ->
+    DSL.ins I.CLZ [| DSL.emit_reg i.res.(0); DSL.emit_reg i.arg.(0) |]
   | Lop
       (Intop
-        (( Iadd | Isub | Imul | Idiv | Iand | Ior | Ixor | Ilsl | Ilsr | Iasr
-         | Ipopcnt ) as op)) ->
+        ((Iadd | Isub | Imul | Idiv | Iand | Ior | Ixor | Ilsl | Ilsr | Iasr) as
+        op)) ->
     let instr = instr_for_int_operation op in
     DSL.ins instr
       [| DSL.emit_reg i.res.(0);
@@ -2208,10 +2223,12 @@ let end_assembly () =
           let lbl = label_to_asm_label ~section:Data lbl in
           D.type_label ~ty:Object lbl;
           D.label lbl);
-      efa_8 = (fun n -> D.uint8 (Numbers.Uint8.of_nonnegative_int_exn n));
-      efa_16 = (fun n -> D.uint16 (Numbers.Uint16.of_nonnegative_int_exn n));
-      (* CR sspies: for some reason, we can get negative numbers here *)
-      efa_32 = (fun n -> D.int32 n);
+      efa_i8 = (fun n -> D.int8 n);
+      efa_i16 = (fun n -> D.int16 n);
+      efa_i32 = (fun n -> D.int32 n);
+      efa_u8 = (fun n -> D.uint8 n);
+      efa_u16 = (fun n -> D.uint16 n);
+      efa_u32 = (fun n -> D.uint32 n);
       efa_word = (fun n -> D.targetint (Targetint.of_int_exn n));
       efa_align = (fun n -> D.align ~fill_x86_bin_emitter:Zero ~bytes:n);
       efa_label_rel =
