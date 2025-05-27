@@ -626,7 +626,7 @@ let space ~bytes = if bytes > 0 then emit (Space { bytes })
    reason is that we sometimes want to emit strings that have an explicit null
    byte added. *)
 let string ?comment str =
-  if String.length str <> 0 then emit (Bytes { str; comment })
+  emit (Bytes { str; comment })
 
 let global symbol = emit (Global (Asm_symbol.encode symbol))
 
