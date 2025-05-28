@@ -481,6 +481,348 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
   in
   ()
 
+type immediate_or_pointer =
+  | Immediate
+  | Pointer
+
+let tag_bit = function Immediate -> 1 | Pointer -> 0
+
+let create_immediate_or_block ~reference ~parent_proto_die ~name ~immediate_type
+    ~pointer_type =
+  let value_size = Arch.size_addr in
+  let int_or_ptr_structure =
+    Proto_die.create ~reference ~parent:(Some parent_proto_die)
+      ~attribute_values:
+        [DAH.create_byte_size_exn ~byte_size:value_size; DAH.create_name name]
+      ~tag:Dwarf_tag.Structure_type ()
+  in
+  (* We create the reference early to use it already for the variant, before we
+     allocate the child die for the discriminant below. *)
+  let discriminant_reference = Proto_die.create_reference () in
+  let variant_part_immediate_or_pointer =
+    Proto_die.create ~parent:(Some int_or_ptr_structure)
+      ~attribute_values:
+        [DAH.create_discr ~proto_die_reference:discriminant_reference]
+      ~tag:Dwarf_tag.Variant_part ()
+  in
+  let enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:value_size]
+      ()
+  in
+  List.iter
+    (fun elem ->
+      Proto_die.create_ignore ~parent:(Some enum_die) ~tag:Dwarf_tag.Enumerator
+        ~attribute_values:
+          [DAH.create_const_value ~value:(Int64.of_int (tag_bit elem))]
+        ())
+    [Immediate; Pointer];
+  let _discriminant_die =
+    Proto_die.create ~reference:discriminant_reference
+      ~parent:(Some variant_part_immediate_or_pointer)
+      ~attribute_values:
+        [ DAH.create_type ~proto_die:enum_die;
+          DAH.create_bit_size (Numbers.Int8.of_int_exn 1);
+          DAH.create_data_bit_offset ~bit_offset:(Numbers.Int8.of_int_exn 0);
+          DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
+          (* Making a member artificial will mark the struct as artificial,
+             which will not print the enum name when the struct is a variant. *)
+          DAH.create_artificial () ]
+      ~tag:Dwarf_tag.Member ()
+  in
+  let variant_immediate_case =
+    Proto_die.create ~parent:(Some variant_part_immediate_or_pointer)
+      ~tag:Dwarf_tag.Variant
+      ~attribute_values:[DAH.create_discr_value ~value:(Int64.of_int 1)]
+      ()
+  in
+  (* Unlike in the code above, we include the tag bit in this representation. *)
+  Proto_die.create_ignore ~parent:(Some variant_immediate_case)
+    ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type ~proto_die:immediate_type;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0) ]
+    ();
+  let variant_pointer =
+    Proto_die.create ~parent:(Some variant_part_immediate_or_pointer)
+      ~tag:Dwarf_tag.Variant
+      ~attribute_values:[DAH.create_discr_value ~value:(Int64.of_int 0)]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some variant_pointer) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type ~proto_die:pointer_type;
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0) ]
+    ()
+
+(*= The runtime representation of polymorphic variants is different from that
+    of regular blocks. At runtime, the variant type
+
+      [type t = [`Foo | `Bar of int | `Baz of int * string]]
+
+    is represented as follows:
+
+    For the constant constructors (i.e., here [`Foo]), the representation is
+    the hash value of the constructor name tagged as an immediate. Specifically,
+    it is [(Btype.hash_variant name) * 2 + 1], where [name] does not include the
+    backtick.
+
+    For the variable constructors (i.e., here [`Bar] and [`Baz]), the
+    representation is a pointer to a block with the following layout:
+
+      ---------------------------------------------------------
+      | tagged constructor hash | arg 1 | arg 2 | ... | arg n |
+      ---------------------------------------------------------
+
+    In other words, the first field (offset 0) is the hash of the constructor
+    name (tagged as in the constant constructor case) and the subsequent fields
+    store the arguments of the constructor.
+*)
+
+let create_poly_variant_die ~reference ~parent_proto_die ~name constructors =
+  let enum_constructor_for_poly_variant ~parent name =
+    let hash = Btype.hash_variant name in
+    let tagged_constructor_hash =
+      Int64.add (Int64.mul (Int64.of_int hash) 2L) 1L
+    in
+    Proto_die.create_ignore ~parent:(Some parent) ~tag:Dwarf_tag.Enumerator
+      ~attribute_values:
+        [ DAH.create_const_value ~value:tagged_constructor_hash;
+          DAH.create_name ("`" ^ name) ]
+      ();
+    tagged_constructor_hash
+  in
+  let simple_constructors, complex_constructors =
+    List.partition_map
+      (fun ({ pv_constr_name; pv_constr_args } :
+             _ Type_shape.Type_shape.poly_variant_constructor) ->
+        match pv_constr_args with
+        | [] -> Left pv_constr_name
+        | _ :: _ -> Right (pv_constr_name, pv_constr_args))
+      constructors
+  in
+  (* For the simple constructors, it is enough to create an enum with the right
+     numbers for the constructor labels. *)
+  let simple_constructor_enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:Arch.size_addr]
+      ()
+  in
+  List.iter
+    (fun constr_name ->
+      ignore
+        (enum_constructor_for_poly_variant ~parent:simple_constructor_enum_die
+           constr_name))
+    simple_constructors;
+  (* For the complex constructors, we create a reference to a structure. The
+     structure uses the first field in the block to discriminate between the
+     different constructor cases. *)
+  let complex_constructor_enum_die =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Enumeration_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:Arch.size_addr]
+      ()
+  in
+  let complex_constructors_struct =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:[DAH.create_byte_size_exn ~byte_size:Arch.size_addr]
+      (* CR sspies: This is not really the width of the structure type, but the
+         code seems to work fine. The true width of the block depends on how
+         many arguments the constructor has. *)
+      ()
+  in
+  let constructor_discriminant_ref = Proto_die.create_reference () in
+  let variant_part_constructor =
+    Proto_die.create ~parent:(Some complex_constructors_struct)
+      ~attribute_values:
+        [DAH.create_discr ~proto_die_reference:constructor_discriminant_ref]
+      ~tag:Dwarf_tag.Variant_part ()
+  in
+  Proto_die.create_ignore ~reference:constructor_discriminant_ref
+    ~parent:(Some complex_constructors_struct) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type ~proto_die:complex_constructor_enum_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0) ]
+    ();
+  List.iter
+    (fun (name, args) ->
+      let tag_value =
+        enum_constructor_for_poly_variant ~parent:complex_constructor_enum_die
+          name
+      in
+      let constructor_variant =
+        Proto_die.create ~parent:(Some variant_part_constructor)
+          ~tag:Dwarf_tag.Variant
+          ~attribute_values:[DAH.create_discr_value ~value:tag_value]
+          ()
+      in
+      List.iteri
+        (fun i arg ->
+          Proto_die.create_ignore ~parent:(Some constructor_variant)
+            ~tag:Dwarf_tag.Member
+            ~attribute_values:
+              [ DAH.create_type_from_reference ~proto_die_reference:arg;
+                DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+                (* We add an offset of [Arch.size_addr], because the first field
+                   in the block stores the hash of the constructor name. *)
+                DAH.create_data_member_location_offset
+                  ~byte_offset:(Int64.of_int ((i + 1) * Arch.size_addr)) ]
+            ())
+        args)
+    complex_constructors;
+  let ptr_case_pointer_to_structure =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Reference_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+          DAH.create_type ~proto_die:complex_constructors_struct ]
+      ()
+  in
+  create_immediate_or_block ~reference ~name ~parent_proto_die
+    ~immediate_type:simple_constructor_enum_die
+    ~pointer_type:ptr_case_pointer_to_structure
+
+let create_exception_die ~reference ~fallback_value_die ~parent_proto_die ~name
+    =
+  let exn_structure =
+    Proto_die.create ~reference ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+          DAH.create_name name ]
+      ()
+  in
+  let constructor_ref = Proto_die.create_reference () in
+  Proto_die.create_ignore ~parent:(Some exn_structure) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:constructor_ref;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:0L;
+        DAH.create_name "exn" ]
+    ();
+  Proto_die.create_ignore ~parent:(Some exn_structure) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:fallback_value_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:0L;
+        DAH.create_name "raw" ]
+    ();
+  (* CR sspies: Instead of printing the raw exception, it would be nice if we
+     could encode this as a variant. Unfortunately, the DWARF LLDB support is
+     not expressive enough to support a variant, whose discriminant is not
+     directly a member of the surrounding struct. Moreover, for the number of
+     arguments, we would need support for some form of arrays without a pointer
+     indirection. *)
+  let structure_type =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+          DAH.create_ocaml_offset_record_from_pointer
+            ~value:(Int64.of_int (-Arch.size_addr)) ]
+      ()
+  in
+  Proto_die.create_ignore ~reference:constructor_ref
+    ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Reference_type
+    ~attribute_values:
+      [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_type ~proto_die:structure_type ]
+    ();
+  let tag_type =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:1;
+          DAH.create_encoding ~encoding:Encoding_attribute.signed ]
+      ~tag:Dwarf_tag.Base_type ()
+  in
+  let exception_tag_discriminant_ref = Proto_die.create_reference () in
+  Proto_die.create_ignore ~parent:(Some structure_type)
+    ~reference:exception_tag_discriminant_ref ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type ~proto_die:tag_type;
+        DAH.create_byte_size_exn ~byte_size:1;
+        DAH.create_data_member_location_offset ~byte_offset:(Int64.of_int 0);
+        DAH.create_artificial () ]
+    ();
+  let variant_part_exception =
+    Proto_die.create ~parent:(Some structure_type)
+      ~attribute_values:
+        [DAH.create_discr ~proto_die_reference:exception_tag_discriminant_ref]
+      ~tag:Dwarf_tag.Variant_part ()
+  in
+  let exception_without_arguments_variant =
+    Proto_die.create ~parent:(Some variant_part_exception)
+      ~tag:Dwarf_tag.Variant
+      ~attribute_values:[DAH.create_discr_value ~value:248L]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some exception_without_arguments_variant)
+    ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:fallback_value_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:8L;
+        DAH.create_name "name" ]
+    ();
+  Proto_die.create_ignore ~parent:(Some exception_without_arguments_variant)
+    ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:fallback_value_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:16L;
+        DAH.create_name "id" ]
+    ();
+  let exception_with_arguments_variant =
+    Proto_die.create ~parent:(Some variant_part_exception)
+      ~tag:Dwarf_tag.Variant
+      ~attribute_values:[DAH.create_discr_value ~value:0L]
+      ()
+  in
+  let inner_exn_block =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Structure_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:(3 * Arch.size_addr);
+          DAH.create_ocaml_offset_record_from_pointer ~value:(-8L) ]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some inner_exn_block) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:fallback_value_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:8L;
+        DAH.create_name "name" ]
+    ();
+  Proto_die.create_ignore ~parent:(Some inner_exn_block) ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference ~proto_die_reference:fallback_value_die;
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:16L;
+        DAH.create_name "id" ]
+    ();
+  let outer_reference =
+    Proto_die.create ~parent:(Some parent_proto_die)
+      ~tag:Dwarf_tag.Reference_type
+      ~attribute_values:
+        [ DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+          DAH.create_type_from_reference
+            ~proto_die_reference:(Proto_die.reference inner_exn_block) ]
+      ()
+  in
+  Proto_die.create_ignore ~parent:(Some exception_with_arguments_variant)
+    ~tag:Dwarf_tag.Member
+    ~attribute_values:
+      [ DAH.create_type_from_reference
+          ~proto_die_reference:(Proto_die.reference outer_reference);
+        DAH.create_byte_size_exn ~byte_size:Arch.size_addr;
+        DAH.create_data_member_location_offset ~byte_offset:8L ]
+    ()
+
 let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   let structure_type =
     Proto_die.create ~parent:(Some parent_proto_die)
@@ -532,8 +874,8 @@ let predef_type_to_vec128_split (m : Type_shape.Type_shape.Predef.t) =
   | Int64x2 -> Some Int64x2
   | Float32x4 -> Some Float32x4
   | Float64x2 -> Some Float64x2
-  | Array | Char | Unboxed _ | Extension_constructor | Float | String | Lazy_t
-  | Bytes | Floatarray | Int | Int32 | Int64 | Nativeint ->
+  | Array | Char | Unboxed _ | Extension_constructor | Float | Float32 | String
+  | Lazy_t | Bytes | Floatarray | Exception | Int | Int32 | Int64 | Nativeint ->
     None
 
 let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
@@ -661,6 +1003,9 @@ let rec type_shape_layout_to_die (type_shape : Layout.t Type_shape.Type_shape.t)
         Misc.fatal_errorf
           "only base layouts supported, but found product layout %s" layout_name
       )
+    | Ts_variant (fields, _) ->
+      poly_variant_die ~reference ~name ~parent_proto_die ~fallback_value_die
+        ~constructors:fields
     | Ts_arrow (arg, ret) ->
       type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
         ~fallback_value_die arg ret);
@@ -717,8 +1062,10 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
           DAH.create_type_from_reference ~proto_die_reference:base_ref;
           DAH.create_name name ]
       ()
-  | ( ( Bytes | Extension_constructor | Float | Floatarray | Int | Int32 | Int64
-      | Lazy_t | Nativeint | String ),
+  | Exception, _ ->
+    create_exception_die ~reference ~fallback_value_die ~parent_proto_die ~name
+  | ( ( Bytes | Extension_constructor | Float | Float32 | Floatarray | Int
+      | Int32 | Int64 | Lazy_t | Nativeint | String ),
       _ ) ->
     create_base_layout_type ~reference Value ~name ~parent_proto_die
       ~fallback_value_die
@@ -855,6 +1202,26 @@ and type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
   create_typedef_die ~reference ~parent_proto_die ~name
     ~child_die:fallback_value_die
 
+and poly_variant_die ~reference ~parent_proto_die ~fallback_value_die ~name
+    ~constructors =
+  let constructors_with_references =
+    List.map
+      (fun ({ pv_constr_name; pv_constr_args } :
+             _ Type_shape.Type_shape.poly_variant_constructor) :
+           _ Type_shape.Type_shape.poly_variant_constructor ->
+        { pv_constr_name;
+          pv_constr_args =
+            List.map
+              (fun arg ->
+                type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
+                  arg)
+              pv_constr_args
+        })
+      constructors
+  in
+  create_poly_variant_die ~reference ~parent_proto_die ~name
+    constructors_with_references
+
 let rec flatten_to_base_sorts (sort : Jkind_types.Sort.Const.t) :
     Jkind_types.Sort.base list =
   match sort with
@@ -881,6 +1248,7 @@ let rec flatten_shape
   | Ts_unboxed_tuple shapes -> List.concat_map flatten_shape shapes
   | Ts_predef _ -> [`Known type_shape]
   | Ts_arrow _ -> [`Known type_shape]
+  | Ts_variant _ -> [`Known type_shape]
   | Ts_other layout ->
     let base_layouts = flatten_to_base_sorts layout in
     List.map (fun layout -> `Unknown layout) base_layouts

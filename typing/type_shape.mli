@@ -22,6 +22,7 @@ module Type_shape : sig
       | Char
       | Extension_constructor
       | Float
+      | Float32
       | Floatarray
       | Int
       | Int32
@@ -35,6 +36,7 @@ module Type_shape : sig
       | Int64x2
       | Float32x4
       | Float64x2
+      | Exception
       | Unboxed of unboxed
 
     val to_string : t -> string
@@ -46,6 +48,19 @@ module Type_shape : sig
 
   type without_layout
 
+  type 'a poly_variant_constructor =
+    { pv_constr_name : string;
+      pv_constr_args : 'a list
+    }
+
+  (* CR sspies: This is incorrect. We should follow the printing code in [printtyp.ml]
+     for determining which kind of variant we are looking at. For the intersections, we
+     also have to add the boolean to indicate that the type constructor could be intersected
+     with one that has no type argument. *)
+  type poly_variant_kind =
+    | Open
+    | Closed
+
   type 'a t =
     | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
     | Ts_tuple of 'a t list
@@ -53,6 +68,7 @@ module Type_shape : sig
     | Ts_var of string option * 'a
     | Ts_predef of Predef.t * without_layout t list
     | Ts_arrow of without_layout t * without_layout t
+    | Ts_variant of 'a t poly_variant_constructor list * poly_variant_kind
     | Ts_other of 'a
 
   val shape_layout : Layout.t t -> Layout.t
