@@ -22,6 +22,7 @@ module Type_shape = struct
       | Char
       | Extension_constructor
       | Float
+      | Float32
       | Floatarray
       | Int
       | Int32
@@ -35,6 +36,7 @@ module Type_shape = struct
       | Int64x2
       | Float32x4
       | Float64x2
+      | Exception
       (* Unboxed types *)
       | Unboxed of unboxed
 
@@ -59,6 +61,7 @@ module Type_shape = struct
       | Char -> "char"
       | Extension_constructor -> "extension_constructor"
       | Float -> "float"
+      | Float32 -> "float32"
       | Floatarray -> "floatarray"
       | Int -> "int"
       | Int32 -> "int32"
@@ -72,6 +75,7 @@ module Type_shape = struct
       | Int64x2 -> "int64x2"
       | Float32x4 -> "float32x4"
       | Float64x2 -> "float64x2"
+      | Exception -> "exn"
       | Unboxed u -> unboxed_to_string u ^ "#"
 
     let unboxed_of_string = function
@@ -94,6 +98,7 @@ module Type_shape = struct
       | "char" -> Some Char
       | "extension_constructor" -> Some Extension_constructor
       | "float" -> Some Float
+      | "float32" -> Some Float32
       | "floatarray" -> Some Floatarray
       | "int" -> Some Int
       | "int32" -> Some Int32
@@ -107,6 +112,7 @@ module Type_shape = struct
       | "float32x4" -> Some Float32x4
       | "float64x2" -> Some Float64x2
       | "string" -> Some String
+      | "exn" -> Some Exception
       | s -> (
         match unboxed_of_string s with
         | Some u -> Some (Unboxed u)
@@ -132,6 +138,7 @@ module Type_shape = struct
       | Char -> Layout.Base Value
       | Extension_constructor -> Layout.Base Value
       | Float -> Layout.Base Value
+      | Float32 -> Layout.Base Value
       | Floatarray -> Layout.Base Value
       | Int -> Layout.Base Value
       | Int32 -> Layout.Base Value
@@ -145,10 +152,20 @@ module Type_shape = struct
       | Int64x2 -> Layout.Base Value
       | Float32x4 -> Layout.Base Value
       | Float64x2 -> Layout.Base Value
+      | Exception -> Layout.Base Value
       | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
   end
 
   type without_layout = Layout_to_be_determined
+
+  type 'a poly_variant_constructor =
+    { pv_constr_name : string;
+      pv_constr_args : 'a list
+    }
+
+  type poly_variant_kind =
+    | Open
+    | Closed
 
   type 'a t =
     | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
@@ -157,6 +174,7 @@ module Type_shape = struct
     | Ts_var of string option * 'a
     | Ts_predef of Predef.t * without_layout t list
     | Ts_arrow of without_layout t * without_layout t
+    | Ts_variant of 'a t poly_variant_constructor list * poly_variant_kind
     | Ts_other of 'a
 
   let rec shape_layout (sh : Layout.t t) =
@@ -167,6 +185,7 @@ module Type_shape = struct
     | Ts_var (_, ly) -> ly
     | Ts_predef (predef, _) -> Predef.predef_to_layout predef
     | Ts_arrow _ -> Layout.Base Value
+    | Ts_variant _ -> Layout.Base Value
     | Ts_other ly -> ly
 
   (* Similarly to [value_kind], we track a set of visited types to avoid cycles
@@ -213,9 +232,26 @@ module Type_shape = struct
         (* Objects are currently not supported in the debugger. *)
       | Tlink _ | Tsubst _ ->
         Misc.fatal_error "linking and substitution should not reach this stage."
-      | Tvariant _ ->
-        Ts_other
-          Layout_to_be_determined (* CR sspies: Support polymorphic variants. *)
+      | Tvariant rd ->
+        let row_fields = Types.row_fields rd in
+        let row_kind = if Types.row_closed rd then Closed else Open in
+        let row_fields =
+          List.concat_map
+            (fun (name, desc) ->
+              match Types.row_field_repr desc with
+              | Types.Rpresent (Some ty) ->
+                [ { pv_constr_name = name;
+                    pv_constr_args =
+                      [of_type_expr_go ~depth ~visited ty uid_of_path]
+                  } ]
+              | Types.Rpresent None ->
+                [{ pv_constr_name = name; pv_constr_args = [] }]
+              | Types.Rabsent -> [] (* we filter out absent constructors *)
+              | Types.Reither (_, args, _) ->
+                [{ pv_constr_name = name; pv_constr_args = map_expr_list args }])
+            row_fields
+        in
+        Ts_variant (row_fields, row_kind)
       | Tarrow (_, arg, ret, _) ->
         Ts_arrow
           ( of_type_expr_go ~depth ~visited arg uid_of_path,
@@ -274,6 +310,20 @@ module Type_shape = struct
         "predef has layout %a, but is expected to have layout %a" Layout.format
         (Predef.predef_to_layout predef)
         Layout.format layout
+    | Ts_variant (fields, kind), Base Value ->
+      Ts_variant
+        ( List.map
+            (fun { pv_constr_name; pv_constr_args } ->
+              { pv_constr_name;
+                pv_constr_args =
+                  List.map
+                    (shape_with_layout ~layout:(Layout.Base Value))
+                    pv_constr_args
+              })
+            fields,
+          kind )
+    | Ts_variant _, _ ->
+      Misc.fatal_errorf "polymorphic variant must have layout value"
     | Ts_other Layout_to_be_determined, _ -> Ts_other layout
 
   let rec print : type a. Format.formatter -> a t -> unit =
@@ -309,6 +359,18 @@ module Type_shape = struct
         name
     | Ts_arrow (arg, ret) ->
       Format.fprintf ppf "Ts_arrow (%a, %a)" print arg print ret
+    | Ts_variant (fields, kind) ->
+      Format.fprintf ppf "Ts_variant %s (%a)"
+        (match kind with Closed -> "closed" | Open -> "open")
+        (Format.pp_print_list
+           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+           (fun ppf { pv_constr_name; pv_constr_args } ->
+             Format.fprintf ppf "%s (%a)" pv_constr_name
+               (Format.pp_print_list
+                  ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+                  print)
+               pv_constr_args))
+        fields
     | Ts_other _ -> Format.fprintf ppf "Ts_other"
 
 
@@ -334,6 +396,16 @@ module Type_shape = struct
       | Ts_predef (predef, shape_list) -> Ts_predef (predef, shape_list)
       | Ts_arrow (arg, ret) ->
         Ts_arrow (replace_tvar ~pairs arg, replace_tvar ~pairs ret)
+      | Ts_variant (fields, kind) ->
+        Ts_variant
+          ( List.map
+              (fun field ->
+                { field with
+                  pv_constr_args =
+                    List.map (replace_tvar ~pairs) field.pv_constr_args
+                })
+              fields,
+            kind )
       | Ts_other ly -> Ts_other ly)
 
   module With_layout = struct
@@ -746,8 +818,33 @@ let rec type_name : 'a. 'a Type_shape.t -> _ =
     let arg_name = type_name ~load_decls_from_cms shape1 in
     let ret_name = type_name ~load_decls_from_cms shape2 in
     arg_name ^ " -> " ^ ret_name
-  | Ts_constr ((type_uid, _type_path), shapes) -> (
-    match[@warning "-4"] find_in_type_decls type_uid with
+  | Ts_variant (fields, kind) ->
+    let field_constructors =
+      List.map
+        (fun { Type_shape.pv_constr_name; pv_constr_args } ->
+          let arg_types =
+            List.map
+              (fun sh -> type_name sh)
+              pv_constr_args
+          in
+          let arg_type_string = String.concat " ∩ " arg_types in
+          (* CR sspies: Currently, our LLDB fork removes ampersands, because
+             it's elsewhere used for printing references. Would be great to fix
+             this in the future. For now we use an intersection. *)
+          let arg_type_string =
+            if List.length pv_constr_args = 0
+            then ""
+            else " of " ^ arg_type_string
+          in
+          "`" ^ pv_constr_name ^ arg_type_string)
+        fields
+    in
+    let prefix = match kind with Closed -> "" | Open -> ">" in
+    Format.asprintf "[%s %s ]" prefix (String.concat " | " field_constructors)
+  | Ts_constr ((type_uid, type_path, _), shapes) -> (
+    match[@warning "-4"]
+      find_in_type_decls type_uid type_path ~load_decls_from_cms
+    with
     | None -> "unknown"
     | Some { definition = Tds_other; _ } -> "unknown"
     | Some type_decl_shape ->
