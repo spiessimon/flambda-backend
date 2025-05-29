@@ -61,6 +61,7 @@ end) = struct
     | NAlias of delayed_nf
     | NProj of nf * Item.t
     | NLeaf
+    | NType_decl of delayed_nf_tds
     | NComp_unit of string
     | NError of string
 
@@ -84,6 +85,8 @@ end) = struct
    *)
   and delayed_nf = Thunk of local_env * t
 
+  and delayed_nf_tds = Thunk_tds of local_env * tds
+
   and local_env = delayed_nf option Ident.Map.t
   (* When reducing in the body of an abstraction [Abs(x, body)], we
      bind [x] to [None] in the environment. [Some v] is used for
@@ -101,6 +104,12 @@ end) = struct
       if equal t1 t2 then equal_local_env l1 l2
       else false
 
+  and equal_delayed_nf_tds t1 t2 =
+    match t1, t2 with
+    | Thunk_tds (l1, t1), Thunk_tds (l2, t2) ->
+      if Shape.equal_tds t1 t2 then equal_local_env l1 l2
+      else false
+
   and equal_nf_desc d1 d2 =
     match d1, d2 with
     | NVar v1, NVar v2 -> Ident.equal v1 v2
@@ -113,6 +122,7 @@ end) = struct
       if equal_nf v1 v2 then equal_nf t1 t2
       else false
     | NLeaf, NLeaf -> true
+    | NType_decl tds1, NType_decl tds2 -> equal_delayed_nf_tds tds1 tds2
     | NStruct t1, NStruct t2 ->
       Item.Map.equal equal_delayed_nf t1 t2
     | NProj (t1, i1), NProj (t2, i2) ->
@@ -121,15 +131,16 @@ end) = struct
     | NComp_unit c1, NComp_unit c2 -> String.equal c1 c2
     | NAlias a1, NAlias a2 -> equal_delayed_nf a1 a2
     | NError e1, NError e2 -> String.equal e1 e2
-    | NVar _, (NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
-    | NLeaf, (NVar _ | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
-    | NApp _, (NVar _ | NLeaf | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
-    | NAbs _, (NVar _ | NLeaf | NApp _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
-    | NStruct _, (NVar _ | NLeaf | NApp _ | NAbs _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
-    | NProj _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NComp_unit _ | NAlias _ | NError _)
-    | NComp_unit _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NAlias _ | NError _)
-    | NAlias _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NError _)
-    | NError _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _)
+    | NVar _, (NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NLeaf, (NVar _ | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NApp _, (NVar _ | NLeaf | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NAbs _, (NVar _ | NLeaf | NApp _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NStruct _, (NVar _ | NLeaf | NApp _ | NAbs _ | NProj _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NProj _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NComp_unit _ | NAlias _ | NError _ | NType_decl _)
+    | NComp_unit _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NAlias _ | NError _ | NType_decl _)
+    | NAlias _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NError _ | NType_decl _)
+    | NError _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NType_decl _)
+    | NType_decl _, (NVar _ | NLeaf | NApp _ | NAbs _ | NStruct _ | NProj _ | NComp_unit _ | NAlias _ | NError _)
     -> false
 
   and equal_nf t1 t2 =
@@ -230,6 +241,7 @@ end) = struct
     ({fuel; global_env; local_env; _} as env) (t : t) =
     let reduce env t = reduce_ env t in
     let delay_reduce env t = Thunk (env.local_env, t) in
+    let delay_reduce_tds env tds = Thunk_tds (env.local_env, tds) in
     let return desc = { uid = t.uid; desc; approximated = t.approximated } in
     let rec force_aliases nf = match nf.desc with
       | NAlias delayed_nf ->
@@ -304,6 +316,7 @@ end) = struct
               reduce env res
           end
       | Leaf -> return NLeaf
+      | Type_decl tds -> return (NType_decl (delay_reduce_tds env tds))
       | Struct m ->
           let mnf = Item.Map.map (delay_reduce env) m in
           return (NStruct mnf)
@@ -343,6 +356,54 @@ end) = struct
     | NComp_unit s -> comp_unit ?uid s
     | NAlias nf -> alias ?uid (read_back_force nf)
     | NError t -> error ?uid t
+    | NType_decl tds ->
+      type_decl uid (read_back_tds env tds)
+
+  and read_back_tds env (tds: delayed_nf_tds) : tds =
+    let Thunk_tds (l, tds) = tds in
+    let env = { env with local_env = l } in
+    force_reduce_tds env tds
+
+  (* We currently do not match the delayed reduction strategy for type
+     declarations that is used for the other parts, and instead aggressively
+     reduce the occurrences of shapes in type declarations.
+    *)
+  and force_reduce_tds env ({path; definition; type_params}: tds) =
+    let def = match definition with
+    | Tds_other -> Tds_other
+    | Tds_alias sh -> Tds_alias (force_reduce_ts env sh)
+    | Tds_variant { simple_constructors; complex_constructors } ->
+      Tds_variant {
+        simple_constructors;
+        complex_constructors =
+          List.map
+            (Shape.complex_constructor_map
+              (fun (sh, ly) -> force_reduce_ts env sh, ly)
+            )
+          complex_constructors
+      }
+    | Tds_variant_unboxed { name; arg_name; arg_shape; arg_layout } ->
+      Tds_variant_unboxed { name; arg_name; arg_shape = force_reduce_ts env arg_shape; arg_layout }
+    | Tds_record { fields; kind } ->
+      Tds_record { fields = List.map (fun (name, sh, ly) -> name, force_reduce_ts env sh, ly) fields
+                 ; kind }
+    in
+    (* CR sspies: Does it even make sense to reduce in the type params? *)
+    { path; definition = def; type_params = List.map (force_reduce_ts env) type_params }
+
+  and force_reduce_ts env (ts: 'a ts) =
+    match ts with
+    | Ts_constr ((uid, sh, ly), args) ->
+      Ts_constr ((uid, read_back env (reduce__ env sh), ly), args)
+    | Ts_tuple ts -> Ts_tuple (List.map (force_reduce_ts env) ts)
+    | Ts_unboxed_tuple ts -> Ts_unboxed_tuple (List.map (force_reduce_ts env) ts)
+    | Ts_var (name, ly) -> Ts_var (name, ly)
+    | Ts_predef (predef, ts) -> Ts_predef (predef, List.map (force_reduce_ts env) ts)
+    | Ts_arrow (arg, ret) -> Ts_arrow (force_reduce_ts env arg, force_reduce_ts env ret)
+    | Ts_variant (fields, kind) -> Ts_variant (List.map (force_reduce_field env) fields, kind)
+    | Ts_other ly -> Ts_other ly
+  and force_reduce_field env field =
+    { field with pv_constr_args = List.map (force_reduce_ts env) field.pv_constr_args }
 
   (* Sharing the memo tables is safe at the level of a compilation unit since
     idents should be unique *)
@@ -372,6 +433,8 @@ end) = struct
     | NComp_unit _ -> true
     | NError _ -> false
     | NLeaf -> false
+    (* CR sspies: Is this correct? *)
+    | NType_decl _ -> false
 
   let rec reduce_aliases_for_uid env (nf : nf) =
     match nf with

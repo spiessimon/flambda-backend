@@ -68,11 +68,11 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
   in
   let debug_print_shapes_and_decls = false in
   let print_binder_shape ppf
-      (type_shape : Jkind_types.Sort.Const.t Type_shape.Type_shape.t) =
+      (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
     Type_shape.Type_shape.With_layout.print ppf type_shape;
     Format.fprintf ppf " ";
     Jkind_types.Sort.Const.format ppf
-      (Type_shape.Type_shape.shape_layout type_shape)
+      (Shape.shape_layout type_shape)
   in
   if debug_print_shapes_and_decls
   then (
@@ -80,7 +80,7 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
       Shape.Uid.Tbl.to_list uid_tbl |> Shape.Uid.Map.of_list
     in
     Format.eprintf "all_type_decls=%a\n%!"
-      (Shape.Uid.Map.print Type_shape.Type_decl_shape.print)
+      (Shape.Uid.Map.print Shape.print_tds)
       (to_map Type_shape.all_type_decls);
     Format.eprintf "all_type_shapes=%a\n%!"
       (Shape.Uid.Map.print print_binder_shape)

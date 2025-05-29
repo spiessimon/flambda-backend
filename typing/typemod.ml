@@ -3479,6 +3479,9 @@ and type_structure ?(toplevel = None) funct_body anchor env sstr =
     let (items, sg, shape_map, final_env) =
       type_struct env Shape.Map.empty sstr [] [] toplevel_sig
     in
+    (* CR sspies: Enable this to print a map of shapes that we have accumulated. *)
+    (*= let shape_reduce = Shape_reduce.local_reduce Env.empty in
+    Format.eprintf "shape map: %a\n" (Shape.Map.print shape_reduce) shape_map; *)
     let str = { str_items = items; str_type = sg; str_final_env = final_env } in
     Cmt_format.set_saved_types
       (Cmt_format.Partial_structure str :: previous_saved_types);

@@ -2946,6 +2946,9 @@ let initial =
     Type_shape.add_to_type_decls (Pident type_ident) decl (fun path ->
       let type_in_env = find_type path initial_env in
       Some type_in_env.type_uid
+    ) (fun path ->
+      let shape = shape_of_path ~namespace:Type initial_env path in
+      Some shape
     );
   ) added_types;
   initial_env
