@@ -124,6 +124,108 @@ module Item : sig
   module Map : Map.S with type key = t
 end
 
+
+module Layout = Jkind_types.Sort.Const
+type base_layout = Jkind_types.Sort.base
+
+
+module Predef : sig
+  type unboxed =
+    | Unboxed_float
+    | Unboxed_float32
+    | Unboxed_nativeint
+    | Unboxed_int64
+    | Unboxed_int32
+    | Unboxed_float32x4
+    | Unboxed_float64x2
+    | Unboxed_int8x16
+    | Unboxed_int16x8
+    | Unboxed_int32x4
+    | Unboxed_int64x2
+
+  type t =
+    | Array
+    | Bytes
+    | Char
+    | Extension_constructor
+    | Float
+    | Float32
+    | Floatarray
+    | Int
+    | Int32
+    | Int64
+    | Lazy_t
+    | Nativeint
+    | String
+    | Int8x16
+    | Int16x8
+    | Int32x4
+    | Int64x2
+    | Float32x4
+    | Float64x2
+    | Exception
+    | Unboxed of unboxed
+
+  val to_string : t -> string
+
+  val of_string : string -> t option
+
+  val unboxed_type_to_base_layout : unboxed -> base_layout
+
+  val predef_to_layout : t -> Layout.t
+end
+
+
+
+(* Unlike in [types.ml], we use [base_layout] entries here, because we can
+   represent flattened floats simply as float64 in the debugger.  *)
+type mixed_product_shape = base_layout array
+
+and constructor_representation =
+  | Constructor_uniform_value
+  | Constructor_mixed of mixed_product_shape
+
+
+type 'a complex_constructor =
+  { name : string;
+    kind : constructor_representation;
+    args : 'a complex_constructor_arguments list
+  }
+
+and 'a complex_constructor_arguments =
+  { field_name : string option;
+    field_value : 'a
+  }
+
+
+type record_kind =
+  | Record_unboxed
+      (** [Record_unboxed] is the case for single-field records declared with
+          [@@unboxed], whose runtime representation is simply its contents
+          without any indirection. *)
+  | Record_unboxed_product
+      (** [Record_unboxed_product] is the truly unboxed record that corresponds to
+          [#{ ... }]. *)
+  | Record_boxed
+  | Record_mixed of mixed_product_shape
+  | Record_floats
+      (** Basically the same as [Record_mixed], but we don't reorder the fields. *)
+
+type without_layout = Layout_to_be_determined
+
+type 'a poly_variant_constructor =
+  { pv_constr_name : string;
+    pv_constr_args : 'a list
+  }
+
+(* CR sspies: This is incorrect. We should follow the printing code in [printtyp.ml]
+    for determining which kind of variant we are looking at. For the intersections, we
+    also have to add the boolean to indicate that the type constructor could be intersected
+    with one that has no type argument. *)
+type poly_variant_kind =
+  | Open
+  | Closed
+
 type var = Ident.t
 type t = private { hash: int; uid: Uid.t option; desc: desc; approximated: bool }
 and desc =
@@ -133,15 +235,82 @@ and desc =
   | Struct of t Item.Map.t
   | Alias of t
   | Leaf
+  | Type_decl of tds
   | Proj of t * Item.t
   | Comp_unit of string
   | Error of string
 
+(** For type substitution to work as expected, we store the layouts in the declaration
+    alongside the shapes instead of directly going for the substituted version. *)
+and tds_desc =
+  | Tds_variant of
+      { simple_constructors : string list;
+            (** The string is the name of the constructor. The runtime representation of
+              the constructor at index [i] in this list is [2 * i + 1]. See
+              [dwarf_type.ml] for more details. *)
+        complex_constructors :
+          (without_layout ts * Layout.t)
+          complex_constructor
+          list
+            (** All constructors in this category are represented as blocks. The index [i]
+              in the list indicates the tag at runtime. The length of the constructor
+              argument list [args] determines the size of the block. *)
+      }
+      (** Note that this variant representation split up variants into immediates
+        (simple constructors) and blocks (complex constructors). Thus, even though the
+        order is disturbed by separating them into two lists, the runtime shape is still
+        uniquely determined, because the two representations are disjoint. *)
+  | Tds_variant_unboxed of
+      { name : string;
+        arg_name : string option;
+            (** if this is [None], we are looking at a singleton tuple;
+              otherwise, it is a singleton record. *)
+        arg_shape : without_layout ts;
+        arg_layout : Layout.t
+      }
+      (** An unboxed variant corresponds to the [@@unboxed] annotation.
+        It must have a single, complex constructor. *)
+  | Tds_record of
+      { fields :
+          (string * without_layout ts * Layout.t) list;
+        kind : record_kind
+      }
+  | Tds_alias of without_layout ts
+  | Tds_other
+and tds =
+  { path : Path.t;
+    definition : tds_desc;
+    type_params : without_layout ts list
+  }
+
+and 'a ts =
+  | Ts_constr of (Uid.t * t * 'a) * without_layout ts list
+  | Ts_tuple of 'a ts list
+  | Ts_unboxed_tuple of 'a ts list
+  | Ts_var of string option * 'a
+  | Ts_predef of Predef.t * without_layout ts list
+  | Ts_arrow of without_layout ts * without_layout ts
+  | Ts_variant of 'a ts poly_variant_constructor list * poly_variant_kind
+  | Ts_other of 'a
+
+
 val print : Format.formatter -> t -> unit
+
+val print_tds : Format.formatter -> tds -> unit
+
+val print_ts : Format.formatter -> 'a ts -> unit
 
 val strip_head_aliases : t -> t
 
 val equal : t -> t -> bool
+val equal_tds : tds -> tds -> bool
+val equal_ts : ('a -> 'a -> bool) -> 'a ts -> 'a ts -> bool
+
+
+val complex_constructor_map : ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
+val shape_layout : Layout.t ts -> Layout.t
+val shape_with_layout : layout:Layout.t -> without_layout ts -> Layout.t ts
+
 
 (* Smart constructors *)
 
@@ -157,6 +326,7 @@ val error : ?uid:Uid.t -> string -> t
 val proj : ?uid:Uid.t -> t -> Item.t -> t
 val leaf : Uid.t -> t
 val leaf' : Uid.t option -> t
+val type_decl : Uid.t option -> tds -> t
 val no_fuel_left : ?uid:Uid.t -> t -> t
 val comp_unit : ?uid:Uid.t -> string -> t
 
@@ -173,6 +343,9 @@ module Map : sig
   type nonrec t = t Item.Map.t
 
   val empty : t
+
+  val print: (shape -> shape) -> Format.formatter -> t -> unit
+  (* CR sspies: Remove this again. Helpful for debugging. *)
 
   val add : t -> Item.t -> shape -> t
 

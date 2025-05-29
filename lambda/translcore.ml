@@ -1616,7 +1616,8 @@ and add_type_shapes_of_cases sort cases =
     let var_list = Typedtree.pat_bound_idents_full sort case.c_lhs in
     List.iter (fun (_ident, _loc, type_expr, var_uid, var_sort) ->
       Type_shape.add_to_type_shapes var_uid type_expr var_sort
-        (Typedecl.uid_of_path ~env:case.c_lhs.pat_env))
+        (Typedecl.uid_of_path ~env:case.c_lhs.pat_env)
+        (Typedecl.shape_of_path ~env:case.c_lhs.pat_env))
       var_list
   in
   List.iter add_case cases
@@ -1631,7 +1632,8 @@ and add_type_shapes_of_params params =
       let var_list = Typedtree.pat_bound_idents_full sort pattern in
       List.iter (fun (_ident, _loc, type_expr, var_uid, var_sort) ->
         Type_shape.add_to_type_shapes var_uid type_expr var_sort
-          (Typedecl.uid_of_path ~env:pattern.pat_env))
+          (Typedecl.uid_of_path ~env:pattern.pat_env)
+          (Typedecl.shape_of_path ~env:pattern.pat_env))
         var_list
     in
     List.iter add_param params
@@ -1645,7 +1647,9 @@ and add_type_shapes_of_patterns patterns =
     let var_list = Typedtree.pat_bound_idents_full sort value_binding.vb_pat in
     List.iter (fun (_ident, _loc, type_expr, var_uid, var_sort) ->
       Type_shape.add_to_type_shapes var_uid type_expr var_sort
-        (Typedecl.uid_of_path ~env:value_binding.vb_expr.exp_env))
+        (Typedecl.uid_of_path ~env:value_binding.vb_expr.exp_env)
+        (Typedecl.shape_of_path ~env:value_binding.vb_expr.exp_env)
+        )
       var_list
   in
   List.iter add_case patterns

@@ -521,6 +521,12 @@ let uid_of_path ~env path =
           if debug_uid_lookup then Format.eprintf "Uid from .cms -> uid=%a\n" Uid.print uid;
           Some uid
 
+let shape_of_path ~env path =
+  try
+    (Some (Env.shape_of_path ~namespace:Type env path))
+  with
+    Not_found -> None
+
 
 
 (* Makes sure a type is representable. When called with a type variable, will
@@ -840,12 +846,12 @@ let shape_map_labels =
     Shape.Map.add_label map ld_id ld_uid)
     Shape.Map.empty
 
-let shape_map_unboxed_labels =
+(*= let shape_map_unboxed_labels =
   List.fold_left (fun map { Types.ld_id; ld_uid; _} ->
     Shape.Map.add_unboxed_label map ld_id ld_uid)
-    Shape.Map.empty
+    Shape.Map.empty *)
 
-let shape_map_cstrs =
+(*= let shape_map_cstrs =
   List.fold_left (fun map { Types.cd_id; cd_uid; cd_args; _ } ->
     let cstr_shape_map =
       let label_decls =
@@ -857,7 +863,7 @@ let shape_map_cstrs =
     in
     Shape.Map.add_constr map cd_id
       @@ Shape.str ~uid:cd_uid cstr_shape_map)
-    (Shape.Map.empty)
+    (Shape.Map.empty) *)
 
 let transl_declaration env sdecl (id, uid) =
   (* Bind type parameters *)
@@ -1136,6 +1142,20 @@ let transl_declaration env sdecl (id, uid) =
       in
       set_private_row env sdecl.ptype_loc p decl
     end;
+    (* CR sspies: This is the wrong place to add the shapes of type declarations.
+       The layouts are not properly computed yet. We must add the further down
+       in [transl_type_decl].  *)
+    let typ_shape =
+      let uid = decl.type_uid in
+      Shape.type_decl (Some uid) (Type_shape.Type_decl_shape.of_type_declaration path decl (uid_of_path ~env) (shape_of_path ~env))
+      (*= match decl.typ_type.type_kind with
+      | Type_variant (cstrs, _, _) -> Shape.str ~uid (shape_map_cstrs cstrs)
+      | Type_record (labels, _, _) ->
+        Shape.str ~uid (shape_map_labels labels)
+      | Type_record_unboxed_product (labels, _, _) ->
+        Shape.str ~uid (shape_map_unboxed_labels labels)
+      | Type_abstract _ | Type_open -> Shape.type_decl (Some uid) ({ path = Pident (Ident.create_local "x"); definition = Tds_other; type_params = []}) *)
+    in
     let decl =
       {
         typ_id = id;
@@ -1150,16 +1170,6 @@ let transl_declaration env sdecl (id, uid) =
         typ_attributes = sdecl.ptype_attributes;
         typ_jkind_annotation = jkind_annotation
       }
-    in
-    let typ_shape =
-      let uid = decl.typ_type.type_uid in
-      match decl.typ_type.type_kind with
-      | Type_variant (cstrs, _, _) -> Shape.str ~uid (shape_map_cstrs cstrs)
-      | Type_record (labels, _, _) ->
-        Shape.str ~uid (shape_map_labels labels)
-      | Type_record_unboxed_product (labels, _, _) ->
-        Shape.str ~uid (shape_map_unboxed_labels labels)
-      | Type_abstract _ | Type_open -> Shape.leaf uid
     in
     decl, typ_shape
   end
@@ -3021,7 +3031,7 @@ let transl_type_decl env rec_flag sdecl_list =
   let final_env = add_types_to_env decls shapes env in
   (* Save the declarations in [Type_shape] for debug info. *)
     List.iter (fun (id, decl) ->
-      Type_shape.add_to_type_decls (Pident id) decl (uid_of_path ~env:final_env)
+      Type_shape.add_to_type_decls (Pident id) decl (uid_of_path ~env:final_env) (shape_of_path ~env:final_env)
     ) decls;
   (* Keep original declaration *)
   let final_decls =
