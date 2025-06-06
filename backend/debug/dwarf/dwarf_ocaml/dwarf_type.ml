@@ -973,7 +973,7 @@ module Layout = Jkind_types.Sort.Const
 
 let cache = Cache.create 16
 
-let rec type_shape_layout_to_die (type_shape : Layout.t Shape.ts)
+let rec type_shape_layout_to_die ?type_name (type_shape : Layout.t Shape.ts)
     ~parent_proto_die ~fallback_value_die =
   match Cache.find_opt cache type_shape with
   | Some reference -> reference
@@ -984,7 +984,7 @@ let rec type_shape_layout_to_die (type_shape : Layout.t Shape.ts)
        defined. That way [type myintlist = MyNil | MyCons of int * myintlist]
        will work correctly (as opposed to diverging). *)
     Cache.add cache type_shape reference;
-    let type_name = Type_shape.type_name type_shape ~load_decls_from_cms in
+    let type_name = Option.value type_name ~default:"unknown" in
     let layout_name =
       Format.asprintf "%a" Jkind_types.Sort.Const.format
         (Shape.shape_layout type_shape)
@@ -1388,7 +1388,7 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
      we seem to have no declaration, and we also do not know the layout. Perhaps
      we should simply not emit any DWARF information for this variable
      instead. *)
-  | Some type_shape -> (
+  | Some (type_shape, type_name) -> (
     let type_shape =
       match unboxed_projection with
       | None -> `Known type_shape
@@ -1400,10 +1400,10 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
     in
     match type_shape with
     | `Known type_shape ->
-      type_shape_layout_to_die type_shape ~parent_proto_die ~fallback_value_die
+      type_shape_layout_to_die ~type_name type_shape ~parent_proto_die ~fallback_value_die
     | `Unknown base_layout ->
       let reference = Proto_die.create_reference () in
       create_base_layout_type ~reference ~parent_proto_die
-        ~name:("unknown @ " ^ Jkind_types.Sort.to_string_base base_layout)
+        ~name:(type_name ^ " @ " ^ Jkind_types.Sort.to_string_base base_layout)
         ~fallback_value_die base_layout;
       reference)

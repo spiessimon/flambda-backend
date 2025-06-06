@@ -83,7 +83,7 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
       (Shape.Uid.Map.print Shape.print_tds)
       (to_map Type_shape.all_type_decls);
     Format.eprintf "all_type_shapes=%a\n%!"
-      (Shape.Uid.Map.print print_binder_shape)
+      (Shape.Uid.Map.print (fun ppf (shape, _) -> print_binder_shape ppf shape))
       (to_map Type_shape.all_type_shapes));
   { state;
     asm_directives;

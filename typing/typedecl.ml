@@ -3022,19 +3022,24 @@ let transl_type_decl env rec_flag sdecl_list =
   in
   (* Check re-exportation, updating [type_jkind] from the manifest *)
   let decls = List.map2 (check_abbrev new_env) sdecl_list decls in
-  (* Compute the final environment with variance and immediacy *)
+  (* Compute the almost final environment with variance and immediacy *)
   let pre_final_env = add_types_to_env decls env in
   (* Save the declarations in [Type_shape] for debug info. *)
   (* CR sspies: Is this approach of first adding the types, then computing the
      declaration shapes, and finally adding the types again (with shapes) the
      right one, or should they have some temporary shapes the first time around?
     *)
-  List.iter (fun (id, decl) ->
-    Type_shape.add_to_type_decls (Pident id) decl (uid_of_path ~env:pre_final_env) (shape_of_path ~env:pre_final_env)
-  ) decls;
-  let shapes = List.map (fun (_, decl) ->
-    let tds = Uid.Tbl.find Type_shape.all_type_decls decl.type_uid in
-    Shape.type_decl (Some decl.type_uid) tds) decls
+  let shapes = List.map (fun (_id, decl) ->
+    (* CR sspies: Could we also use [env] here instead of computing [pre_final_env]? *)
+    let uid = decl.type_uid in
+    let shape_tds = (Type_shape.Type_decl_shape.of_type_declaration decl (uid_of_path ~env:pre_final_env) (shape_of_path ~env:pre_final_env)) in
+    Uid.Tbl.add Type_shape.all_type_decls uid shape_tds;
+    (* CR sspies: There is a problem with simply adding these uids to a table. They
+    do not interact well with the shape reduction mechanism. The shape reduction
+    mechanism should be augmented to additionally take an environment to lookup declarations
+    when they are missing. Or we need to find another way to cut cycles here. *)
+    Shape.type_decl (Some uid) shape_tds
+  ) decls
   in
   let final_env = add_types_to_env decls ~shapes pre_final_env in
   (* Keep original declaration *)

@@ -278,7 +278,7 @@ and tds_desc =
   | Tds_alias of without_layout ts
   | Tds_other
 and tds =
-  { path : Path.t;
+  {
     definition : tds_desc;
     type_params : without_layout ts list
   }
