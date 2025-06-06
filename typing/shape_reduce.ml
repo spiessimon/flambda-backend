@@ -368,7 +368,7 @@ end) = struct
      declarations that is used for the other parts, and instead aggressively
      reduce the occurrences of shapes in type declarations.
     *)
-  and force_reduce_tds env ({path; definition; type_params}: tds) =
+  and force_reduce_tds env ({definition; type_params}: tds) =
     let def = match definition with
     | Tds_other -> Tds_other
     | Tds_alias sh -> Tds_alias (force_reduce_ts env sh)
@@ -389,7 +389,7 @@ end) = struct
                  ; kind }
     in
     (* CR sspies: Does it even make sense to reduce in the type params? *)
-    { path; definition = def; type_params = List.map (force_reduce_ts env) type_params }
+    { definition = def; type_params = List.map (force_reduce_ts env) type_params }
 
   and force_reduce_ts env (ts: 'a ts) =
     match ts with

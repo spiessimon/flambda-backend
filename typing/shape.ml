@@ -568,7 +568,7 @@ and tds_desc =
   | Tds_alias of without_layout ts
   | Tds_other
 and tds =
-  { path : Path.t;
+  {
     definition : tds_desc;
     type_params : without_layout ts list
   }
@@ -621,7 +621,6 @@ and equal t1 t2 =
   else equal_desc t1.desc t2.desc
 
 and equal_tds t1 t2 =
-  t1.path = t2.path && (* CR sspies: Replace the polymorphic equality here. *)
   equal_tds_desc t1.definition t2.definition &&
   List.equal (equal_ts equal_without_layout) t1.type_params t2.type_params
 
@@ -880,8 +879,7 @@ and print_field ppf
     shape
 
 and print_tds ppf t : unit =
-    Format.fprintf ppf "path=%a, definition=(%a)" Path.print t.path print_tds_desc
-      t.definition
+    print_tds_desc ppf t.definition
 
 and print_ts : type a. Format.formatter -> a ts -> unit =
   fun ppf -> function

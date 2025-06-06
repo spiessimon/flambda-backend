@@ -231,7 +231,7 @@ module Type_decl_shape = struct
         kind
       }
 
-  let of_type_declaration path (type_declaration : Types.type_declaration)
+  let of_type_declaration (type_declaration : Types.type_declaration)
       uid_of_path shape_of_path =
     let module TypesPredef = Predef in
     let open Shape in
@@ -326,7 +326,7 @@ module Type_decl_shape = struct
         (fun type_expr -> Type_shape.of_type_expr type_expr uid_of_path shape_of_path)
         type_declaration.type_params
     in
-    { path; definition; type_params }
+    { definition; type_params }
 
   (* CR sspies: This function instantiates the polymorphic variables in the type
      declarations. The corresponding functionality in the type checker is [Ctype.apply]
@@ -349,7 +349,6 @@ module Type_decl_shape = struct
       let replace_tvar (sh, ly) = Type_shape.replace_tvar ~pairs:subst sh, ly in
       let ret =
         { type_params = [];
-          path = t.path;
           definition =
             (match t.definition with
             | Tds_variant { simple_constructors; complex_constructors } ->
@@ -384,41 +383,23 @@ module Type_decl_shape = struct
       ret
     | false ->
       (* CR tnowak: investigate *)
-      { type_params = []; path = t.path; definition = Tds_other }
+      { type_params = []; definition = Tds_other }
 end
 
 let (all_type_decls : Shape.tds Uid.Tbl.t) = Uid.Tbl.create 16
 
-let (all_type_shapes : Shape.Layout.t Shape.ts Uid.Tbl.t) = Uid.Tbl.create 16
+let (all_type_shapes : (Shape.Layout.t Shape.ts * string) Uid.Tbl.t) = Uid.Tbl.create 16
 
-let add_to_type_decls path (type_decl : Types.type_declaration) uid_of_path shape_of_path =
+let add_to_type_decls (type_decl : Types.type_declaration) uid_of_path shape_of_path =
   let type_decl_shape =
-    Type_decl_shape.of_type_declaration path type_decl uid_of_path shape_of_path
+    Type_decl_shape.of_type_declaration type_decl uid_of_path shape_of_path
   in
   Uid.Tbl.add all_type_decls type_decl.type_uid type_decl_shape
 
-let add_to_type_shapes var_uid type_expr sort uid_of_path shape_of_path =
+let add_to_type_shapes var_uid type_expr sort ~name uid_of_path shape_of_path =
   let type_shape = Type_shape.of_type_expr type_expr uid_of_path shape_of_path in
   let type_shape = Shape.shape_with_layout ~layout:sort type_shape in
-  Uid.Tbl.add all_type_shapes var_uid type_shape
-
-let tuple_to_string (strings : string list) =
-  match strings with
-  | [] -> ""
-  | hd :: [] -> hd
-  | _ :: _ :: _ -> "(" ^ String.concat " * " strings ^ ")"
-
-let unboxed_tuple_to_string (strings : string list) =
-  match strings with
-  | [] -> ""
-  | hd :: [] -> hd
-  | _ :: _ :: _ -> "(" ^ String.concat " & " strings ^ ")"
-
-let shapes_to_string (strings : string list) =
-  match strings with
-  | [] -> ""
-  | hd :: [] -> hd ^ " "
-  | _ :: _ :: _ -> "(" ^ String.concat ", " strings ^ ") "
+  Uid.Tbl.add all_type_shapes var_uid (type_shape, name)
 
 (* CR sspies: The original code of [compilation_unit_from_path], namely
    [split_type_path_at_compilation_unit], split the path here into compilation
@@ -471,75 +452,6 @@ let find_in_type_decls (type_uid : Uid.t) (type_path : Path.t option)
   in
   Option.bind compilation_unit_type_decls (fun tbl ->
       Uid.Tbl.find_opt tbl type_uid)
-
-(* CR sspies: This seems to not perform caching. I think [load_decls_from_cms]
-   always goes to the file and loads it the original code. *)
-let rec type_name : 'a. 'a Shape.ts -> _ =
- fun type_shape
-     ~(load_decls_from_cms : string -> Shape.tds Shape.Uid.Tbl.t) ->
-  match type_shape with
-  | Ts_predef (predef, shapes) ->
-    shapes_to_string (List.map (type_name ~load_decls_from_cms) shapes)
-    ^ Shape.Predef.to_string predef
-  | Ts_other _ ->
-    if debug_type_search then Format.eprintf "unknown type (Tds_other)\n";
-    "unknown"
-  | Ts_tuple shapes ->
-    tuple_to_string
-      (List.map (fun sh -> type_name ~load_decls_from_cms sh) shapes)
-  | Ts_unboxed_tuple shapes ->
-    unboxed_tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
-  | Ts_var (name, _) -> "'" ^ Option.value name ~default:"?"
-  | Ts_arrow (shape1, shape2) ->
-    let arg_name = type_name ~load_decls_from_cms shape1 in
-    let ret_name = type_name ~load_decls_from_cms shape2 in
-    arg_name ^ " -> " ^ ret_name
-  | Ts_variant (fields, kind) ->
-    let field_constructors =
-      List.map
-        (fun { Shape.pv_constr_name; pv_constr_args } ->
-          let arg_types =
-            List.map
-              (fun sh -> type_name ~load_decls_from_cms sh)
-              pv_constr_args
-          in
-          let arg_type_string = String.concat " ∩ " arg_types in
-          (* CR sspies: Currently, our LLDB fork removes ampersands, because
-             it's elsewhere used for printing references. Would be great to fix
-             this in the future. For now we use an intersection. *)
-          let arg_type_string =
-            if List.length pv_constr_args = 0
-            then ""
-            else " of " ^ arg_type_string
-          in
-          "`" ^ pv_constr_name ^ arg_type_string)
-        fields
-    in
-    let prefix = match kind with Closed -> "" | Open -> ">" in
-    Format.asprintf "[%s %s ]" prefix (String.concat " | " field_constructors)
-  | Ts_constr ((type_uid, _, _), shapes) ->
-    (
-    match[@warning "-4"]
-      find_in_type_decls type_uid None ~load_decls_from_cms
-    with
-    | None ->
-      if debug_type_search
-      then Format.eprintf "unknown type (declaration not found)\n";
-      Format.asprintf "unknown"
-    | Some { definition = Tds_other; _ } ->
-      if debug_type_search then Format.eprintf "type has shape Tds_other\n";
-      Format.asprintf "unknown"
-    | Some type_decl_shape ->
-      (* We have found type instantiation shapes [shapes] and a typing
-         declaration shape [type_decl_shape]. *)
-      let type_decl_shape =
-        Type_decl_shape.replace_tvar type_decl_shape shapes
-      in
-      let args =
-        shapes_to_string (List.map (type_name ~load_decls_from_cms) shapes)
-      in
-      let name = Path.name type_decl_shape.path in
-      args ^ name)
 
 (*= let rec attach_head (path : Path.t) (new_head : Ident.t) =
   match path with
@@ -657,13 +569,15 @@ let print_table_all_type_shapes ppf =
   let entries = List.sort (fun (a, _) (b, _) -> Uid.compare a b) entries in
   let entries =
     List.map
-      (fun (k, type_shape) ->
+      (fun (k, (type_shape, name)) ->
         ( Format.asprintf "%a" Uid.print k,
           ( Format.asprintf "%a" Shape.print_ts type_shape,
+            (name,
             Format.asprintf "%a" Jkind_types.Sort.Const.format
-              (Shape.shape_layout type_shape) ) ))
+              (Shape.shape_layout type_shape) )) ))
       entries
   in
   let uids, rest = List.split entries in
-  let types, sorts = List.split rest in
-  print_table ppf ["UID", uids; "Type", types; "Sort", sorts]
+  let type_shapes, rest = List.split rest in
+  let names, sorts = List.split rest in
+  print_table ppf ["UID", uids; "Type", names; "Sort", sorts; "Shape", type_shapes]

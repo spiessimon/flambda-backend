@@ -2942,8 +2942,8 @@ let initial =
                       empty
   in
   (* We record the type declarations for the type shapes. *)
-  Ident.Tbl.iter (fun type_ident decl ->
-    Type_shape.add_to_type_decls (Pident type_ident) decl (fun path ->
+  Ident.Tbl.iter (fun _ decl ->
+    Type_shape.add_to_type_decls decl (fun path ->
       let type_in_env = find_type path initial_env in
       Some type_in_env.type_uid
     ) (fun path ->
