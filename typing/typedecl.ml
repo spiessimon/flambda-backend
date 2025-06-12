@@ -3035,10 +3035,26 @@ let transl_type_decl env rec_flag sdecl_list =
      declaration shapes, and finally adding the types again (with shapes) the
      right one, or should they have some temporary shapes the first time around?
     *)
+  let decl_lookup_map = Ident.Map.of_list decls in
+  let lookup_ident (kind: Shape.Sig_component_kind.t ) id =
+    match kind with
+    | Type ->
+      let decl = Ident.Map.find_opt id decl_lookup_map in
+      Option.map (fun decl -> decl.type_uid) decl |> Shape.leaf'
+    | _ -> assert false
+  in
   let shapes = List.map (fun (_id, decl) ->
-    (* CR sspies: Could we also use [env] here instead of computing [pre_final_env]? *)
     let uid = decl.type_uid in
-    let shape_tds = (Type_shape.Type_decl_shape.of_type_declaration decl (uid_of_path ~env:pre_final_env) (shape_of_path ~env:pre_final_env)) in
+    let shape_of_path path =
+      match shape_of_path ~env path with
+      | None ->
+        Shape.of_path ~find_shape:lookup_ident ~namespace:Type path |> Option.some
+      | Some { uid = Some uid; desc = Shape.Type_decl _; _ } -> Some (Shape.leaf uid)
+        (* We truncate known declarations to leafs to keep the size of shapes small. *)
+      | (Some _) as s -> s
+    in
+    let shape_tds = (Type_shape.Type_decl_shape.of_type_declaration decl shape_of_path) in
+    Format.eprintf "shape of %a -> %a\n" Uid.print uid Shape.print_tds shape_tds;
     Uid.Tbl.add Type_shape.all_type_decls uid shape_tds;
     (* CR sspies: There is a problem with simply adding these uids to a table. They
     do not interact well with the shape reduction mechanism. The shape reduction
