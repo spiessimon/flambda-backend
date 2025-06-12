@@ -1611,7 +1611,6 @@ and transl_tupled_function
 and add_type_shape ~env uid type_expr sort =
   Type_shape.add_to_type_shapes uid type_expr sort
     ~name:(Format.asprintf "%a" Printtyp.type_expr type_expr)
-    (Typedecl.uid_of_path ~env)
     (Typedecl.shape_of_path ~env)
 
 (** [add_type_shapes_of_cases] iterates through a given list of cases and associates

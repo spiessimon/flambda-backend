@@ -174,24 +174,29 @@ let create_simple_variant_die ~reference ~parent_proto_die ~name
         ())
     simple_constructors
 
-let reorder_record_fields_for_mixed_record ~(mixed_block_shapes: Shape.base_layout array) fields =
+let reorder_record_fields_for_mixed_record
+    ~(mixed_block_shapes : Shape.base_layout array) fields =
   (* We go into arrays and back, because it makes the reordering of the fields
      via accesses O(n) instead of O(n^2) *)
   let fields = Array.of_list fields in
-  let mixed_block_shapes = Array.map (function
-    | Jkind_types.Sort.Value -> Types.Value
-    | Jkind_types.Sort.Float64 -> Types.Float64
-      (* This is a case, where we potentially have mapped [Float_boxed] to
-      [Float64], but that is fine, because they are reordered like other
-      mixed fields. *)
-      (* CR sspies: Is this really true? *)
-    | Jkind_types.Sort.Float32 -> Types.Float32
-    | Jkind_types.Sort.Bits32 -> Types.Bits32
-    | Jkind_types.Sort.Bits64 -> Types.Bits64
-    | Jkind_types.Sort.Vec128 -> Types.Vec128
-    | Jkind_types.Sort.Word -> Types.Word
-    | Jkind_types.Sort.Void -> Misc.fatal_error "Not implemented"
-  ) mixed_block_shapes in
+  let mixed_block_shapes =
+    Array.map
+      (function
+        | Jkind_types.Sort.Value -> Types.Value
+        | Jkind_types.Sort.Float64 ->
+          Types.Float64
+          (* This is a case, where we potentially have mapped [Float_boxed] to
+             [Float64], but that is fine, because they are reordered like other
+             mixed fields. *)
+          (* CR sspies: Is this really true? *)
+        | Jkind_types.Sort.Float32 -> Types.Float32
+        | Jkind_types.Sort.Bits32 -> Types.Bits32
+        | Jkind_types.Sort.Bits64 -> Types.Bits64
+        | Jkind_types.Sort.Vec128 -> Types.Vec128
+        | Jkind_types.Sort.Word -> Types.Word
+        | Jkind_types.Sort.Void -> Misc.fatal_error "Not implemented")
+      mixed_block_shapes
+  in
   let reordering =
     Mixed_block_shape.of_mixed_block_elements
       (Lambda.transl_mixed_product_shape
@@ -291,8 +296,7 @@ let create_unboxed_variant_die ~reference ~parent_proto_die ~name ~constr_name
 let create_complex_variant_die ~reference ~parent_proto_die ~name
     ~simple_constructors
     ~(complex_constructors :
-       (Proto_die.reference * Jkind_types.Sort.base)
-       Shape.complex_constructor
+       (Proto_die.reference * Jkind_types.Sort.base) Shape.complex_constructor
        list) =
   let complex_constructors_names =
     List.map
@@ -454,11 +458,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
            ~proto_die_reference:(Proto_die.reference discriminant))
     in
     List.iteri
-      (fun i
-           { Shape.name = _;
-             kind = constructor_kind;
-             args
-           } ->
+      (fun i { Shape.name = _; kind = constructor_kind; args } ->
         let subvariant =
           Proto_die.create ~parent:(Some variant_part_pointer)
             ~tag:Dwarf_tag.Variant
@@ -468,9 +468,7 @@ let create_complex_variant_die ~reference ~parent_proto_die ~name
         let args = variant_constructor_reorder_fields args constructor_kind in
         let offset = ref 0 in
         List.iter
-          (fun { Shape.field_name;
-                 field_value = field_type, ly
-               } ->
+          (fun { Shape.field_name; field_value = field_type, ly } ->
             let member_size = base_layout_to_byte_size_in_mixed_block ly in
             let member_die =
               Proto_die.create ~parent:(Some subvariant) ~tag:Dwarf_tag.Member
@@ -867,8 +865,7 @@ type vec128_splits =
   | Float32x4
   | Float64x2
 
-let unboxed_base_type_to_vec128_split (x : Shape.Predef.unboxed)
-    =
+let unboxed_base_type_to_vec128_split (x : Shape.Predef.unboxed) =
   match x with
   | Shape.Predef.Unboxed_int8x16 -> Some Int8x16
   | Unboxed_int16x8 -> Some Int16x8
@@ -965,7 +962,7 @@ let create_base_layout_type ?(vec128_split = None) ~reference
     create_vec128_base_layout_die ~reference ~parent_proto_die ~name:(Some name)
       ~split:vec128_split
 
-module Cache = Type_shape.Type_shape.With_layout.Tbl
+module Cache = Shape.Uid.Tbl
 
 type base_layout = Jkind_types.Sort.base
 
@@ -975,55 +972,55 @@ let cache = Cache.create 16
 
 let rec type_shape_layout_to_die ?type_name (type_shape : Layout.t Shape.ts)
     ~parent_proto_die ~fallback_value_die =
-  match Cache.find_opt cache type_shape with
-  | Some reference -> reference
-  | None ->
-    let reference = Proto_die.create_reference () in
-    (* We add the combination of shape and layout early in case of recursive
-       types, which can then look up their reference, before it is fully
-       defined. That way [type myintlist = MyNil | MyCons of int * myintlist]
-       will work correctly (as opposed to diverging). *)
-    Cache.add cache type_shape reference;
-    let type_name = Option.value type_name ~default:"unknown" in
-    let layout_name =
-      Format.asprintf "%a" Jkind_types.Sort.Const.format
-        (Shape.shape_layout type_shape)
-    in
-    let name = type_name ^ " @ " ^ layout_name in
-    (match type_shape with
-    | Ts_other type_layout | Ts_var (_, type_layout) -> (
-      match type_layout with
-      | Base b ->
-        create_base_layout_type ~reference b ~name ~parent_proto_die
-          ~fallback_value_die
-      | Product _ ->
-        Misc.fatal_errorf
-          "only base layouts supported, but found unboxed product layout %s"
-          layout_name)
-    | Ts_unboxed_tuple _ ->
-      Misc.fatal_errorf "unboxed tuples cannot have base layout %s" layout_name
-    | Ts_tuple fields ->
-      type_shape_layout_tuple_die ~reference ~parent_proto_die
-        ~fallback_value_die ~name fields
-    | Ts_predef (predef, args) ->
-      type_shape_layout_predef_die ~reference ~name ~parent_proto_die
-        ~fallback_value_die predef args
-    | Ts_constr ((type_uid, shape, type_layout), shapes) -> (
-      match type_layout with
-      | Base b ->
-        type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
-          ~fallback_value_die ~type_uid shape b shapes
-      | Product _ ->
-        Misc.fatal_errorf
-          "only base layouts supported, but found product layout %s" layout_name
-      )
-    | Ts_variant (fields, _) ->
-      poly_variant_die ~reference ~name ~parent_proto_die ~fallback_value_die
-        ~constructors:fields
-    | Ts_arrow (arg, ret) ->
-      type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
-        ~fallback_value_die arg ret);
-    reference
+  (* match Cache.find_opt cache type_shape with | Some reference -> reference |
+     None -> *)
+  let reference = Proto_die.create_reference () in
+  Format.eprintf "%a is %a@." Asm_targets.Asm_label.print reference
+    Shape.print_ts type_shape;
+  (* We add the combination of shape and layout early in case of recursive
+     types, which can then look up their reference, before it is fully defined.
+     That way [type myintlist = MyNil | MyCons of int * myintlist] will work
+     correctly (as opposed to diverging). *)
+  (* Cache.add cache type_shape reference; *)
+  let type_name = Option.value type_name ~default:"unknown" in
+  let layout_name =
+    Format.asprintf "%a" Jkind_types.Sort.Const.format
+      (Shape.shape_layout type_shape)
+  in
+  let name = type_name ^ " @ " ^ layout_name in
+  (match type_shape with
+  | Ts_other type_layout | Ts_var (_, type_layout) -> (
+    match type_layout with
+    | Base b ->
+      create_base_layout_type ~reference b ~name ~parent_proto_die
+        ~fallback_value_die
+    | Product _ ->
+      Misc.fatal_errorf
+        "only base layouts supported, but found unboxed product layout %s"
+        layout_name)
+  | Ts_unboxed_tuple _ ->
+    Misc.fatal_errorf "unboxed tuples cannot have base layout %s" layout_name
+  | Ts_tuple fields ->
+    type_shape_layout_tuple_die ~reference ~parent_proto_die ~fallback_value_die
+      ~name fields
+  | Ts_predef (predef, args) ->
+    type_shape_layout_predef_die ~reference ~name ~parent_proto_die
+      ~fallback_value_die predef args
+  | Ts_constr ((shape, type_layout), shapes) -> (
+    match type_layout with
+    | Base b ->
+      type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
+        ~fallback_value_die shape b shapes
+    | Product _ ->
+      Misc.fatal_errorf
+        "only base layouts supported, but found product layout %s" layout_name)
+  | Ts_variant (fields, _) ->
+    poly_variant_die ~reference ~name ~parent_proto_die ~fallback_value_die
+      ~constructors:fields
+  | Ts_arrow (arg, ret) ->
+    type_shape_layout_arrow_die ~reference ~name ~parent_proto_die
+      ~fallback_value_die arg ret);
+  reference
 
 and type_shape_layout_tuple_die ~name ~reference ~parent_proto_die
     ~fallback_value_die fields =
@@ -1040,8 +1037,7 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
   match predef, args with
   | Array, [element_type_shape] ->
     let element_type_shape =
-      Shape.shape_with_layout ~layout:(Base Value)
-        element_type_shape
+      Shape.shape_with_layout ~layout:(Base Value) element_type_shape
     in
     (* CR sspies: Check whether the elements of an array are always values and,
        if not, where that information is maintained. *)
@@ -1085,33 +1081,56 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
       ~fallback_value_die
 
 and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
-    ~fallback_value_die ~type_uid shape (type_layout : base_layout) shapes =
+    ~fallback_value_die (shape : Shape.t) (type_layout : base_layout) shapes =
   (* CR sspies: This reduction is currently duplicated. Moreover, it is not in
      the correct place. We do not have the environment available here. In
      addition, we should not need to maintain the separate map of type
      declarations, which we use for lookups below. This should be in the
      environment. *)
-  let shape_reduce = Shape_reduce.local_reduce Env.empty in
-  let shape = shape_reduce shape in
-  let decl = match shape.desc with
-  | Shape.Type_decl tds -> Some tds
-  | Shape.Var _ | Shape.Abs _ | Shape.App _
-  | Shape.Leaf | Shape.Struct _ | Shape.Alias _ | Shape.Proj _ | Shape.Comp_unit _ | Shape.Error _ -> None
+  (*= let shape_reduce =
+    Shape_reduce.local_reduce Env.empty ~uid_lookup:(fun uid ->
+      Option.map (Shape.type_decl (Some uid)) (Type_shape.find_in_type_decls uid None ~load_decls_from_cms))
   in
-  let decl = match decl with
+  Format.eprintf "pre reduce shape = %a@." (Shape.print) shape;
+  let shape = shape_reduce shape in
+  Format.eprintf "post reduce shape = %a@." (Shape.print) shape; *)
+  let decl =
+    match shape.desc with
+    | Shape.Type_decl tds -> `Declaration tds
+    | Shape.Leaf -> (
+      match Option.bind shape.uid (Cache.find_opt cache) with
+      | Some reference ->
+        Format.eprintf "Found %a in cache, is %a@."
+          (Format.pp_print_option Shape.Uid.print)
+          shape.uid Asm_targets.Asm_label.print reference;
+        `Reference reference
+      | None -> `Missing)
+    | Shape.Var _ | Shape.Abs _ | Shape.App _ | Shape.Struct _ | Shape.Alias _
+    | Shape.Proj _ | Shape.Comp_unit _ | Shape.Error _ ->
+      `Missing
+  in
+  (*= let decl = match decl with
   | Some decl -> Some decl
   | None -> Type_shape.find_in_type_decls type_uid None ~load_decls_from_cms
-  in
+  in *)
   match
     (* CR sspies: Somewhat subtly, this case currently also handles [unit],
        [bool], [option], and [list], because they are not treated as predefined
        types and do have declarations. *)
     decl
   with
-  | None ->
+  | `Missing ->
     create_base_layout_type ~reference type_layout ~name ~parent_proto_die
       ~fallback_value_die
-  | Some type_decl_shape -> (
+  | `Reference cached_ref ->
+    create_typedef_die ~reference ~parent_proto_die ~name ~child_die:cached_ref
+  | `Declaration type_decl_shape -> (
+    Option.iter
+      (fun uid ->
+        Cache.add cache uid reference;
+        Format.eprintf "Added %a as %a for %a to cache@." Shape.Uid.print uid
+          Asm_targets.Asm_label.print reference Shape.print shape)
+      shape.uid;
     let type_decl_shape =
       Type_shape.Type_decl_shape.replace_tvar type_decl_shape shapes
     in
@@ -1120,9 +1139,9 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
       create_base_layout_type ~reference type_layout ~name ~parent_proto_die
         ~fallback_value_die
     | Tds_alias alias_shape ->
+      Format.eprintf "alias found";
       let alias_shape =
-        Shape.shape_with_layout ~layout:(Base type_layout)
-          alias_shape
+        Shape.shape_with_layout ~layout:(Base type_layout) alias_shape
       in
       let alias_die =
         type_shape_layout_to_die alias_shape ~parent_proto_die
@@ -1134,8 +1153,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
         List.map
           (fun (name, type_shape, type_layout) ->
             let type_shape' =
-              Shape.shape_with_layout ~layout:type_layout
-                type_shape
+              Shape.shape_with_layout ~layout:type_layout type_shape
             in
             ( name,
               Arch.size_addr,
@@ -1152,9 +1170,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
     | Tds_record
         { fields = [(field_name, sh, Base base_layout)]; kind = Record_unboxed }
       ->
-      let field_shape =
-        Shape.shape_with_layout ~layout:(Base base_layout) sh
-      in
+      let field_shape = Shape.shape_with_layout ~layout:(Base base_layout) sh in
       let field_die =
         type_shape_layout_to_die ~parent_proto_die ~fallback_value_die
           field_shape
@@ -1173,8 +1189,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
         List.map
           (fun (name, type_shape, type_layout) ->
             let type_shape' =
-              Shape.shape_with_layout ~layout:type_layout
-                type_shape
+              Shape.shape_with_layout ~layout:type_layout type_shape
             in
             match (type_layout : Layout.t) with
             | Base base_layout ->
@@ -1198,13 +1213,11 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
       | _ :: _ ->
         let complex_constructors =
           List.map
-            (Shape.complex_constructor_map
-               (fun (sh, layout) ->
+            (Shape.complex_constructor_map (fun (sh, layout) ->
                  match layout with
                  | Jkind_types.Sort.Const.Base ly ->
-                   let sh =
-                     Shape.shape_with_layout ~layout sh
-                   in
+                   let sh = Shape.shape_with_layout ~layout sh in
+                   Format.eprintf "sh: %a@." Shape.print_ts sh;
                    ( type_shape_layout_to_die ~parent_proto_die
                        ~fallback_value_die sh,
                      ly )
@@ -1217,9 +1230,7 @@ and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
           ~simple_constructors ~complex_constructors)
     | Tds_variant_unboxed
         { name = constr_name; arg_name; arg_shape; arg_layout } ->
-      let arg_shape =
-        Shape.shape_with_layout ~layout:arg_layout arg_shape
-      in
+      let arg_shape = Shape.shape_with_layout ~layout:arg_layout arg_shape in
       let arg_die =
         type_shape_layout_to_die ~parent_proto_die ~fallback_value_die arg_shape
       in
@@ -1264,8 +1275,7 @@ let rec flatten_to_base_sorts (sort : Jkind_types.Sort.Const.t) :
    type variables). In these cases, we produce the corresponding number of
    entries of the form [`Unknown base_layout] for the fields. Otherwise, when
    the type is known, we produce [`Known type_shape] for the fields. *)
-let rec flatten_type_shape
-    (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
+let rec flatten_type_shape (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
   let unknown_base_layouts layout =
     let base_sorts = flatten_to_base_sorts layout in
     List.map (fun base_sort -> `Unknown base_sort) base_sorts
@@ -1282,23 +1292,27 @@ let rec flatten_type_shape
   | Ts_other layout ->
     let base_layouts = flatten_to_base_sorts layout in
     List.map (fun layout -> `Unknown layout) base_layouts
-  | Ts_constr ((type_uid, shape, layout), shapes) ->
+  | Ts_constr ((shape, layout), shapes) -> (
     (* CR sspies: Deduplicate this code. Not sure where the right place is yet
-      for this reduction, but we certainly don't want to do it twice. *)
-    let shape = Shape_reduce.local_reduce Env.empty shape in
-    let decl = match shape.desc with
-    | Shape.Type_decl tds -> Some tds
-    | Shape.Var _ | Shape.Abs _ | Shape.App _
-    | Shape.Leaf | Shape.Struct _ | Shape.Alias _ | Shape.Proj _ | Shape.Comp_unit _ | Shape.Error _ -> None
+       for this reduction, but we certainly don't want to do it twice. *)
+    (*= let shape =
+      Shape_reduce.local_reduce Env.empty shape
+    in *)
+    let decl =
+      match shape.desc with
+      | Shape.Type_decl tds -> Some tds
+      | Shape.Var _ | Shape.Abs _ | Shape.App _ | Shape.Leaf | Shape.Struct _
+      | Shape.Alias _ | Shape.Proj _ | Shape.Comp_unit _ | Shape.Error _ ->
+        None
     in
-    let decl = match decl with
+    (*= let decl = match decl with
     | Some decl -> Some decl
     | None -> Type_shape.find_in_type_decls type_uid None ~load_decls_from_cms
-    in
-    (match[@warning "-4"]
-      decl
-    with
-    | None -> unknown_base_layouts layout
+    in *)
+    match[@warning "-4"] decl with
+    | None -> [`Known type_shape]
+    (* CR sspies: enabled for debugging only *)
+    (* unknown_base_layouts layout *)
     | Some { definition = Tds_other; _ } -> unknown_base_layouts layout
     | Some type_decl_shape -> (
       let type_decl_shape =
@@ -1308,9 +1322,7 @@ let rec flatten_type_shape
       | Tds_other ->
         unknown_base_layouts layout (* Cannot break up unknown type. *)
       | Tds_alias alias_shape ->
-        let alias_shape =
-          Shape.shape_with_layout ~layout alias_shape
-        in
+        let alias_shape = Shape.shape_with_layout ~layout alias_shape in
         flatten_type_shape alias_shape
         (* At first glance, this recursion could potentially diverge, for direct
            cycles between type aliases and the defintion of the type. However,
@@ -1327,8 +1339,7 @@ let rec flatten_type_shape
       | Tds_record { fields = [(_, sh, ly)]; kind = Record_unboxed }
         when Layout.equal ly layout -> (
         match layout with
-        | Product _ ->
-          flatten_type_shape (Shape.shape_with_layout ~layout sh)
+        | Product _ -> flatten_type_shape (Shape.shape_with_layout ~layout sh)
         (* for unboxed products of the form [{ field: ty } [@@unboxed]] where
            [ty] is of product sort, we simply look through the unboxed product.
            Otherwise, we will create an additional DWARF entry for it. *)
@@ -1347,8 +1358,7 @@ let rec flatten_type_shape
           ->
           let shapes =
             List.map
-              (fun (_, sh, ly) ->
-                Shape.shape_with_layout ~layout:ly sh)
+              (fun (_, sh, ly) -> Shape.shape_with_layout ~layout:ly sh)
               fields
           in
           List.concat_map flatten_type_shape shapes
@@ -1365,6 +1375,142 @@ let rec flatten_type_shape
         else
           Misc.fatal_error
             "unboxed variant must have same layout as its contents"))
+
+let rec used_uids_shape (sh : Shape.t) =
+  match sh.desc with
+  | Comp_unit _ -> Shape.Uid.Set.empty
+  | Var _ -> Shape.Uid.Set.empty
+  | Leaf -> (
+    (* After reduction, the only possible occurrences of uids are the leafs. *)
+    match sh.uid with
+    | None -> Shape.Uid.Set.empty
+    | Some uid -> Shape.Uid.Set.singleton uid)
+  | Type_decl tds -> used_uids_tds tds
+  | Abs (_, e) -> used_uids_shape e
+  | App (f, s) -> Shape.Uid.Set.union (used_uids_shape f) (used_uids_shape s)
+  | Struct items ->
+    Shape.Item.Map.fold
+      (fun _ sh acc -> Shape.Uid.Set.union (used_uids_shape sh) acc)
+      items Shape.Uid.Set.empty
+  | Alias sh -> used_uids_shape sh
+  | Proj (str, _) -> used_uids_shape str
+  | Error _ -> Shape.Uid.Set.empty
+
+and used_uids_tds (tds : Shape.tds) =
+  match tds.definition with
+  | Tds_other -> Shape.Uid.Set.empty
+  | Tds_alias sh -> used_uids_ts sh
+  | Tds_record { fields; _ } ->
+    List.fold_left
+      (fun acc (_, sh, _) -> Shape.Uid.Set.union (used_uids_ts sh) acc)
+      Shape.Uid.Set.empty fields
+  | Tds_variant { complex_constructors; _ } ->
+    List.fold_left
+      (fun acc { Shape.args; _ } ->
+        Shape.Uid.Set.union
+          (List.fold_left
+             (fun acc { Shape.field_value = ts, _; _ } ->
+               Shape.Uid.Set.union (used_uids_ts ts) acc)
+             Shape.Uid.Set.empty args)
+          acc)
+      Shape.Uid.Set.empty complex_constructors
+  | Tds_variant_unboxed { arg_shape; _ } -> used_uids_ts arg_shape
+
+and used_uids_ts (ts : 'a Shape.ts) =
+  let used_uids_type_shapes tss =
+    List.fold_left
+      (fun acc sh -> Shape.Uid.Set.union (used_uids_ts sh) acc)
+      Shape.Uid.Set.empty tss
+  in
+  match ts with
+  | Ts_constr ((sh, _), args) ->
+    Shape.Uid.Set.union (used_uids_shape sh) (used_uids_type_shapes args)
+  | Ts_tuple ts -> used_uids_type_shapes ts
+  | Ts_unboxed_tuple ts -> used_uids_type_shapes ts
+  | Ts_var _ -> Shape.Uid.Set.empty
+  | Ts_predef _ -> Shape.Uid.Set.empty
+  | Ts_arrow (arg, ret) -> used_uids_type_shapes [arg; ret]
+  | Ts_variant (fields, _) ->
+    List.fold_left
+      (fun acc { Shape.pv_constr_args; _ } ->
+        Shape.Uid.Set.union (used_uids_type_shapes pv_constr_args) acc)
+      Shape.Uid.Set.empty fields
+  | Ts_other _ -> Shape.Uid.Set.empty
+
+let rec compress_shape (used_uids : Shape.Uid.Set.t) (sh : Shape.t) =
+  let uid_used = function
+    | None -> false
+    | Some uid -> Shape.Uid.Set.mem uid used_uids
+  in
+  let compressed =
+    match[@warning "-4"] sh.desc with
+    | Comp_unit _ | Var _ | Proj _ | Leaf | Abs _ | App _ | Struct _ | Error _
+      ->
+      sh
+    | Alias sh -> compress_shape used_uids sh
+    | Type_decl { definition = Tds_alias (Ts_constr ((inner_sh, _), [])); _ }
+      when not (uid_used sh.uid) ->
+      compress_shape used_uids inner_sh
+    | Type_decl tds ->
+      { sh with desc = Shape.Type_decl (compress_tds used_uids tds) }
+  in
+  compressed
+
+and compress_tds (used_uids : Shape.Uid.Set.t) (tds : Shape.tds) =
+  let desc =
+    match tds.definition with
+    | Tds_other -> Shape.Tds_other
+    | Tds_alias sh -> Shape.Tds_alias (compress_ts used_uids sh)
+    | Tds_record { fields; kind } ->
+      Shape.Tds_record
+        { fields =
+            List.map
+              (fun (name, sh, layout) -> name, compress_ts used_uids sh, layout)
+              fields;
+          kind
+        }
+    | Tds_variant { simple_constructors; complex_constructors } ->
+      Shape.Tds_variant
+        { simple_constructors;
+          complex_constructors =
+            List.map
+              (Shape.complex_constructor_map (fun (sh, ly) ->
+                   compress_ts used_uids sh, ly))
+              complex_constructors
+        }
+    | Tds_variant_unboxed { name; arg_name; arg_shape; arg_layout; _ } ->
+      Shape.Tds_variant_unboxed
+        { name;
+          arg_name;
+          arg_shape = compress_ts used_uids arg_shape;
+          arg_layout
+        }
+  in
+  { tds with definition = desc }
+
+and compress_ts (used_uids : Shape.Uid.Set.t) (ts : 'a Shape.ts) =
+  let compress_ts_list tss =
+    List.map (fun ts -> compress_ts used_uids ts) tss
+  in
+  match ts with
+  | Ts_constr ((sh, ly), args) ->
+    Shape.Ts_constr ((compress_shape used_uids sh, ly), compress_ts_list args)
+  | Ts_tuple ts -> Shape.Ts_tuple (compress_ts_list ts)
+  | Ts_unboxed_tuple ts -> Shape.Ts_unboxed_tuple (compress_ts_list ts)
+  | Ts_var _ -> ts
+  | Ts_predef _ -> ts
+  | Ts_arrow (arg, ret) ->
+    Shape.Ts_arrow (compress_ts used_uids arg, compress_ts used_uids ret)
+  | Ts_variant (fields, kind) ->
+    Shape.Ts_variant
+      ( List.map
+          (fun { Shape.pv_constr_args; pv_constr_name } ->
+            { Shape.pv_constr_args = compress_ts_list pv_constr_args;
+              pv_constr_name
+            })
+          fields,
+        kind )
+  | Ts_other _ -> ts
 
 let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   let fallback_value_die =
@@ -1389,6 +1535,22 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
      we should simply not emit any DWARF information for this variable
      instead. *)
   | Some (type_shape, type_name) -> (
+    let shape_reduce =
+      Shape_reduce.local_reduce_ts Env.empty ~uid_lookup:(fun uid ->
+          Option.map
+            (Shape.type_decl (Some uid))
+            (Type_shape.find_in_type_decls uid None ~load_decls_from_cms))
+    in
+    (* Format.eprintf "pre reduce shape = %a@." Shape.print_ts type_shape; *)
+    let layout = Shape.shape_layout type_shape in
+    let type_shape = shape_reduce (Shape.forget_layout type_shape) in
+    (* Format.eprintf "post reduce shape = %a@." Shape.print_ts type_shape; *)
+    let bound = used_uids_ts type_shape in
+    (* Format.eprintf "used uids = %a@." Shape.Uid.Set.print bound; *)
+    let type_shape = compress_ts bound type_shape in
+    (* Format.eprintf "post compress shape = %a@." Shape.print_ts type_shape; *)
+    let type_shape = Shape.shape_with_layout ~layout type_shape in
+    Format.eprintf "final shape = %a@." Shape.print_ts type_shape;
     let type_shape =
       match unboxed_projection with
       | None -> `Known type_shape
@@ -1400,7 +1562,8 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
     in
     match type_shape with
     | `Known type_shape ->
-      type_shape_layout_to_die ~type_name type_shape ~parent_proto_die ~fallback_value_die
+      type_shape_layout_to_die ~type_name type_shape ~parent_proto_die
+        ~fallback_value_die
     | `Unknown base_layout ->
       let reference = Proto_die.create_reference () in
       create_base_layout_type ~reference ~parent_proto_die

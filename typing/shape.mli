@@ -227,7 +227,7 @@ type poly_variant_kind =
   | Closed
 
 type var = Ident.t
-type t = private { hash: int; uid: Uid.t option; desc: desc; approximated: bool }
+type t = { hash: int; uid: Uid.t option; desc: desc; approximated: bool }
 and desc =
   | Var of var
   | Abs of var * t
@@ -284,7 +284,7 @@ and tds =
   }
 
 and 'a ts =
-  | Ts_constr of (Uid.t * t * 'a) * without_layout ts list
+  | Ts_constr of (t * 'a) * without_layout ts list
   | Ts_tuple of 'a ts list
   | Ts_unboxed_tuple of 'a ts list
   | Ts_var of string option * 'a
@@ -310,7 +310,7 @@ val equal_ts : ('a -> 'a -> bool) -> 'a ts -> 'a ts -> bool
 val complex_constructor_map : ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
 val shape_layout : Layout.t ts -> Layout.t
 val shape_with_layout : layout:Layout.t -> without_layout ts -> Layout.t ts
-
+val forget_layout : Layout.t ts -> without_layout ts
 
 (* Smart constructors *)
 

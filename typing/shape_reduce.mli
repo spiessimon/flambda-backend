@@ -46,17 +46,26 @@ module Make(_ : sig
 
     val read_unit_shape : unit_name:string -> Shape.t option
   end) : sig
-  val reduce : Env.t -> Shape.t -> Shape.t
+  val reduce : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.t -> Shape.t
+
+  val reduce_tds : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.tds -> Shape.tds
+
+  val reduce_ts : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.without_layout Shape.ts -> Shape.without_layout Shape.ts
 
   (** Perform weak reduction and return the head's uid if any. If reduction was
     incomplete the partially reduced shape is returned. *)
-  val reduce_for_uid : Env.t -> Shape.t -> result
+  val reduce_for_uid : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.t -> result
 end
 
 (** [local_reduce] will not reduce shapes that require loading external
   compilation units. *)
-val local_reduce : Env.t -> Shape.t -> Shape.t
+val local_reduce : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.t -> Shape.t
 
 (** [local_reduce_for_uid] will not reduce shapes that require loading external
   compilation units. *)
-val local_reduce_for_uid : Env.t -> Shape.t -> result
+val local_reduce_for_uid : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.t -> result
+
+
+val local_reduce_tds : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.tds -> Shape.tds
+
+val local_reduce_ts : Env.t -> ?uid_lookup:(Shape.Uid.t -> Shape.t option) -> Shape.without_layout Shape.ts -> Shape.without_layout Shape.ts

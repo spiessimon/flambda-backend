@@ -482,7 +482,7 @@ and tds =
     type_params : without_layout ts list
   }
 and 'a ts =
-  | Ts_constr of (Uid.t * t * 'a) * without_layout ts list
+  | Ts_constr of (t * 'a) * without_layout ts list
   | Ts_tuple of 'a ts list
   | Ts_unboxed_tuple of 'a ts list
   | Ts_var of string option * 'a
@@ -624,8 +624,7 @@ and equal_ts :
   'a. ('a -> 'a -> bool) -> 'a ts -> 'a ts -> bool =
   fun eq t1 t2 ->
   match t1, t2 with
-  | Ts_constr ((uid1, sh1, ly1), ts1), Ts_constr ((uid2, sh2, ly2), ts2) ->
-    Uid.equal uid1 uid2 &&
+  | Ts_constr ((sh1, ly1), ts1), Ts_constr ((sh2, ly2), ts2) ->
     equal sh1 sh2 &&
     eq ly1 ly2 &&
     List.equal (equal_ts equal_without_layout) ts1 ts2
@@ -798,8 +797,8 @@ and print_ts : type a. Format.formatter -> a ts -> unit =
           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
           print_ts)
        shapes
-   | Ts_constr ((uid, shape, _), shapes) ->
-     Format.fprintf ppf "Ts_constr uid=%a shape=%a (%a)" Uid.print uid
+   | Ts_constr ((shape, _), shapes) ->
+     Format.fprintf ppf "Ts_constr shape=%a (%a)"
       print shape
        (Format.pp_print_list
           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
@@ -993,7 +992,7 @@ let complex_constructor_map f { name; kind; args } =
 
 let rec shape_layout (sh : Layout.t ts) =
   match sh with
-  | Ts_constr ((_, _, ly), _) -> ly
+  | Ts_constr ((_, ly), _) -> ly
   | Ts_tuple _ -> Layout.Base Value
   | Ts_unboxed_tuple shapes -> Layout.Product (List.map shape_layout shapes)
   | Ts_var (_, ly) -> ly
@@ -1006,8 +1005,8 @@ let rec shape_layout (sh : Layout.t ts) =
 let rec shape_with_layout ~(layout : Layout.t) (sh : without_layout ts) :
     Layout.t ts =
   match sh, layout with
-  | Ts_constr ((uid, sh, Layout_to_be_determined), shapes), _ ->
-    Ts_constr ((uid, sh, layout), shapes)
+  | Ts_constr ((sh, Layout_to_be_determined), shapes), _ ->
+    Ts_constr ((sh, layout), shapes)
   | Ts_tuple shapes, Base Value ->
     let layouted_shapes =
       List.map (shape_with_layout ~layout:(Layout.Base Value)) shapes
@@ -1064,6 +1063,36 @@ let rec shape_with_layout ~(layout : Layout.t) (sh : without_layout ts) :
   | Ts_variant _, _ ->
     Misc.fatal_errorf "polymorphic variant must have layout value"
   | Ts_other Layout_to_be_determined, _ -> Ts_other layout
+
+
+let rec forget_layout (sh : Layout.t ts) : without_layout ts =
+  match sh with
+  | Ts_constr ((sh, _), shapes) ->
+    Ts_constr ((sh, Layout_to_be_determined), shapes)
+  | Ts_tuple shapes ->
+    let erased_shapes =
+      List.map (forget_layout) shapes
+    in
+    Ts_tuple erased_shapes
+  | Ts_unboxed_tuple shapes ->
+    Ts_unboxed_tuple (List.map (forget_layout) shapes)
+  | Ts_var (name, _) -> Ts_var (name, Layout_to_be_determined)
+  | Ts_arrow (arg, ret)-> Ts_arrow (arg, ret)
+  | Ts_predef (predef, shapes) -> Ts_predef (predef, shapes)
+  | Ts_variant (fields, kind) ->
+    Ts_variant
+      ( List.map
+          (fun { pv_constr_name; pv_constr_args } ->
+            { pv_constr_name;
+              pv_constr_args =
+                List.map
+                  (forget_layout)
+                  pv_constr_args
+            })
+          fields,
+        kind )
+  | Ts_other _ -> Ts_other Layout_to_be_determined
+
 
 
 

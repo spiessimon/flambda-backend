@@ -87,7 +87,8 @@ end) = struct
 
   and delayed_nf_tds = Thunk_tds of local_env * tds
 
-  and local_env = delayed_nf option Ident.Map.t
+  and local_env =
+    { env: delayed_nf option Ident.Map.t; visited_uids : Shape.Uid.t Shape.Uid.Map.t }
   (* When reducing in the body of an abstraction [Abs(x, body)], we
      bind [x] to [None] in the environment. [Some v] is used for
      actual substitutions, for example in [App(Abs(x, body), t)], when
@@ -96,7 +97,8 @@ end) = struct
   let approx_nf nf = { nf with approximated = true }
 
   let rec equal_local_env t1 t2 =
-    Ident.Map.equal (Option.equal equal_delayed_nf) t1 t2
+    Ident.Map.equal (Option.equal equal_delayed_nf) t1.env t2.env &&
+    Shape.Uid.Map.equal (Shape.Uid.equal) t1.visited_uids t2.visited_uids
 
   and equal_delayed_nf t1 t2 =
     match t1, t2 with
@@ -185,12 +187,14 @@ end) = struct
     fuel: int ref;
     global_env: Env.t;
     local_env: local_env;
+    uid_lookup: Uid.t -> Shape.t option;
     reduce_memo_table: nf ReduceMemoTable.t;
     read_back_memo_table: t ReadBackMemoTable.t;
   }
 
   let bind env var shape =
-    { env with local_env = Ident.Map.add var shape env.local_env }
+    { env with local_env =
+      { env = Ident.Map.add var shape env.local_env.env; visited_uids = env.local_env.visited_uids} }
 
   let rec reduce_ env t =
     let local_env = env.local_env in
@@ -289,7 +293,7 @@ end) = struct
           let body_nf = delay_reduce (bind env var None) body in
           return (NAbs(local_env, var, body, body_nf))
       | Var id ->
-          begin match Ident.Map.find id local_env with
+          begin match Ident.Map.find id local_env.env with
           (* Note: instead of binding abstraction-bound variables to
              [None], we could unify it with the [Some v] case by
              binding the bound variable [x] to [NVar x].
@@ -315,8 +319,29 @@ end) = struct
               decr fuel;
               reduce env res
           end
-      | Leaf -> return NLeaf
-      | Type_decl tds -> return (NType_decl (delay_reduce_tds env tds))
+      | Leaf ->
+        (match t.uid  with
+        | None -> return (NLeaf)
+        | Some uid ->
+          match Shape.Uid.Map.find_opt uid env.local_env.visited_uids with
+          | Some new_uid ->
+            Format.eprintf "visited already, old uid %a -> new uid %a\n" Uid.print uid Uid.print new_uid;
+            { uid = Some new_uid; desc = NLeaf; approximated = t.approximated }
+          | None ->
+            let new_uid = Shape.Uid.mk ~current_unit:None in
+            let env = { env with local_env = { env.local_env with visited_uids = Shape.Uid.Map.add uid new_uid env.local_env.visited_uids }} in
+            match env.uid_lookup uid with
+            | Some sh ->
+              (reduce__ env sh)
+            | None ->
+              return (NLeaf))
+      | Type_decl tds ->
+        let new_uid = Shape.Uid.mk ~current_unit:None in
+        let env = (match t.uid with
+        | None -> env
+        | Some uid ->
+          { env with local_env = { env.local_env with visited_uids = Shape.Uid.Map.add uid new_uid env.local_env.visited_uids}}) in
+        { (return (NType_decl (delay_reduce_tds env tds))) with uid = Some new_uid }
       | Struct m ->
           let mnf = Item.Map.map (delay_reduce env) m in
           return (NStruct mnf)
@@ -371,7 +396,8 @@ end) = struct
   and force_reduce_tds env ({definition; type_params}: tds) =
     let def = match definition with
     | Tds_other -> Tds_other
-    | Tds_alias sh -> Tds_alias (force_reduce_ts env sh)
+    | Tds_alias sh ->
+      Tds_alias (force_reduce_ts env sh)
     | Tds_variant { simple_constructors; complex_constructors } ->
       Tds_variant {
         simple_constructors;
@@ -393,8 +419,8 @@ end) = struct
 
   and force_reduce_ts env (ts: 'a ts) =
     match ts with
-    | Ts_constr ((uid, sh, ly), args) ->
-      Ts_constr ((uid, read_back env (reduce__ env sh), ly), args)
+    | Ts_constr ((sh, ly), args) ->
+      Ts_constr ((read_back env (reduce__ env sh), ly), args)
     | Ts_tuple ts -> Ts_tuple (List.map (force_reduce_ts env) ts)
     | Ts_unboxed_tuple ts -> Ts_unboxed_tuple (List.map (force_reduce_ts env) ts)
     | Ts_var (name, ly) -> Ts_var (name, ly)
@@ -410,17 +436,42 @@ end) = struct
   let reduce_memo_table = Local_store.s_table ReduceMemoTable.create 42
   let read_back_memo_table = Local_store.s_table ReadBackMemoTable.create 42
 
-  let reduce global_env t =
+  let reduce global_env ?uid_lookup t =
     let fuel = ref Params.fuel in
-    let local_env = Ident.Map.empty in
-    let env = {
-      fuel;
-      global_env;
-      reduce_memo_table = !reduce_memo_table;
-      read_back_memo_table = !read_back_memo_table;
-      local_env;
-    } in
+    let local_env = { env = Ident.Map.empty; visited_uids = Shape.Uid.Map.empty } in
+    let env = match uid_lookup with
+    | None ->
+      {
+        fuel;
+        global_env;
+        uid_lookup = (fun _ -> None);
+        reduce_memo_table = !reduce_memo_table;
+        read_back_memo_table = !read_back_memo_table;
+        local_env;
+      }
+    | Some uid_lookup ->
+      {
+        fuel;
+        global_env;
+        uid_lookup;
+        reduce_memo_table = ReduceMemoTable.create 42;
+        read_back_memo_table = ReadBackMemoTable.create 42;
+        local_env;
+      }
+   in
     reduce_ env t |> read_back env
+
+
+  let reduce_tds global_env ?uid_lookup tds =
+    match reduce global_env ?uid_lookup (Shape.type_decl None tds) with
+    | { desc = Shape.Type_decl tds; _ } -> tds
+    | _ -> Misc.fatal_error "Should reduce to type declaration."
+
+  let reduce_ts global_env ?uid_lookup ts =
+    match reduce_tds global_env ?uid_lookup { definition = Tds_alias ts; type_params = [] } with
+    | { definition = Tds_alias ts; _ } -> ts
+    | _ -> Misc.fatal_error "Should reduce to type expression."
+
 
   let rec is_stuck_on_comp_unit (nf : nf) =
     match nf.desc with
@@ -451,16 +502,29 @@ end) = struct
       *)
       Internal_error_missing_uid
 
-  let reduce_for_uid global_env t =
+  let reduce_for_uid global_env ?uid_lookup t =
     let fuel = ref Params.fuel in
-    let local_env = Ident.Map.empty in
-    let env = {
-      fuel;
-      global_env;
-      reduce_memo_table = !reduce_memo_table;
-      read_back_memo_table = !read_back_memo_table;
-      local_env;
-    } in
+    let local_env = { env = Ident.Map.empty; visited_uids = Shape.Uid.Map.empty } in
+    let env = match uid_lookup with
+    | None ->
+      {
+        fuel;
+        global_env;
+        uid_lookup = (fun _ -> None);
+        reduce_memo_table = !reduce_memo_table;
+        read_back_memo_table = !read_back_memo_table;
+        local_env;
+      }
+    | Some uid_lookup ->
+      {
+        fuel;
+        global_env;
+        uid_lookup;
+        reduce_memo_table = ReduceMemoTable.create 42;
+        read_back_memo_table = ReadBackMemoTable.create 42;
+        local_env;
+      }
+   in
     let nf = reduce_ env t in
     if is_stuck_on_comp_unit nf then
       Unresolved (read_back env nf)
@@ -476,3 +540,5 @@ module Local_reduce =
 
 let local_reduce = Local_reduce.reduce
 let local_reduce_for_uid = Local_reduce.reduce_for_uid
+let local_reduce_tds = Local_reduce.reduce_tds
+let local_reduce_ts = Local_reduce.reduce_ts

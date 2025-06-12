@@ -2,7 +2,7 @@ module Uid = Shape.Uid
 
 module Type_shape : sig
 
-  val of_type_expr : Types.type_expr -> (Path.t -> Uid.t option) -> (Path.t -> Shape.t option) -> Shape.without_layout Shape.ts
+  val of_type_expr : Types.type_expr -> (Path.t -> Shape.t option) -> Shape.without_layout Shape.ts
 
   module With_layout : sig
     include Identifiable.S with type t := Shape.Layout.t Shape.ts
@@ -11,7 +11,7 @@ end
 
 module Type_decl_shape : sig
 
-  val of_type_declaration : Types.type_declaration -> (Path.t -> Uid.t option) -> (Path.t -> Shape.t option) -> Shape.tds
+  val of_type_declaration : Types.type_declaration -> (Path.t -> Shape.t option) -> Shape.tds
 
   val replace_tvar : Shape.tds -> Shape.without_layout Shape.ts list -> Shape.tds
 end
@@ -22,14 +22,13 @@ val all_type_shapes : (Shape.Layout.t Shape.ts * string) Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)
 val add_to_type_decls :
-  Types.type_declaration -> (Path.t -> Uid.t option) -> (Path.t -> Shape.t option) -> unit
+  Types.type_declaration -> (Path.t -> Shape.t option) -> unit
 
 val add_to_type_shapes :
   Uid.t ->
   Types.type_expr ->
   Jkind_types.Sort.Const.t ->
   name:string ->
-  (Path.t -> Uid.t option) ->
   (Path.t -> Shape.t option) ->
   unit
 
