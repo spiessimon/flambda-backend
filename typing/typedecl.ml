@@ -3048,12 +3048,7 @@ let transl_type_decl env rec_flag sdecl_list =
       | (Some _) as s -> s
     in
     let shape_tds = (Type_shape.Type_decl_shape.of_type_declaration decl shape_of_path) in
-    Format.eprintf "shape of %a -> %a\n" Uid.print uid Shape.print_tds shape_tds;
     Uid.Tbl.add Type_shape.all_type_decls uid shape_tds;
-    (* CR sspies: There is a problem with simply adding these uids to a table. They
-    do not interact well with the shape reduction mechanism. The shape reduction
-    mechanism should be augmented to additionally take an environment to lookup declarations
-    when they are missing. Or we need to find another way to cut cycles here. *)
     Shape.type_decl (Some uid) shape_tds
   ) decls
   in

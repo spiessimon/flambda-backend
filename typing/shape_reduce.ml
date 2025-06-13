@@ -325,7 +325,6 @@ end) = struct
         | Some uid ->
           match Shape.Uid.Map.find_opt uid env.local_env.visited_uids with
           | Some new_uid ->
-            Format.eprintf "visited already, old uid %a -> new uid %a\n" Uid.print uid Uid.print new_uid;
             { uid = Some new_uid; desc = NLeaf; approximated = t.approximated }
           | None ->
             let new_uid = Shape.Uid.mk ~current_unit:None in
