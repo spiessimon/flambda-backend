@@ -31,6 +31,7 @@ type cms_infos = {
   cms_uid_to_loc : string Location.loc Shape.Uid.Tbl.t;
   cms_uid_to_attributes : Parsetree.attributes Shape.Uid.Tbl.t;
   cms_impl_shape : Shape.t option; (* None for mli *)
+  cms_decl_table : Shape.tds Shape.Uid.Tbl.t;
   cms_ident_occurrences :
     (Longident.t Location.loc * Shape_reduce.result) array
 }
@@ -123,6 +124,7 @@ let save_cms target modname binary_annots initial_env shape =
             cms_source_digest = source_digest;
             cms_initial_env;
             cms_uid_to_loc;
+            cms_decl_table = Type_shape.file_local_type_decls;
             cms_uid_to_attributes;
             cms_impl_shape = shape;
             cms_ident_occurrences
