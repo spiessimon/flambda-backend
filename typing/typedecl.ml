@@ -3028,13 +3028,7 @@ let transl_type_decl env rec_flag sdecl_list =
   in
   (* Check re-exportation, updating [type_jkind] from the manifest *)
   let decls = List.map2 (check_abbrev new_env) sdecl_list decls in
-  (* Compute the almost final environment with variance and immediacy *)
-  let pre_final_env = add_types_to_env decls env in
   (* Save the declarations in [Type_shape] for debug info. *)
-  (* CR sspies: Is this approach of first adding the types, then computing the
-     declaration shapes, and finally adding the types again (with shapes) the
-     right one, or should they have some temporary shapes the first time around?
-    *)
   let decl_lookup_map = Ident.Map.of_list decls in
   let lookup_ident (kind: Shape.Sig_component_kind.t ) id =
     match kind with
@@ -3058,7 +3052,7 @@ let transl_type_decl env rec_flag sdecl_list =
     Shape.type_decl (Some uid) shape_tds
   ) decls
   in
-  let final_env = add_types_to_env decls ~shapes pre_final_env in
+  let final_env = add_types_to_env decls ~shapes env in
   (* Keep original declaration *)
   let final_decls =
     List.map2
