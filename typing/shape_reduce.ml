@@ -341,7 +341,7 @@ end) = struct
         | None -> env
         | Some uid ->
           { env with local_env = { env.local_env with visited_uids = Shape.Uid.Map.add uid new_uid env.local_env.visited_uids}}) in
-        { (return (NType_decl (delay_reduce_tds env tds))) with uid = Some new_uid }
+        { desc = (NType_decl (delay_reduce_tds env tds)); uid = Some new_uid; approximated = t.approximated }
       | Struct m ->
           let mnf = Item.Map.map (delay_reduce env) m in
           return (NStruct mnf)
