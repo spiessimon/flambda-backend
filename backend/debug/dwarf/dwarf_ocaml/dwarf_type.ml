@@ -1086,13 +1086,6 @@ let rec type_shape_layout_to_die ?type_name (type_shape : Layout.t Shape.ts)
   (* match Cache.find_opt cache type_shape with | Some reference -> reference |
      None -> *)
   let reference = Proto_die.create_reference () in
-  Format.eprintf "%a is %a@." Asm_targets.Asm_label.print reference
-    Shape.print_ts type_shape;
-  (* We add the combination of shape and layout early in case of recursive
-     types, which can then look up their reference, before it is fully defined.
-     That way [type myintlist = MyNil | MyCons of int * myintlist] will work
-     correctly (as opposed to diverging). *)
-  (* Cache.add cache type_shape reference; *)
   let layout_name =
     Format.asprintf "%a" Jkind_types.Sort.Const.format
       (Shape.shape_layout type_shape)
@@ -1219,6 +1212,10 @@ and type_shape_layout_constructor_die ~reference ?name ~parent_proto_die
     let reference = Proto_die.create_reference () in
     create_typedef_die ~reference:type_expr_ref ~parent_proto_die ?name
       reference;
+    (* We add the combination of shape and layout early in case of recursive
+       types, which can then look up their reference, before it is fully
+       defined. That way [type myintlist = MyNil | MyCons of int * myintlist]
+       will work correctly (as opposed to diverging). *)
     Option.iter (fun uid -> Cache.add cache uid reference) shape.uid;
     let type_decl_shape =
       Type_shape.Type_decl_shape.replace_tvar type_decl_shape shapes
@@ -1379,11 +1376,6 @@ let rec flatten_type_shape (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
     let base_layouts = flatten_to_base_sorts layout in
     List.map (fun layout -> `Unknown layout) base_layouts
   | Ts_constr ((shape, layout), shapes) -> (
-    (* CR sspies: Deduplicate this code. Not sure where the right place is yet
-       for this reduction, but we certainly don't want to do it twice. *)
-    (*= let shape =
-      Shape_reduce.local_reduce Env.empty shape
-    in *)
     let decl =
       match shape.desc with
       | Shape.Type_decl tds -> Some tds
@@ -1391,10 +1383,6 @@ let rec flatten_type_shape (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
       | Shape.Alias _ | Shape.Proj _ | Shape.Comp_unit _ | Shape.Error _ ->
         None
     in
-    (*= let decl = match decl with
-    | Some decl -> Some decl
-    | None -> Type_shape.find_in_type_decls type_uid None ~load_decls_from_cms
-    in *)
     match[@warning "-4"] decl with
     | None -> [`Known type_shape]
     (* CR sspies: enabled for debugging only *)
