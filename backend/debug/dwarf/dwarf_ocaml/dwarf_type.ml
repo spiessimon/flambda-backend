@@ -1584,6 +1584,24 @@ and compress_ts (used_uids : Shape.Uid.Set.t) (ts : 'a Shape.ts) =
         kind )
   | Ts_other _ -> ts
 
+module With_cms_reduce = Shape_reduce.Make (struct
+  let fuel = 10
+
+  let read_unit_shape ~unit_name =
+    let filename = String.uncapitalize_ascii unit_name in
+    match Load_path.find_normalized (filename ^ ".cms") with
+    | exception Not_found -> None
+    | fn ->
+      (* CR tnowak: exception? *)
+      let cms_infos = Cms_format.read fn in
+      Shape.Uid.Tbl.iter
+        (fun uid decl -> Shape.Uid.Tbl.add Type_shape.all_type_decls uid decl)
+        cms_infos.cms_decl_table;
+      (* CR sspies: Hacky way of dumping the shapes into .cms files and then
+         retrieving them again. *)
+      cms_infos.cms_impl_shape
+end)
+
 let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   let fallback_value_die =
     Proto_die.reference (DS.value_type_proto_die state)
@@ -1608,7 +1626,7 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
      instead. *)
   | Some (type_shape, type_name) -> (
     let shape_reduce =
-      Shape_reduce.local_reduce_ts Env.empty ~uid_lookup:(fun uid ->
+      With_cms_reduce.reduce_ts Env.empty ~uid_lookup:(fun uid ->
           Option.map
             (Shape.type_decl (Some uid))
             (Type_shape.find_in_type_decls uid None ~load_decls_from_cms))

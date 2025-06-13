@@ -1,8 +1,10 @@
 module Uid = Shape.Uid
 
 module Type_shape : sig
-
-  val of_type_expr : Types.type_expr -> (Path.t -> Shape.t option) -> Shape.without_layout Shape.ts
+  val of_type_expr :
+    Types.type_expr ->
+    (Path.t -> Shape.t option) ->
+    Shape.without_layout Shape.ts
 
   module With_layout : sig
     include Identifiable.S with type t := Shape.Layout.t Shape.ts
@@ -10,13 +12,16 @@ module Type_shape : sig
 end
 
 module Type_decl_shape : sig
+  val of_type_declaration :
+    Types.type_declaration -> (Path.t -> Shape.t option) -> Shape.tds
 
-  val of_type_declaration : Types.type_declaration -> (Path.t -> Shape.t option) -> Shape.tds
-
-  val replace_tvar : Shape.tds -> Shape.without_layout Shape.ts list -> Shape.tds
+  val replace_tvar :
+    Shape.tds -> Shape.without_layout Shape.ts list -> Shape.tds
 end
 
 val all_type_decls : Shape.tds Uid.Tbl.t
+
+val file_local_type_decls : Shape.tds Uid.Tbl.t
 
 val all_type_shapes : (Shape.Layout.t Shape.ts * string) Uid.Tbl.t
 
