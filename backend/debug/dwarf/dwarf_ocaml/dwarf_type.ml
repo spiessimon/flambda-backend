@@ -1386,9 +1386,7 @@ let rec flatten_type_shape (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
         None
     in
     match[@warning "-4"] decl with
-    | None -> [`Known type_shape]
-    (* CR sspies: enabled for debugging only *)
-    (* unknown_base_layouts layout *)
+    | None -> unknown_base_layouts layout
     | Some { definition = Tds_other; _ } -> unknown_base_layouts layout
     | Some type_decl_shape -> (
       let type_decl_shape =
