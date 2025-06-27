@@ -388,8 +388,6 @@ end
 
 let (all_type_decls : Shape.tds Uid.Tbl.t) = Uid.Tbl.create 16
 
-let (file_local_type_decls : Shape.tds Uid.Tbl.t) = Uid.Tbl.create 16
-
 let (all_type_shapes : (Shape.Layout.t Shape.ts * string) Uid.Tbl.t) =
   Uid.Tbl.create 16
 

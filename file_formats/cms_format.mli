@@ -55,6 +55,7 @@ val save_cms :
   Env.t -> (* initial env *)
   Shape.t option ->
   (Cmt_format.dependency_kind * Uid.t * Uid.t) list ->
+  Shape.tds Shape.Uid.Tbl.t option -> (* declarations in compilation unit *)
   unit
 
 val register_toplevel_attributes :
