@@ -90,11 +90,6 @@ let emit_debug_info ~die =
           if has_children = Child_determination.Yes then indent := !indent + 2
         | End_of_siblings -> indent := !indent - 2)
 
-let load_decls_from_cms _path =
-  (* let cms_infos = Cms_format.read path in cms_infos.cms_shapes_for_dwarf *)
-  (* CR sspies: We return an empty table here for now, because we have not yet
-     agumented the [.cms] format to store the relevant shape information. *)
-  Shape.Uid.Tbl.create 0
 
 let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
   match sort with
@@ -1631,7 +1626,7 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
       With_cms_reduce.reduce_ts Env.empty ~uid_lookup:(fun uid ->
           Option.map
             (Shape.type_decl (Some uid))
-            (Type_shape.find_in_type_decls uid None ~load_decls_from_cms))
+            (Type_shape.find_in_type_decls uid))
     in
     Format.eprintf "pre reduce shape = %a@." Shape.print_ts type_shape;
     let layout = Shape.shape_layout type_shape in
