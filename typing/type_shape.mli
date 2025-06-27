@@ -39,14 +39,8 @@ val add_to_type_shapes :
 
 val find_in_type_decls :
   Uid.t ->
-  Path.t option ->
-  load_decls_from_cms:(string -> Shape.tds Uid.Tbl.t) ->
   Shape.tds option
 
-val attach_compilation_unit_to_paths :
-  Shape.tds -> compilation_unit:Compilation_unit.t -> Shape.tds
-
-val compilation_unit_from_path : Path.t -> string option
 
 val print_table_all_type_decls : Format.formatter -> unit
 
