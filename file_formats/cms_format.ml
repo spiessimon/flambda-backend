@@ -95,7 +95,7 @@ let uid_tables_of_binary_annots binary_annots =
     );
   cms_uid_to_loc, cms_uid_to_attributes
 
-let save_cms target modname binary_annots initial_env shape =
+let save_cms target modname binary_annots initial_env shape type_declarations =
   if (!Clflags.binary_annotations_cms && not !Clflags.print_types) then begin
     Misc.output_to_file_via_temporary
        ~mode:[Open_binary] (Unit_info.Artifact.filename target)
@@ -115,6 +115,7 @@ let save_cms target modname binary_annots initial_env shape =
         let cms_uid_to_loc, cms_uid_to_attributes =
           uid_tables_of_binary_annots binary_annots
         in
+        let empty_table = Shape.Uid.Tbl.create 0 in
         let cms =
           {
             cms_modname = modname;
@@ -124,7 +125,7 @@ let save_cms target modname binary_annots initial_env shape =
             cms_source_digest = source_digest;
             cms_initial_env;
             cms_uid_to_loc;
-            cms_decl_table = Type_shape.file_local_type_decls;
+            cms_decl_table = Option.value ~default:empty_table type_declarations;
             cms_uid_to_attributes;
             cms_impl_shape = shape;
             cms_ident_occurrences

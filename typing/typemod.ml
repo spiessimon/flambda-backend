@@ -3772,11 +3772,13 @@ let type_implementation target modulename initial_env ast =
   let error e =
     raise (Error (Location.in_file sourcefile, initial_env, e))
   in
-  let save_cmt_and_cms target annots initial_env cmi shape =
+  let save_cmt_and_cms target annots initial_env cmi shape type_decls =
     Cmt_format.save_cmt (Unit_info.cmt target) modulename
       annots initial_env cmi shape;
+    (* CR sspies: Consider the optimization where we filter out the bindings
+       for default type declaration shapes [Tds_other]. *)
     Cms_format.save_cms (Unit_info.cms target) modulename
-      annots initial_env shape;
+      annots initial_env shape type_decls;
     gen_annot target annots;
   in
   Cmt_format.clear ();
@@ -3785,6 +3787,7 @@ let type_implementation target modulename initial_env ast =
       Typecore.reset_allocations ();
       Env.reset_required_globals ();
       Env.reset_probes ();
+      Env.reset_type_decl_shapes ();
       if !Clflags.print_types then (* #7656 *)
         ignore @@ Warnings.parse_options false "-32-34-37-38-60";
       if !Clflags.as_parameter then
@@ -3885,7 +3888,8 @@ let type_implementation target modulename initial_env ast =
           Profile.record_call "save_cmt" (fun () ->
             let shape = Shape_reduce.local_reduce Env.empty shape in
             let annots = Cmt_format.Implementation str in
-            save_cmt_and_cms target annots initial_env None (Some shape));
+            let decls = Env.get_type_decl_shapes () in
+            save_cmt_and_cms target annots initial_env None (Some shape) (Some decls));
           { structure = str;
             coercion;
             shape;
@@ -3932,7 +3936,8 @@ let type_implementation target modulename initial_env ast =
             in
             Profile.record_call "save_cmt" (fun () ->
               let annots = Cmt_format.Implementation str in
-              save_cmt_and_cms target annots initial_env (Some cmi) (Some shape));
+              let decls = Env.get_type_decl_shapes () in
+              save_cmt_and_cms target annots initial_env (Some cmi) (Some shape) (Some decls));
           end;
           { structure = str;
             coercion;
@@ -3949,14 +3954,14 @@ let type_implementation target modulename initial_env ast =
             Cmt_format.Partial_implementation
               (Array.of_list (Cmt_format.get_saved_types ()))
           in
-          save_cmt_and_cms target annots initial_env None None)
+          save_cmt_and_cms target annots initial_env None None None)
       )
 
 let save_signature target modname tsg initial_env cmi =
   Cmt_format.save_cmt (Unit_info.cmti target) modname
     (Cmt_format.Interface tsg) initial_env (Some cmi) None;
   Cms_format.save_cms  (Unit_info.cmsi target) modname
-    (Cmt_format.Interface tsg) initial_env None
+    (Cmt_format.Interface tsg) initial_env None None
 
 let cms_register_toplevel_signature_attributes ~sourcefile ~uid ast =
   cms_register_toplevel_attributes ~sourcefile ~uid ast.psg_items
@@ -4075,7 +4080,7 @@ let package_units initial_env objfiles target_cmi modulename =
     Cmt_format.save_cmt  (Unit_info.companion_cmt target_cmi) modulename
       (Cmt_format.Packed (sg, objfiles)) initial_env  None (Some shape);
     Cms_format.save_cms  (Unit_info.companion_cms target_cmi) modulename
-      (Cmt_format.Packed (sg, objfiles)) initial_env (Some shape);
+      (Cmt_format.Packed (sg, objfiles)) initial_env (Some shape) None;
     cc
   end else begin
     (* Determine imports *)
@@ -4101,7 +4106,7 @@ let package_units initial_env objfiles target_cmi modulename =
       Cmt_format.save_cmt (Unit_info.companion_cmt target_cmi)  modulename
         (Cmt_format.Packed (sign, objfiles)) initial_env (Some cmi) (Some shape);
       Cms_format.save_cms (Unit_info.companion_cms target_cmi)  modulename
-        (Cmt_format.Packed (sign, objfiles)) initial_env (Some shape);
+        (Cmt_format.Packed (sign, objfiles)) initial_env (Some shape) None;
     end;
     Tcoerce_none
   end

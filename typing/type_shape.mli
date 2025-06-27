@@ -21,8 +21,6 @@ end
 
 val all_type_decls : Shape.tds Uid.Tbl.t
 
-val file_local_type_decls : Shape.tds Uid.Tbl.t
-
 val all_type_shapes : (Shape.Layout.t Shape.ts * string) Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)

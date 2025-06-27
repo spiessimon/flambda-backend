@@ -50,6 +50,7 @@ val save_cms :
   Cmt_format.binary_annots ->
   Env.t -> (* initial env *)
   Shape.t option ->
+  Shape.tds Shape.Uid.Tbl.t option -> (* declarations in compilation unit *)
   unit
 
 val register_toplevel_attributes :

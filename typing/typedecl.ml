@@ -2980,7 +2980,7 @@ let transl_type_decl env rec_flag sdecl_list =
     let uid = decl.type_uid in
     let shape_tds = Type_shape.Type_decl_shape.of_type_declaration decl shape_of_path in
     Uid.Tbl.add Type_shape.all_type_decls uid shape_tds;
-    Uid.Tbl.add Type_shape.file_local_type_decls uid shape_tds;
+    Env.add_type_decl_shape uid shape_tds;
     Shape.type_decl (Some uid) shape_tds
   ) decls
   in
