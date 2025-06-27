@@ -1659,6 +1659,13 @@ let find_shape env (ns : Shape.Sig_component_kind.t) id =
 let shape_of_path ~namespace env =
   Shape.of_path ~namespace ~find_shape:(find_shape env)
 
+let shape_of_path_opt ~namespace env path =
+  try
+    (Some (shape_of_path ~namespace env path))
+  with
+    Not_found -> None
+
+
 let shape_or_leaf uid = function
   | None -> Shape.leaf uid
   | Some shape -> shape
