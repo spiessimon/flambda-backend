@@ -67,12 +67,10 @@ let create ~sourcefile ~unit_name ~asm_directives ~get_file_id ~code_begin
        files we haven't seen before? *)
   in
   let debug_print_shapes_and_decls = false in
-  let print_binder_shape ppf
-      (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
+  let print_binder_shape ppf (type_shape : Jkind_types.Sort.Const.t Shape.ts) =
     Type_shape.Type_shape.With_layout.print ppf type_shape;
     Format.fprintf ppf " ";
-    Jkind_types.Sort.Const.format ppf
-      (Shape.shape_layout type_shape)
+    Jkind_types.Sort.Const.format ppf (Shape.shape_layout type_shape)
   in
   if debug_print_shapes_and_decls
   then (

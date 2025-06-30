@@ -35,10 +35,7 @@ val add_to_type_shapes :
   (Path.t -> Shape.t option) ->
   unit
 
-val find_in_type_decls :
-  Uid.t ->
-  Shape.tds option
-
+val find_in_type_decls : Uid.t -> Shape.tds option
 
 val print_table_all_type_decls : Format.formatter -> unit
 

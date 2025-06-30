@@ -402,7 +402,6 @@ let add_to_type_shapes var_uid type_expr sort ~name shape_of_path =
   let type_shape = Shape.shape_with_layout ~layout:sort type_shape in
   Uid.Tbl.add all_type_shapes var_uid (type_shape, name)
 
-
 let find_in_type_decls (type_uid : Uid.t) =
   Uid.Tbl.find_opt all_type_decls type_uid
 

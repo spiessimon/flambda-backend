@@ -90,7 +90,6 @@ let emit_debug_info ~die =
           if has_children = Child_determination.Yes then indent := !indent + 2
         | End_of_siblings -> indent := !indent - 2)
 
-
 let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
   match sort with
   | Void -> 0
@@ -967,8 +966,7 @@ let create_tuple_die ~reference ~parent_proto_die ?name fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
-let unboxed_base_type_to_simd_vec_split
-    (x : Shape.Predef.unboxed) =
+let unboxed_base_type_to_simd_vec_split (x : Shape.Predef.unboxed) =
   match x with
   | Shape.Predef.Unboxed_simd s -> Some s
   | Unboxed_float | Unboxed_float32 | Unboxed_nativeint | Unboxed_int64
@@ -1059,14 +1057,14 @@ let create_base_layout_type ?(simd_vec_split = None) ~reference
     create_unboxed_base_layout_die ~reference ~parent_proto_die ?name ~byte_size
       Encoding_attribute.signed
   | Vec128 ->
-    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
-      ?name ~split:simd_vec_split ()
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die ?name
+      ~split:simd_vec_split ()
   | Vec256 ->
-    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
-      ?name ~split:simd_vec_split ()
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die ?name
+      ~split:simd_vec_split ()
   | Vec512 ->
-    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
-      ?name ~split:simd_vec_split ()
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die ?name
+      ~split:simd_vec_split ()
 
 module Cache = Shape.Uid.Tbl
 
