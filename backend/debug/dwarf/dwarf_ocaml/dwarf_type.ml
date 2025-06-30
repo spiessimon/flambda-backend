@@ -34,6 +34,8 @@ let base_layout_to_byte_size (sort : Jkind_types.Sort.base) =
   | Bits32 -> 4
   | Bits64 -> 8
   | Vec128 -> 16
+  | Vec256 -> 32
+  | Vec512 -> 64
   | Value -> Arch.size_addr
 
 (* smaller entries in mixed blocks are expanded to be of, at least, word size *)
@@ -180,6 +182,7 @@ let reorder_record_fields_for_mixed_record ~mixed_block_shapes fields =
   let fields = Array.of_list fields in
   let reordering =
     Mixed_block_shape.of_mixed_block_elements
+      ~print_locality:(fun _ _ -> ())
       (Lambda.transl_mixed_product_shape
          ~get_value_kind:(fun _ -> Lambda.generic_value)
          (* We don't care about the value kind of values, because it is dropped
@@ -190,7 +193,8 @@ let reorder_record_fields_for_mixed_record ~mixed_block_shapes fields =
   in
   let fields =
     Array.init (Array.length fields) (fun i ->
-        Array.get fields (Mixed_block_shape.new_index_to_old_index reordering i))
+        let permute = Mixed_block_shape.new_indexes_to_old_indexes reordering in
+        Array.get fields permute.(i))
   in
   Array.to_list fields
 
@@ -845,40 +849,16 @@ let create_tuple_die ~reference ~parent_proto_die ~name ~fields =
   wrap_die_under_a_pointer ~proto_die:structure_type ~reference
     ~parent_proto_die
 
-type vec128_splits =
-  | Int8x16
-  | Int16x8
-  | Int32x4
-  | Int64x2
-  | Float32x4
-  | Float64x2
-
-let unboxed_base_type_to_vec128_split (x : Type_shape.Type_shape.Predef.unboxed)
-    =
+let unboxed_base_type_to_simd_vec_split
+    (x : Type_shape.Type_shape.Predef.unboxed) =
   match x with
-  | Type_shape.Type_shape.Predef.Unboxed_int8x16 -> Some Int8x16
-  | Unboxed_int16x8 -> Some Int16x8
-  | Unboxed_int32x4 -> Some Int32x4
-  | Unboxed_int64x2 -> Some Int64x2
-  | Unboxed_float32x4 -> Some Float32x4
-  | Unboxed_float64x2 -> Some Float64x2
+  | Type_shape.Type_shape.Predef.Unboxed_simd s -> Some s
   | Unboxed_float | Unboxed_float32 | Unboxed_nativeint | Unboxed_int64
   | Unboxed_int32 ->
     None
 
-let predef_type_to_vec128_split (m : Type_shape.Type_shape.Predef.t) =
-  match m with
-  | Int8x16 -> Some Int8x16
-  | Int16x8 -> Some Int16x8
-  | Int32x4 -> Some Int32x4
-  | Int64x2 -> Some Int64x2
-  | Float32x4 -> Some Float32x4
-  | Float64x2 -> Some Float64x2
-  | Array | Char | Unboxed _ | Extension_constructor | Float | Float32 | String
-  | Lazy_t | Bytes | Floatarray | Exception | Int | Int32 | Int64 | Nativeint ->
-    None
-
-let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
+let create_simd_vec_split_base_layout_die ~reference ~parent_proto_die ~name
+    ~(split : Type_shape.Type_shape.Predef.simd_vec_split option) =
   let maybe_name = List.map DAH.create_name (Option.to_list name) in
   match split with
   | None ->
@@ -904,6 +884,18 @@ let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
       | Int64x2 -> Encoding_attribute.signed, 2, 8
       | Float32x4 -> Encoding_attribute.float, 4, 4
       | Float64x2 -> Encoding_attribute.float, 2, 8
+      | Int8x32 -> Encoding_attribute.signed, 32, 1
+      | Int16x16 -> Encoding_attribute.signed, 16, 2
+      | Int32x8 -> Encoding_attribute.signed, 8, 4
+      | Int64x4 -> Encoding_attribute.signed, 4, 8
+      | Float32x8 -> Encoding_attribute.float, 8, 4
+      | Float64x4 -> Encoding_attribute.float, 4, 8
+      | Int8x64 -> Encoding_attribute.signed, 64, 1
+      | Int16x32 -> Encoding_attribute.signed, 32, 2
+      | Int32x16 -> Encoding_attribute.signed, 16, 4
+      | Int64x8 -> Encoding_attribute.signed, 8, 8
+      | Float32x16 -> Encoding_attribute.float, 16, 4
+      | Float64x8 -> Encoding_attribute.float, 8, 8
     in
     let base_type =
       Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Base_type
@@ -922,7 +914,7 @@ let create_vec128_base_layout_die ~reference ~parent_proto_die ~name ~split =
         ()
     done
 
-let create_base_layout_type ?(vec128_split = None) ~reference
+let create_base_layout_type ?(simd_vec_split = None) ~reference
     (sort : Jkind_types.Sort.base) ~name ~parent_proto_die ~fallback_value_die =
   let byte_size = base_layout_to_byte_size sort in
   match sort with
@@ -948,8 +940,14 @@ let create_base_layout_type ?(vec128_split = None) ~reference
     create_unboxed_base_layout_die ~reference ~parent_proto_die ~name ~byte_size
       ~encoding:Encoding_attribute.signed
   | Vec128 ->
-    create_vec128_base_layout_die ~reference ~parent_proto_die ~name:(Some name)
-      ~split:vec128_split
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
+      ~name:(Some name) ~split:simd_vec_split
+  | Vec256 ->
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
+      ~name:(Some name) ~split:simd_vec_split
+  | Vec512 ->
+    create_simd_vec_split_base_layout_die ~reference ~parent_proto_die
+      ~name:(Some name) ~split:simd_vec_split
 
 module Cache = Type_shape.Type_shape.With_layout.Tbl
 
@@ -1044,16 +1042,13 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
   | Unboxed b, _ ->
     let type_layout = Type_shape.Type_shape.Predef.unboxed_type_to_layout b in
     create_base_layout_type
-      ~vec128_split:(unboxed_base_type_to_vec128_split b)
+      ~simd_vec_split:(unboxed_base_type_to_simd_vec_split b)
       ~reference type_layout ~name ~parent_proto_die ~fallback_value_die
-    (* CR sspies: Take [b] into account here, perhaps as an optional argument,
-       to support int8x16 vs float64x2. *)
-  | ((Int8x16 | Int16x8 | Int32x4 | Int64x2 | Float32x4 | Float64x2) as b), _ ->
+  | Simd s, _ ->
     (* We represent these vectors as pointers of the form [struct {...} *],
        because their runtime representation are abstract blocks. *)
     let base_ref = Proto_die.create_reference () in
-    let vec128_split = predef_type_to_vec128_split b in
-    create_vec128_base_layout_die ~split:vec128_split ~reference:base_ref
+    create_simd_vec_split_base_layout_die ~split:(Some s) ~reference:base_ref
       ~name:None ~parent_proto_die;
     Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
       ~tag:Dwarf_tag.Reference_type

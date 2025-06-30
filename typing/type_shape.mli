@@ -3,18 +3,36 @@ module Layout = Jkind_types.Sort.Const
 
 module Type_shape : sig
   module Predef : sig
+    type simd_vec_split =
+      (* 128 bit *)
+      | Int8x16
+      | Int16x8
+      | Int32x4
+      | Int64x2
+      | Float32x4
+      | Float64x2
+      (* 256 bit *)
+      | Int8x32
+      | Int16x16
+      | Int32x8
+      | Int64x4
+      | Float32x8
+      | Float64x4
+      (* 512 bit *)
+      | Int8x64
+      | Int16x32
+      | Int32x16
+      | Int64x8
+      | Float32x16
+      | Float64x8
+
     type unboxed =
       | Unboxed_float
       | Unboxed_float32
       | Unboxed_nativeint
       | Unboxed_int64
       | Unboxed_int32
-      | Unboxed_float32x4
-      | Unboxed_float64x2
-      | Unboxed_int8x16
-      | Unboxed_int16x8
-      | Unboxed_int32x4
-      | Unboxed_int64x2
+      | Unboxed_simd of simd_vec_split
 
     type t =
       | Array
@@ -30,12 +48,7 @@ module Type_shape : sig
       | Lazy_t
       | Nativeint
       | String
-      | Int8x16
-      | Int16x8
-      | Int32x4
-      | Int64x2
-      | Float32x4
-      | Float64x2
+      | Simd of simd_vec_split
       | Exception
       | Unboxed of unboxed
 
