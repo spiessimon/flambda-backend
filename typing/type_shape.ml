@@ -3,18 +3,36 @@ module Layout = Jkind_types.Sort.Const
 
 module Type_shape = struct
   module Predef = struct
+    type simd_vec_split =
+      (* 128 bit *)
+      | Int8x16
+      | Int16x8
+      | Int32x4
+      | Int64x2
+      | Float32x4
+      | Float64x2
+      (* 256 bit *)
+      | Int8x32
+      | Int16x16
+      | Int32x8
+      | Int64x4
+      | Float32x8
+      | Float64x4
+      (* 512 bit *)
+      | Int8x64
+      | Int16x32
+      | Int32x16
+      | Int64x8
+      | Float32x16
+      | Float64x8
+
     type unboxed =
       | Unboxed_float
       | Unboxed_float32
       | Unboxed_nativeint
       | Unboxed_int64
       | Unboxed_int32
-      | Unboxed_float32x4
-      | Unboxed_float64x2
-      | Unboxed_int8x16
-      | Unboxed_int16x8
-      | Unboxed_int32x4
-      | Unboxed_int64x2
+      | Unboxed_simd of simd_vec_split
 
     type t =
       | Array
@@ -30,15 +48,30 @@ module Type_shape = struct
       | Lazy_t
       | Nativeint
       | String
-      | Int8x16
-      | Int16x8
-      | Int32x4
-      | Int64x2
-      | Float32x4
-      | Float64x2
+      | Simd of simd_vec_split
       | Exception
       (* Unboxed types *)
       | Unboxed of unboxed
+
+    let simd_vec_split_to_string : simd_vec_split -> string = function
+      | Int8x16 -> "int8x16"
+      | Int16x8 -> "int16x8"
+      | Int32x4 -> "int32x4"
+      | Int64x2 -> "int64x2"
+      | Float32x4 -> "float32x4"
+      | Float64x2 -> "float64x2"
+      | Int8x32 -> "int8x32"
+      | Int16x16 -> "int16x16"
+      | Int32x8 -> "int32x8"
+      | Int64x4 -> "int64x4"
+      | Float32x8 -> "float32x8"
+      | Float64x4 -> "float64x4"
+      | Int8x64 -> "int8x64"
+      | Int16x32 -> "int16x32"
+      | Int32x16 -> "int32x16"
+      | Int64x8 -> "int64x8"
+      | Float32x16 -> "float32x16"
+      | Float64x8 -> "float64x8"
 
     (* name of the type without the hash *)
     let unboxed_to_string (u : unboxed) =
@@ -48,14 +81,9 @@ module Type_shape = struct
       | Unboxed_nativeint -> "nativeint"
       | Unboxed_int64 -> "int64"
       | Unboxed_int32 -> "int32"
-      | Unboxed_float32x4 -> "float32x4"
-      | Unboxed_float64x2 -> "float64x2"
-      | Unboxed_int8x16 -> "int8x16"
-      | Unboxed_int16x8 -> "int16x8"
-      | Unboxed_int32x4 -> "int32x4"
-      | Unboxed_int64x2 -> "int64x2"
+      | Unboxed_simd s -> simd_vec_split_to_string s
 
-    let to_string = function
+    let to_string : t -> string = function
       | Array -> "array"
       | Bytes -> "bytes"
       | Char -> "char"
@@ -69,14 +97,30 @@ module Type_shape = struct
       | Lazy_t -> "lazy_t"
       | Nativeint -> "nativeint"
       | String -> "string"
-      | Int8x16 -> "int8x16"
-      | Int16x8 -> "int16x8"
-      | Int32x4 -> "int32x4"
-      | Int64x2 -> "int64x2"
-      | Float32x4 -> "float32x4"
-      | Float64x2 -> "float64x2"
+      | Simd s -> simd_vec_split_to_string s
       | Exception -> "exn"
       | Unboxed u -> unboxed_to_string u ^ "#"
+
+    let simd_vec_split_of_string : string -> simd_vec_split option = function
+      | "int8x16#" -> Some Int8x16
+      | "int16x8#" -> Some Int16x8
+      | "int32x4#" -> Some Int32x4
+      | "int64x2#" -> Some Int64x2
+      | "float32x4#" -> Some Float32x4
+      | "float64x2#" -> Some Float64x2
+      | "int8x32#" -> Some Int8x32
+      | "int16x16#" -> Some Int16x16
+      | "int32x8#" -> Some Int32x8
+      | "int64x4#" -> Some Int64x4
+      | "float32x8#" -> Some Float32x8
+      | "float64x4#" -> Some Float64x4
+      | "int8x64#" -> Some Int8x64
+      | "int16x32#" -> Some Int16x32
+      | "int32x16#" -> Some Int32x16
+      | "int64x8#" -> Some Int64x8
+      | "float32x16#" -> Some Float32x16
+      | "float64x8#" -> Some Float64x8
+      | _ -> None
 
     let unboxed_of_string = function
       | "float#" -> Some Unboxed_float
@@ -84,15 +128,30 @@ module Type_shape = struct
       | "nativeint#" -> Some Unboxed_nativeint
       | "int64#" -> Some Unboxed_int64
       | "int32#" -> Some Unboxed_int32
-      | "float32x4#" -> Some Unboxed_float32x4
-      | "float64x2#" -> Some Unboxed_float64x2
-      | "int8x16#" -> Some Unboxed_int8x16
-      | "int16x8#" -> Some Unboxed_int16x8
-      | "int32x4#" -> Some Unboxed_int32x4
-      | "int64x2#" -> Some Unboxed_int64x2
+      | s -> Option.map (fun s -> Unboxed_simd s) (simd_vec_split_of_string s)
+
+    let simd_base_type_of_string = function
+      | "int8x16" -> Some Int8x16
+      | "int16x8" -> Some Int16x8
+      | "int32x4" -> Some Int32x4
+      | "int64x2" -> Some Int64x2
+      | "float32x4" -> Some Float32x4
+      | "float64x2" -> Some Float64x2
+      | "int8x32" -> Some Int8x32
+      | "int16x16" -> Some Int16x16
+      | "int32x8" -> Some Int32x8
+      | "int64x4" -> Some Int64x4
+      | "float32x8" -> Some Float32x8
+      | "float64x4" -> Some Float64x4
+      | "int8x64" -> Some Int8x64
+      | "int16x32" -> Some Int16x32
+      | "int32x16" -> Some Int32x16
+      | "int64x8" -> Some Int64x8
+      | "float32x16" -> Some Float32x16
+      | "float64x8" -> Some Float64x8
       | _ -> None
 
-    let of_string = function
+    let of_string : string -> t option = function
       | "array" -> Some Array
       | "bytes" -> Some Bytes
       | "char" -> Some Char
@@ -105,18 +164,36 @@ module Type_shape = struct
       | "int64" -> Some Int64
       | "lazy_t" -> Some Lazy_t
       | "nativeint" -> Some Nativeint
-      | "int8x16" -> Some Int8x16
-      | "int16x8" -> Some Int16x8
-      | "int32x4" -> Some Int32x4
-      | "int64x2" -> Some Int64x2
-      | "float32x4" -> Some Float32x4
-      | "float64x2" -> Some Float64x2
       | "string" -> Some String
       | "exn" -> Some Exception
       | s -> (
-        match unboxed_of_string s with
-        | Some u -> Some (Unboxed u)
-        | None -> None)
+        match simd_base_type_of_string s with
+        | Some b -> Some (Simd b)
+        | None -> (
+          match unboxed_of_string s with
+          | Some u -> Some (Unboxed u)
+          | None -> None))
+
+    let simd_vec_split_to_layout (b : simd_vec_split) : Jkind_types.Sort.base =
+      match b with
+      | Int8x16 -> Vec128
+      | Int16x8 -> Vec128
+      | Int32x4 -> Vec128
+      | Int64x2 -> Vec128
+      | Float32x4 -> Vec128
+      | Float64x2 -> Vec128
+      | Int8x32 -> Vec256
+      | Int16x16 -> Vec256
+      | Int32x8 -> Vec256
+      | Int64x4 -> Vec256
+      | Float32x8 -> Vec256
+      | Float64x4 -> Vec256
+      | Int8x64 -> Vec512
+      | Int16x32 -> Vec512
+      | Int32x16 -> Vec512
+      | Int64x8 -> Vec512
+      | Float32x16 -> Vec512
+      | Float64x8 -> Vec512
 
     let unboxed_type_to_layout (b : unboxed) : Jkind_types.Sort.base =
       match b with
@@ -125,14 +202,9 @@ module Type_shape = struct
       | Unboxed_nativeint -> Word
       | Unboxed_int64 -> Bits64
       | Unboxed_int32 -> Bits32
-      | Unboxed_float32x4 -> Vec128
-      | Unboxed_float64x2 -> Vec128
-      | Unboxed_int8x16 -> Vec128
-      | Unboxed_int16x8 -> Vec128
-      | Unboxed_int32x4 -> Vec128
-      | Unboxed_int64x2 -> Vec128
+      | Unboxed_simd s -> simd_vec_split_to_layout s
 
-    let predef_to_layout = function
+    let predef_to_layout : t -> Layout.t = function
       | Array -> Layout.Base Value
       | Bytes -> Layout.Base Value
       | Char -> Layout.Base Value
@@ -146,12 +218,7 @@ module Type_shape = struct
       | Lazy_t -> Layout.Base Value
       | Nativeint -> Layout.Base Value
       | String -> Layout.Base Value
-      | Int8x16 -> Layout.Base Value
-      | Int16x8 -> Layout.Base Value
-      | Int32x4 -> Layout.Base Value
-      | Int64x2 -> Layout.Base Value
-      | Float32x4 -> Layout.Base Value
-      | Float64x2 -> Layout.Base Value
+      | Simd _ -> Layout.Base Value
       | Exception -> Layout.Base Value
       | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
   end
@@ -257,6 +324,7 @@ module Type_shape = struct
           ( of_type_expr_go ~depth ~visited arg uid_of_path,
             of_type_expr_go ~depth ~visited ret uid_of_path )
       | Tunivar { name; _ } -> Ts_var (name, Layout_to_be_determined)
+      | Tof_kind _ -> Ts_other Layout_to_be_determined
       | Tpackage _ ->
         Ts_other
           Layout_to_be_determined (* CR sspies: Support first-class modules. *)
@@ -276,8 +344,9 @@ module Type_shape = struct
       Ts_tuple layouted_shapes
     | ( Ts_tuple _,
         ( Product _
-        | Base (Void | Bits32 | Bits64 | Float64 | Float32 | Word | Vec128) ) )
-      ->
+        | Base
+            ( Void | Bits32 | Bits64 | Float64 | Float32 | Word | Vec128
+            | Vec256 | Vec512 ) ) ) ->
       Misc.fatal_errorf "tuple shape must have layout value, but has layout %a"
         Layout.format layout
     | Ts_unboxed_tuple shapes, Product lys
@@ -293,8 +362,9 @@ module Type_shape = struct
       Misc.fatal_errorf "unboxed tuple shape has %d shapes, but %d layouts"
         (List.length shapes) (List.length lys)
     | ( Ts_unboxed_tuple _,
-        Base (Void | Value | Float32 | Float64 | Word | Bits32 | Bits64 | Vec128)
-      ) ->
+        Base
+          ( Void | Value | Float32 | Float64 | Word | Bits32 | Bits64 | Vec128
+          | Vec256 | Vec512 ) ) ->
       Misc.fatal_errorf
         "unboxed tuple must have unboxed product layout, but has layout %a"
         Layout.format layout
@@ -495,7 +565,10 @@ module Type_decl_shape = struct
     | Types.Bits32 -> Jkind_types.Sort.Bits32
     | Types.Bits64 -> Jkind_types.Sort.Bits64
     | Types.Vec128 -> Jkind_types.Sort.Vec128
+    | Types.Vec256 -> Jkind_types.Sort.Vec256
+    | Types.Vec512 -> Jkind_types.Sort.Vec512
     | Types.Word -> Jkind_types.Sort.Word
+    | Types.Product _ -> Misc.fatal_error "unimplemented"
 
   let of_variant_constructor_with_args name
       (cstr_args : Types.constructor_declaration)
