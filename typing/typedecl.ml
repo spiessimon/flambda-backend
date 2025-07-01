@@ -455,9 +455,6 @@ let set_private_row env loc p decl =
   in
   set_type_desc rv (Tconstr (p, decl.type_params, ref Mnil))
 
-
-
-
 (* Makes sure a type is representable. When called with a type variable, will
    lower [any] to a sort variable if [allow_unboxed = true], and to [value]
    if [allow_unboxed = false]. *)
@@ -2960,12 +2957,12 @@ let transl_type_decl env rec_flag sdecl_list =
   let decls = List.map2 (check_abbrev new_env) sdecl_list decls in
   (* Compute the final environment with variance and immediacy *)
   let final_env = add_types_to_env decls shapes env in
-  (* Save the declarations in [Type_shape] for debug info. *)
-    List.iter (fun (id, decl) ->
-      Type_shape.add_to_type_decls
-        (Pident id) decl
-        (Env.find_uid_of_path final_env)
-    ) decls;
+  (* Save the shapes of the declarations in [Type_shape] for debug info. *)
+  List.iter (fun (id, decl) ->
+    Type_shape.add_to_type_decls
+      (Pident id) decl
+      (Env.find_uid_of_path final_env)
+  ) decls;
   (* Keep original declaration *)
   let final_decls =
     List.map2

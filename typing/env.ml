@@ -1660,10 +1660,6 @@ let find_shape env (ns : Shape.Sig_component_kind.t) id =
   | Class_type ->
       (IdTbl.find_same id env.cltypes).cltda_shape
 
-
-
-(* CR sspies: This function is a duplicate of [Typedecl.uid_of_path], but once
-   we use the shape mechanism, it will be deleted. *)
 let find_uid_of_path env path =
   (* We currently only support lookup up debugging uids in the current
      environment. Future versions will support looking up declarations in other
@@ -1671,8 +1667,6 @@ let find_uid_of_path env path =
   match (find_type path env) with
   | exception Not_found -> None
   | type_ -> let uid = type_.type_uid in Some uid
-
-
 
 let shape_of_path ~namespace env =
   Shape.of_path ~namespace ~find_shape:(find_shape env)
