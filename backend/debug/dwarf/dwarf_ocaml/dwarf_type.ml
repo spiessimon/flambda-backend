@@ -121,6 +121,8 @@ let wrap_die_under_a_pointer ~proto_die ~reference ~parent_proto_die =
     ();
   debug_info_add_ptr ~reference ~inner:(Proto_die.reference proto_die)
 
+(* CR sspies: The name that we currently emit for arrays does not seem to
+  correctly handle the inner type. *)
 let create_array_die ~reference ~parent_proto_die ~child_die ?name () =
   let array_die =
     Proto_die.create ~parent:(Some parent_proto_die) ~tag:Dwarf_tag.Array_type
@@ -1606,7 +1608,12 @@ let variable_to_die state (var_uid : Uid.t) ~parent_proto_die =
   let uid_to_lookup, unboxed_projection =
     match var_uid with
     | Uid var_uid -> var_uid, None
-    | Proj (var_uid, field) -> var_uid, Some field
+    | Proj (var_uid, field) ->
+      var_uid, Some field
+      (* CR sspies: In cases of projections, the type name is currently wrong.
+         We use the type name of the unboxed product (which could potentially
+         be a type alias). We need a way to refer to the types of the fields,
+         or a way to conceal the effect of unarization. *)
   in
   match Shape.Uid.Tbl.find_opt Type_shape.all_type_shapes uid_to_lookup with
   | None ->
