@@ -389,82 +389,26 @@ let shapes_to_string (strings : string list) =
   | hd :: [] -> hd ^ " "
   | _ :: _ :: _ -> "(" ^ String.concat ", " strings ^ ") "
 
-(* CR sspies: The original code of [compilation_unit_from_path], namely
-   [split_type_path_at_compilation_unit], split the path here into compilation
-   unit and the path. However, this code created fresh identifiers (leading to
-   unexpected changes in variable names) and always discarded the path. Hence,
-   this new version only extracts the compilation unit. *)
-let rec compilation_unit_from_path (path : Path.t) =
-  match path with
-  | Pident _ | Papply _ -> None
-  | Pdot (Pident i, _) ->
-    if Ident.is_global i then Some (Ident.name i) else None
-  | Pdot (path, _) ->
-    let comp_unit = compilation_unit_from_path path in
-    comp_unit
-  | Pextra_ty (path, _) ->
-    let comp_unit = compilation_unit_from_path path in
-    comp_unit
+let find_in_type_decls (type_uid : Uid.t) =
+  Uid.Tbl.find_opt all_type_decls type_uid
 
-let debug_type_search = false
-
-(* CR sspies: This seems to not perform caching. I think [load_decls_from_cms]
-   always goes to the file and loads it the original code. *)
-let find_in_type_decls (type_uid : Uid.t) (type_path : Path.t)
-    ~(load_decls_from_cms : string -> Type_decl_shape.t Shape.Uid.Tbl.t) =
-  if debug_type_search
-  then Format.eprintf "trying to find type_uid = %a\n" Uid.print type_uid;
-  if debug_type_search
-  then Format.eprintf "obtaining compilation unit of %a\n" Path.print type_path;
-  let compilation_unit_type_decls =
-    match compilation_unit_from_path type_path with
-    | Some compilation_unit -> (
-      if debug_type_search
-      then
-        Format.eprintf "got compilation unit %a\n" Format.pp_print_string
-          compilation_unit;
-      (* CR tnowak: change the [String.uncapitalize_ascii] to a proper function. *)
-      let filename = compilation_unit |> String.uncapitalize_ascii in
-      match Load_path.find_normalized (filename ^ ".cms") with
-      | exception Not_found ->
-        if debug_type_search
-        then
-          Format.eprintf "not found filename %a" Format.pp_print_string filename;
-        None
-      | fn ->
-        let type_decls = load_decls_from_cms fn in
-        Some type_decls)
-    | None ->
-      if debug_type_search then Format.eprintf "same unit\n";
-      Some all_type_decls
-  in
-  Option.bind compilation_unit_type_decls (fun tbl ->
-      Uid.Tbl.find_opt tbl type_uid)
-
-(* CR sspies: This seems to not perform caching. I think [load_decls_from_cms]
-   always goes to the file and loads it the original code. *)
-let rec type_name (type_shape : Type_shape.t)
-    ~(load_decls_from_cms : string -> Type_decl_shape.t Shape.Uid.Tbl.t) =
+let rec type_name (type_shape : Type_shape.t) =
   match type_shape with
   | Ts_predef (predef, shapes) ->
-    shapes_to_string (List.map (type_name ~load_decls_from_cms) shapes)
+    shapes_to_string (List.map type_name shapes)
     ^ Type_shape.Predef.to_string predef
   | Ts_other ->
-    if debug_type_search then Format.eprintf "unknown type (Tds_other)\n";
     "unknown"
   | Ts_tuple shapes ->
-    tuple_to_string (List.map (type_name ~load_decls_from_cms) shapes)
+    tuple_to_string (List.map type_name shapes)
   | Ts_var name -> "'" ^ Option.value name ~default:"?"
-  | Ts_constr ((type_uid, type_path), shapes) -> (
+  | Ts_constr ((type_uid, _type_path), shapes) -> (
     match[@warning "-4"]
-      find_in_type_decls type_uid type_path ~load_decls_from_cms
+      find_in_type_decls type_uid
     with
     | None ->
-      if debug_type_search
-      then Format.eprintf "unknown type (declaration not found)\n";
       "unknown"
     | Some { definition = Tds_other; _ } ->
-      if debug_type_search then Format.eprintf "type has shape Tds_other\n";
       "unknown"
     | Some type_decl_shape ->
       (* We have found type instantiation shapes [shapes] and a typing
@@ -473,51 +417,7 @@ let rec type_name (type_shape : Type_shape.t)
         Type_decl_shape.replace_tvar type_decl_shape shapes
       in
       let args =
-        shapes_to_string (List.map (type_name ~load_decls_from_cms) shapes)
+        shapes_to_string (List.map type_name shapes)
       in
       let name = Path.name type_decl_shape.path in
       args ^ name)
-
-let rec attach_head (path : Path.t) (new_head : Ident.t) =
-  match path with
-  | Pident ident -> Path.Pdot (Pident new_head, Ident.name ident)
-  | Pdot (l, r) -> Path.Pdot (attach_head l new_head, r)
-  | Papply (l, r) -> Path.Papply (attach_head l new_head, attach_head r new_head)
-  | Pextra_ty (l, extra) -> Path.Pextra_ty (attach_head l new_head, extra)
-
-let attach_compilation_unit_to_path (path : Path.t)
-    (compilation_unit : Compilation_unit.t) =
-  match compilation_unit_from_path path with
-  | None ->
-    attach_head path
-      (Compilation_unit.to_global_ident_for_bytecode compilation_unit)
-  | Some _ -> path
-
-let map_snd f list = List.map (fun (a, b) -> a, f b) list
-
-(* CR sspies: I don't know what this function does. *)
-let attach_compilation_unit_to_paths (type_decl : Type_decl_shape.t)
-    ~(compilation_unit : Compilation_unit.t) =
-  let[@warning "-4"] attach_to_shape = function
-    | Type_shape.Ts_constr ((uid, path), ts) ->
-      Type_shape.Ts_constr
-        ((uid, attach_compilation_unit_to_path path compilation_unit), ts)
-    | _ as x -> x
-  in
-  { Type_decl_shape.path =
-      attach_compilation_unit_to_path type_decl.path compilation_unit;
-    type_params = List.map attach_to_shape type_decl.type_params;
-    definition =
-      (match type_decl.definition with
-      | Tds_variant { simple_constructors; complex_constructors } ->
-        Tds_variant
-          { simple_constructors;
-            complex_constructors =
-              List.map
-                (Type_decl_shape.complex_constructor_map attach_to_shape)
-                complex_constructors
-          }
-      | Tds_record list -> Tds_record (map_snd attach_to_shape list)
-      | Tds_alias shape -> Tds_alias (attach_to_shape shape)
-      | Tds_other -> Tds_other)
-  }

@@ -21,12 +21,6 @@ module DS = Dwarf_state
 
 let cache = Type_shape.Type_shape.Tbl.create 16
 
-let load_decls_from_cms _path =
-  (* let cms_infos = Cms_format.read path in cms_infos.cms_shapes_for_dwarf *)
-  (* CR sspies: We return an empty table here for now, because we have not yet
-     agumented the [.cms] format to store the relevant shape information. *)
-  Shape.Uid.Tbl.create 0
-
 let wrap_die_under_a_pointer ~proto_die ~reference ~parent_proto_die =
   Proto_die.create_ignore ~reference ~parent:(Some parent_proto_die)
     ~tag:Dwarf_tag.Reference_type
@@ -356,7 +350,7 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
   | None ->
     let reference = Proto_die.create_reference () in
     Type_shape.Type_shape.Tbl.add cache type_shape reference;
-    let name = Type_shape.type_name type_shape ~load_decls_from_cms in
+    let name = Type_shape.type_name type_shape in
     let successfully_created =
       match type_shape with
       | Ts_other | Ts_var _ -> false
@@ -380,12 +374,12 @@ let rec type_shape_to_die (type_shape : Type_shape.Type_shape.t)
         create_typedef_die ~reference ~parent_proto_die ~name
           ~child_die:fallback_die;
         true
-      | Ts_constr ((type_uid, type_path), shapes) -> (
+      | Ts_constr ((type_uid, _type_path), shapes) -> (
         match(* CR sspies: Somewhat subtly, this case currently also handles
                 [unit], [bool], [option], and [list], because they are not
                 treated as predefined types, but they do have declarations. *)
              [@warning "-4"]
-          Type_shape.find_in_type_decls type_uid type_path ~load_decls_from_cms
+          Type_shape.find_in_type_decls type_uid
         with
         | None | Some { definition = Tds_other; _ } -> false
         | Some type_decl_shape -> (
