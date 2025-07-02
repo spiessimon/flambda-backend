@@ -791,12 +791,10 @@ module Type_decl_shape = struct
     Format.fprintf ppf "path=%a, definition=(%a)" Path.print t.path print_tds
       t.definition
 
-  let map_snd f list = List.map (fun (fst, snd) -> fst, f snd) list
-
   (* CR sspies: This is a hacky "solution" to do type variable substitution in
      type declaration shapes. In subsequent PRs, this code should be changed to
      use the shape mechanism instead. *)
-  let replace_tvar (t : t) (shapes : Type_shape.t list) =
+  let replace_tvar (t : t) (shapes : Type_shape.without_layout Type_shape.t list) =
     match List.length t.type_params == List.length shapes with
     | true ->
       let subst = List.combine t.type_params shapes in
@@ -876,20 +874,19 @@ let find_in_type_decls (type_uid : Uid.t) =
   Uid.Tbl.find_opt all_type_decls type_uid
 
 let rec type_name : 'a. 'a Type_shape.t -> _ =
-  fun type_shape
-      ~(load_decls_from_cms : string -> Type_decl_shape.t Shape.Uid.Tbl.t) ->
+  fun type_shape ->
   match type_shape with
   | Ts_predef (predef, shapes) ->
     shapes_to_string (List.map type_name shapes)
     ^ Type_shape.Predef.to_string predef
-  | Ts_other -> "unknown"
+  | Ts_other _ -> "unknown"
   | Ts_tuple shapes -> tuple_to_string (List.map type_name shapes)
   | Ts_unboxed_tuple shapes ->
     unboxed_tuple_to_string (List.map type_name shapes)
-  | Ts_var name -> "'" ^ Option.value name ~default:"?"
+  | Ts_var (name, _) -> "'" ^ Option.value name ~default:"?"
   | Ts_arrow (shape1, shape2) ->
-    let arg_name = type_name ~load_decls_from_cms shape1 in
-    let ret_name = type_name ~load_decls_from_cms shape2 in
+    let arg_name = type_name shape1 in
+    let ret_name = type_name shape2 in
     arg_name ^ " -> " ^ ret_name
   | Ts_variant (fields, kind) ->
     let field_constructors =
@@ -914,9 +911,9 @@ let rec type_name : 'a. 'a Type_shape.t -> _ =
     in
     let prefix = match kind with Closed -> "" | Open -> ">" in
     Format.asprintf "[%s %s ]" prefix (String.concat " | " field_constructors)
-  | Ts_constr ((type_uid, type_path, _), shapes) -> (
+  | Ts_constr ((type_uid, _type_path, _), shapes) -> (
     match[@warning "-4"]
-      find_in_type_decls type_uid type_path ~load_decls_from_cms
+      find_in_type_decls type_uid
     with
     | None -> "unknown"
     | Some { definition = Tds_other; _ } -> "unknown"

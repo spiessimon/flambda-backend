@@ -962,7 +962,7 @@ let rec type_shape_layout_to_die (type_shape : Layout.t Type_shape.Type_shape.t)
        defined. That way [type myintlist = MyNil | MyCons of int * myintlist]
        will work correctly (as opposed to diverging). *)
     Cache.add cache type_shape reference;
-    let type_name = Type_shape.type_name type_shape ~load_decls_from_cms in
+    let type_name = Type_shape.type_name type_shape in
     let layout_name =
       Format.asprintf "%a" Jkind_types.Sort.Const.format
         (Type_shape.Type_shape.shape_layout type_shape)
@@ -1060,12 +1060,12 @@ and type_shape_layout_predef_die ~name ~reference ~parent_proto_die
       ~fallback_value_die
 
 and type_shape_layout_constructor_die ~reference ~name ~parent_proto_die
-    ~fallback_value_die ~type_uid type_path (type_layout : base_layout) shapes =
+    ~fallback_value_die ~type_uid _type_path (type_layout : base_layout) shapes =
   match
     (* CR sspies: Somewhat subtly, this case currently also handles [unit],
        [bool], [option], and [list], because they are not treated as predefined
        types and do have declarations. *)
-    Type_shape.find_in_type_decls type_uid type_path ~load_decls_from_cms
+    Type_shape.find_in_type_decls type_uid
   with
   | None ->
     create_base_layout_type ~reference type_layout ~name ~parent_proto_die
@@ -1241,9 +1241,9 @@ let rec flatten_shape
   | Ts_other layout ->
     let base_layouts = flatten_to_base_sorts layout in
     List.map (fun layout -> `Unknown layout) base_layouts
-  | Ts_constr ((type_uid, type_path, layout), shapes) -> (
+  | Ts_constr ((type_uid, _type_path, layout), shapes) -> (
     match[@warning "-4"]
-      Type_shape.find_in_type_decls type_uid type_path ~load_decls_from_cms
+      Type_shape.find_in_type_decls type_uid
     with
     | None -> unknown_base_layouts layout
     | Some { definition = Tds_other; _ } -> unknown_base_layouts layout
