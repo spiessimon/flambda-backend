@@ -1,7 +1,11 @@
 module Uid = Shape.Uid
 module Layout = Jkind_types.Sort.Const
 
+type base_layout = Jkind_types.Sort.base
+
 module Type_shape : sig
+  (* For several builtin types, we provide predefined type shapes with custom
+     logic associated with them for emitting the DWARF debugging information. *)
   module Predef : sig
     type simd_vec_split =
       (* 128 bit *)
@@ -54,25 +58,18 @@ module Type_shape : sig
 
     val to_string : t -> string
 
+    val of_string : string -> t option
+
     val unboxed_type_to_layout : unboxed -> Jkind_types.Sort.base
 
     val predef_to_layout : t -> Layout.t
   end
 
-  type without_layout
-
-  type 'a poly_variant_constructor =
-    { pv_constr_name : string;
-      pv_constr_args : 'a list
-    }
-
-  (* CR sspies: This is incorrect. We should follow the printing code in [printtyp.ml]
-     for determining which kind of variant we are looking at. For the intersections, we
-     also have to add the boolean to indicate that the type constructor could be intersected
-     with one that has no type argument. *)
-  type poly_variant_kind =
-    | Open
-    | Closed
+  (* Type shapes are abstract representations of type expressions. We define
+     them with a placeholder 'a for the layout inside. This allows one to
+     first create shapes without a type by picking [without_layout] for 'a
+     and then later substituting in a layout of type [Layout.t]. *)
+  type without_layout = Layout_to_be_determined
 
   type 'a t =
     | Ts_constr of (Uid.t * Path.t * 'a) * without_layout t list
@@ -81,48 +78,30 @@ module Type_shape : sig
     | Ts_var of string option * 'a
     | Ts_predef of Predef.t * without_layout t list
     | Ts_arrow of without_layout t * without_layout t
-    | Ts_variant of 'a t poly_variant_constructor list * poly_variant_kind
+    | Ts_variant of 'a t poly_variant_constructors
     | Ts_other of 'a
+
+  and 'a poly_variant_constructors = 'a poly_variant_constructor list
+
+  and 'a poly_variant_constructor =
+    { pv_constr_name : string;
+      pv_constr_args : 'a list
+    }
 
   val shape_layout : Layout.t t -> Layout.t
 
   val shape_with_layout : layout:Layout.t -> without_layout t -> Layout.t t
 
-  module With_layout : sig
-    include Identifiable.S with type t := Jkind_types.Sort.Const.t t
-  end
+  val print : Format.formatter -> 'a t -> unit
+
+  val poly_variant_constructors_map :
+    ('a -> 'b) -> 'a poly_variant_constructors -> 'b poly_variant_constructors
 end
 
 module Type_decl_shape : sig
-  type 'a complex_constructor =
-    { name : string;
-      kind : Types.constructor_representation;
-      args : 'a complex_constructor_arguments list
-    }
-
-  and 'a complex_constructor_arguments =
-    { field_name : string option;
-      field_value : 'a
-    }
-
-  val complex_constructor_map :
-    ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
-
-  type record_kind =
-    | Record_unboxed
-        (** [Record_unboxed] is the case for single-field records declared with
-            [@@unboxed], whose runtime representation is simply its contents
-            without any indirection. *)
-    | Record_unboxed_product
-        (** [Record_unboxed_product] is the truly unboxed record that corresponds to
-            [#{ ... }]. *)
-    | Record_boxed
-    | Record_mixed of Types.mixed_product_shape
-    | Record_floats
-        (** Basically the same as [Record_mixed], but we don't reorder the fields. *)
-
-  (** For type substitution to work as expected, we store the layouts in the declaration
-     alongside the shapes instead of directly going for the substituted version. *)
+  (** For type substitution to work as expected, we store the layouts in the
+      declaration alongside the shapes instead of directly going for the
+      substituted version. *)
   type tds =
     | Tds_variant of
         { simple_constructors : string list;
@@ -131,8 +110,7 @@ module Type_decl_shape : sig
                   [2 * i + 1]. See [dwarf_type.ml] for more details. *)
           complex_constructors :
             (Type_shape.without_layout Type_shape.t * Layout.t)
-            complex_constructor
-            list
+            complex_constructors
               (** All constructors in this category are represented as blocks.
                   The index [i] in the list indicates the tag at runtime. The
                   length of the constructor argument list [args] determines the
@@ -156,6 +134,41 @@ module Type_decl_shape : sig
     | Tds_alias of Type_shape.without_layout Type_shape.t
     | Tds_other
 
+  and record_kind =
+    | Record_unboxed
+        (** [Record_unboxed] is the case for single-field records declared with
+            [@@unboxed], whose runtime representation is simply its contents
+            without any indirection. *)
+    | Record_unboxed_product
+        (** [Record_unboxed_product] is the truly unboxed record that
+             corresponds to [#{ ... }]. *)
+    | Record_boxed
+    | Record_mixed of mixed_product_shape
+    | Record_floats
+        (** Basically the same as [Record_mixed], but we don't reorder the
+            fields. *)
+
+  and 'a complex_constructors = 'a complex_constructor list
+
+  and 'a complex_constructor =
+    { name : string;
+      kind : constructor_representation;
+      args : 'a complex_constructor_arguments list
+    }
+
+  and 'a complex_constructor_arguments =
+    { field_name : string option;
+      field_value : 'a
+    }
+
+  (* Unlike in [types.ml], we use [base_layout] entries here, because we can
+     represent flattened floats simply as float64 in the debugger. *)
+  and constructor_representation =
+    | Constructor_uniform_value
+    | Constructor_mixed of mixed_product_shape
+
+  and mixed_product_shape = base_layout array
+
   type t =
     { path : Path.t;
       definition : tds;
@@ -165,6 +178,12 @@ module Type_decl_shape : sig
   val print : Format.formatter -> t -> unit
 
   val replace_tvar : t -> Type_shape.without_layout Type_shape.t list -> t
+
+  val complex_constructor_map :
+    ('a -> 'b) -> 'a complex_constructor -> 'b complex_constructor
+
+  val complex_constructors_map :
+    ('a -> 'b) -> 'a complex_constructors -> 'b complex_constructors
 end
 
 val all_type_decls : Type_decl_shape.t Uid.Tbl.t
