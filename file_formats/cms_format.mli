@@ -29,6 +29,7 @@ type cms_infos = {
   cms_uid_to_loc : string Location.loc Shape.Uid.Tbl.t;
   cms_uid_to_attributes : Parsetree.attributes Shape.Uid.Tbl.t;
   cms_impl_shape : Shape.t option; (* None for mli *)
+  cms_decl_table : Shape.tds Shape.Uid.Tbl.t;
   cms_ident_occurrences :
     (Longident.t Location.loc * Shape_reduce.result) array;
   cms_declaration_dependencies :
@@ -53,6 +54,9 @@ val save_cms :
   Cmt_format.binary_annots ->
   Env.t -> (* initial env *)
   Shape.t option ->
+  Shape.tds Shape.Uid.Tbl.t option -> (* declarations in compilation unit *)
+  (* CR sspies: Is it a problem to store a table in the binary format? Would it
+     be better to store an array/a list instead? *)
   (Cmt_format.dependency_kind * Uid.t * Uid.t) list ->
   unit
 

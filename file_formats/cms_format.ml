@@ -33,6 +33,7 @@ type cms_infos = {
   cms_uid_to_loc : string Location.loc Shape.Uid.Tbl.t;
   cms_uid_to_attributes : Parsetree.attributes Shape.Uid.Tbl.t;
   cms_impl_shape : Shape.t option; (* None for mli *)
+  cms_decl_table : Shape.tds Shape.Uid.Tbl.t;
   cms_ident_occurrences :
     (Longident.t Location.loc * Shape_reduce.result) array;
   cms_declaration_dependencies :
@@ -98,7 +99,7 @@ let uid_tables_of_binary_annots binary_annots =
     );
   cms_uid_to_loc, cms_uid_to_attributes
 
-let save_cms target modname binary_annots initial_env shape
+let save_cms target modname binary_annots initial_env shape type_declarations
   cms_declaration_dependencies =
   if (!Clflags.binary_annotations_cms && not !Clflags.print_types) then begin
     Misc.output_to_file_via_temporary
@@ -119,6 +120,10 @@ let save_cms target modname binary_annots initial_env shape
         let cms_uid_to_loc, cms_uid_to_attributes =
           uid_tables_of_binary_annots binary_annots
         in
+        let decl_table = match type_declarations with
+        | None -> Shape.Uid.Tbl.create 0
+        | Some table -> if !Clflags.typedecls_in_cms then table else Shape.Uid.Tbl.create 0
+        in
         let cms =
           {
             cms_modname = modname;
@@ -128,6 +133,7 @@ let save_cms target modname binary_annots initial_env shape
             cms_source_digest = source_digest;
             cms_initial_env;
             cms_uid_to_loc;
+            cms_decl_table = decl_table;
             cms_uid_to_attributes;
             cms_impl_shape = shape;
             cms_ident_occurrences;

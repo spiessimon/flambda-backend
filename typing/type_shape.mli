@@ -5,9 +5,20 @@ type base_layout = Jkind_types.Sort.base
 
 module Type_shape : sig
 
+  val of_type_expr :
+    Types.type_expr ->
+    (Path.t -> Uid.t option) ->
+    Shape.without_layout Shape.ts
+
 end
 
 module Type_decl_shape : sig
+
+  val of_type_declaration :
+    Path.t ->
+    Types.type_declaration ->
+    (Path.t -> Uid.t option) ->
+    Shape.tds
 
 end
 
