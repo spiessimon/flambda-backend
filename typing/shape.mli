@@ -186,7 +186,7 @@ module Predef : sig
 
   val of_string : string -> t option
 
-  val unboxed_type_to_layout : unboxed -> Jkind_types.Sort.base
+  val unboxed_type_to_base_layout : unboxed -> base_layout
 
   val predef_to_layout : t -> Layout.t
 end
@@ -200,6 +200,7 @@ and desc =
   | Struct of t Item.Map.t
   | Alias of t
   | Leaf
+  | Type_decl of tds
   | Proj of t * Item.t
   | Comp_unit of string
   | Error of string
@@ -208,10 +209,10 @@ and desc =
   them with a placeholder 'a for the layout inside. This allows one to
   first create shapes without a type by picking [without_layout] for 'a
   and then later substituting in a layout of type [Layout.t]. *)
-type without_layout = Layout_to_be_determined
+and without_layout = Layout_to_be_determined
 
-type 'a ts =
-  | Ts_constr of (Uid.t * Path.t * 'a) * without_layout ts list
+and 'a ts =
+  | Ts_constr of (t * 'a) * without_layout ts list
   | Ts_tuple of 'a ts list
   | Ts_unboxed_tuple of 'a ts list
   | Ts_var of string option * 'a
@@ -231,7 +232,7 @@ and 'a poly_variant_constructor =
 (** For type substitution to work as expected, we store the layouts in the
     declaration alongside the shapes instead of directly going for the
     substituted version. *)
-type tds_desc =
+and tds_desc =
   | Tds_variant of
       { simple_constructors : string list;
             (** The string is the name of the constructor. The runtime
@@ -292,25 +293,26 @@ and 'a complex_constructor_arguments =
 (* Unlike in [types.ml], we use [base_layout] entries here, because we can
     represent flattened floats simply as float64 in the debugger.  *)
 and constructor_representation =
-| Constructor_uniform_value
-| Constructor_mixed of mixed_product_shape
+  | Constructor_uniform_value
+  | Constructor_mixed of mixed_product_shape
 
 and mixed_product_shape = base_layout array
 
-
-type tds =
-  { path : Path.t;
+and tds =
+  {
     definition : tds_desc;
     type_params : without_layout ts list
   }
 
 
-(* Shapes *)
 val print : Format.formatter -> t -> unit
 
 val strip_head_aliases : t -> t
 
 val equal : t -> t -> bool
+val equal_tds : tds -> tds -> bool
+val equal_ts : ('a -> 'a -> bool) -> 'a ts -> 'a ts -> bool
+
 
 (* Smart constructors *)
 
@@ -326,6 +328,7 @@ val error : ?uid:Uid.t -> string -> t
 val proj : ?uid:Uid.t -> t -> Item.t -> t
 val leaf : Uid.t -> t
 val leaf' : Uid.t option -> t
+val type_decl : Uid.t option -> tds -> t
 val no_fuel_left : ?uid:Uid.t -> t -> t
 val comp_unit : ?uid:Uid.t -> string -> t
 

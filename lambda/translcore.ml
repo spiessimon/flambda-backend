@@ -1601,7 +1601,7 @@ and transl_tupled_function
 and add_type_shape ~env uid type_expr sort =
   Type_shape.add_to_type_shapes uid type_expr sort
     ~name:(Format.asprintf "%a" Printtyp.type_expr type_expr)
-    (Env.find_uid_of_path env)
+    (Env.shape_of_path_opt ~namespace:Type env)
 
 (* For the functions [add_type_shape_of_cases], [add_type_shapes_of_params], and
    [add_type_shapes_of_patterns] to be correct, we must ensure that at the type
