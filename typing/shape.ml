@@ -402,7 +402,7 @@ module Predef = struct
     | Float32x16 -> Vec512
     | Float64x8 -> Vec512
 
-  let unboxed_type_to_layout (b : unboxed) : Jkind_types.Sort.base =
+  let unboxed_type_to_base_layout (b : unboxed) : base_layout =
     match b with
     | Unboxed_float -> Float64
     | Unboxed_float32 -> Float32
@@ -427,8 +427,64 @@ module Predef = struct
     | String -> Layout.Base Value
     | Simd _ -> Layout.Base Value
     | Exception -> Layout.Base Value
-    | Unboxed u -> Layout.Base (unboxed_type_to_layout u)
+    | Unboxed u -> Layout.Base (unboxed_type_to_base_layout u)
+
+
+  let equal_simd_vec_split = fun s1 s2 ->
+    match s1, s2 with
+    | Int8x16, Int8x16 -> true
+    | Int16x8, Int16x8 -> true
+    | Int32x4, Int32x4 -> true
+    | Int64x2, Int64x2 -> true
+    | Float32x4, Float32x4 -> true
+    | Float64x2, Float64x2 -> true
+    | Int8x32, Int8x32 -> true
+    | Int16x16, Int16x16 -> true
+    | Int32x8, Int32x8 -> true
+    | Int64x4, Int64x4 -> true
+    | Float32x8, Float32x8 -> true
+    | Float64x4, Float64x4 -> true
+    | Int8x64, Int8x64 -> true
+    | Int16x32, Int16x32 -> true
+    | Int32x16, Int32x16 -> true
+    | Int64x8, Int64x8 -> true
+    | Float32x16, Float32x16 -> true
+    | Float64x8, Float64x8 -> true
+    | _, _ -> false
+
+
+  let equal_unboxed = fun u1 u2 ->
+    match u1, u2 with
+    | Unboxed_float, Unboxed_float -> true
+    | Unboxed_float32, Unboxed_float32 -> true
+    | Unboxed_nativeint, Unboxed_nativeint -> true
+    | Unboxed_int64, Unboxed_int64 -> true
+    | Unboxed_int32, Unboxed_int32 -> true
+    | Unboxed_simd s1, Unboxed_simd s2 -> equal_simd_vec_split s1 s2
+    | _, _ -> false
+
+  let equal p1 p2 =
+    match p1, p2 with
+    | Array, Array -> true
+    | Bytes, Bytes -> true
+    | Char, Char -> true
+    | Extension_constructor, Extension_constructor -> true
+    | Float, Float -> true
+    | Float32, Float32 -> true
+    | Floatarray, Floatarray -> true
+    | Int, Int -> true
+    | Int32, Int32 -> true
+    | Int64, Int64 -> true
+    | Lazy_t, Lazy_t -> true
+    | Nativeint, Nativeint -> true
+    | String, String -> true
+    | Simd s1, Simd s2 -> equal_simd_vec_split s1 s2
+    | Exception, Exception -> true
+    | Unboxed u1, Unboxed u2 -> equal_unboxed u1 u2
+    | _, _ -> false
+
 end
+
 
 
 
@@ -442,15 +498,15 @@ and desc =
   | Struct of t Item.Map.t
   | Alias of t
   | Leaf
+  | Type_decl of tds
   | Proj of t * Item.t
   | Comp_unit of string
   | Error of string
 
+and without_layout = Layout_to_be_determined
 
-type without_layout = Layout_to_be_determined
-
-type 'a ts =
-  | Ts_constr of (Uid.t * Path.t * 'a) * without_layout ts list
+and 'a ts =
+  | Ts_constr of (t * 'a) * without_layout ts list
   | Ts_tuple of 'a ts list
   | Ts_unboxed_tuple of 'a ts list
   | Ts_var of string option * 'a
@@ -467,7 +523,7 @@ and 'a poly_variant_constructor =
   }
 
 
-type tds_desc =
+and tds_desc =
   | Tds_variant of
       { simple_constructors : string list;
         complex_constructors :
@@ -491,6 +547,7 @@ type tds_desc =
       }
   | Tds_alias of without_layout ts
   | Tds_other
+
 and record_kind =
   | Record_unboxed
   | Record_unboxed_product
@@ -517,9 +574,8 @@ and constructor_representation =
 
 and mixed_product_shape = base_layout array
 
-
-type tds =
-  { path : Path.t;
+and tds =
+  {
     definition : tds_desc;
     type_params : without_layout ts list
   }
@@ -537,21 +593,23 @@ let rec equal_desc d1 d2 =
     if not (equal t1 t2) then false
     else equal v1 v2
   | Leaf, Leaf -> true
+  | Type_decl tds1, Type_decl tds2 -> equal_tds tds1 tds2
   | Struct t1, Struct t2 ->
     Item.Map.equal equal t1 t2
   | Proj (t1, i1), Proj (t2, i2) ->
     if Item.compare i1 i2 <> 0 then false
     else equal t1 t2
   | Comp_unit c1, Comp_unit c2 -> String.equal c1 c2
-  | Var _, (Abs _ | App _ | Struct _ | Leaf | Proj _ | Comp_unit _ | Alias _ | Error _)
-  | Abs _, (Var _ | App _ | Struct _ | Leaf | Proj _ | Comp_unit _ | Alias _ | Error _)
-  | App _, (Var _ | Abs _ | Struct _ | Leaf | Proj _ | Comp_unit _ | Alias _ | Error _)
-  | Struct _, (Var _ | Abs _ | App _ | Leaf | Proj _ | Comp_unit _ | Alias _ | Error _)
-  | Leaf, (Var _ | Abs _ | App _ | Struct _ | Proj _ | Comp_unit _ | Alias _ | Error _)
-  | Proj _, (Var _ | Abs _ | App _ | Struct _ | Leaf | Comp_unit _ | Alias _ | Error _)
-  | Comp_unit _, (Var _ | Abs _ | App _ | Struct _ | Leaf | Proj _ | Alias _ | Error _)
-  | Alias _, (Var _ | Abs _ | App _ | Struct _ | Leaf | Proj _ | Comp_unit _ | Error _)
-  | Error _, (Var _ | Abs _ | App _ | Struct _ | Leaf | Proj _ | Comp_unit _ | Alias _)
+  | Var _, (Abs _ | App _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Alias _ | Error _)
+  | Abs _, (Var _ | App _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Alias _ | Error _)
+  | App _, (Var _ | Abs _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Alias _ | Error _)
+  | Struct _, (Var _ | Abs _ | App _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Alias _ | Error _)
+  | Leaf, (Var _ | Abs _ | App _ | Struct _ | Proj _ | Type_decl _ | Comp_unit _ | Alias _ | Error _)
+  | Type_decl _, (Var _ | Abs _ | App _ | Struct _ | Leaf  | Proj _ | Comp_unit _ | Alias _ | Error _)
+  | Proj _, (Var _ | Abs _ | App _ | Struct _ | Leaf  | Type_decl _ | Comp_unit _ | Alias _ | Error _)
+  | Comp_unit _, (Var _ | Abs _ | App _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Alias _ | Error _)
+  | Alias _, (Var _ | Abs _ | App _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Error _)
+  | Error _, (Var _ | Abs _ | App _ | Struct _ | Leaf  | Type_decl _ | Proj _ | Comp_unit _ | Alias _)
     -> false
 
 and equal t1 t2 =
@@ -560,7 +618,164 @@ and equal t1 t2 =
   else if not (Option.equal Uid.equal t1.uid t2.uid) then false
   else equal_desc t1.desc t2.desc
 
-let print fmt t =
+and equal_tds t1 t2 =
+  equal_tds_desc t1.definition t2.definition &&
+  List.equal (equal_ts equal_without_layout) t1.type_params t2.type_params
+
+and equal_tds_desc d1 d2 =
+  if d1 == d2 then true else
+  match d1, d2 with
+  | Tds_alias t1, Tds_alias t2 -> equal_ts equal_without_layout t1 t2
+  | Tds_record {fields = fields1; kind = kind1},
+    Tds_record {fields = fields2; kind = kind2} ->
+    equal_record_kind kind1 kind2 &&
+    List.equal equal_field fields1 fields2
+  | Tds_variant { simple_constructors = simple_constructors1;
+                  complex_constructors = complex_constructors1 },
+    Tds_variant { simple_constructors = simple_constructors2;
+                  complex_constructors = complex_constructors2 } ->
+    List.equal
+      equal_simple_constructor
+      simple_constructors1
+      simple_constructors2
+    && List.equal
+      (equal_complex_constructor (fun (sh1, ly1) (sh2, ly2) ->
+          equal_ts equal_without_layout sh1 sh2 && Layout.equal ly1 ly2))
+      complex_constructors1
+      complex_constructors2
+  | Tds_variant_unboxed { name = name1; arg_name = arg_name1;
+                          arg_shape = arg_shape1; arg_layout = arg_layout1 },
+    Tds_variant_unboxed { name = name2; arg_name = arg_name2;
+                          arg_shape = arg_shape2; arg_layout = arg_layout2 } ->
+    String.equal name1 name2 &&
+    Option.equal String.equal arg_name1 arg_name2 &&
+    equal_ts equal_without_layout arg_shape1 arg_shape2 &&
+    Layout.equal arg_layout1 arg_layout2
+  | Tds_other, Tds_other -> true
+  | Tds_alias _,
+    (Tds_record _ | Tds_variant _ | Tds_variant_unboxed _ | Tds_other)
+  | Tds_record _,
+    (Tds_alias _ | Tds_variant _ | Tds_variant_unboxed _ | Tds_other)
+  | Tds_variant _,
+    (Tds_alias _ | Tds_record _ | Tds_variant_unboxed _ | Tds_other)
+  | Tds_variant_unboxed _,
+    (Tds_alias _ | Tds_record _ | Tds_variant _ | Tds_other)
+  | Tds_other,
+    (Tds_alias _ | Tds_record _ | Tds_variant _ | Tds_variant_unboxed _)
+    -> false
+
+and equal_record_kind k1 k2 =
+  match k1, k2 with
+  | Record_unboxed, Record_unboxed -> true
+  | Record_unboxed_product, Record_unboxed_product -> true
+  | Record_boxed, Record_boxed -> true
+  | Record_mixed lys1, Record_mixed lys2 ->
+    Misc.Stdlib.Array.equal (Jkind_types.Sort.equal_base) lys1 lys2
+  | Record_floats, Record_floats -> true
+  | Record_unboxed,
+    (Record_unboxed_product | Record_boxed | Record_mixed _ | Record_floats)
+  | Record_unboxed_product,
+    (Record_unboxed | Record_boxed | Record_mixed _ | Record_floats)
+  | Record_boxed,
+    (Record_unboxed | Record_unboxed_product | Record_mixed _ | Record_floats)
+  | Record_mixed _,
+    (Record_unboxed | Record_unboxed_product | Record_boxed | Record_floats)
+  | Record_floats,
+    (Record_unboxed | Record_unboxed_product | Record_boxed | Record_mixed _)
+    -> false
+
+and equal_field (s1, sh1, ly1) (s2, sh2, ly2) =
+  String.equal s1 s2 &&
+  equal_ts equal_without_layout sh1 sh2 &&
+  Layout.equal ly1 ly2
+
+and equal_simple_constructor c1 c2 = String.equal c1 c2
+
+and equal_complex_constructor eq
+  { name = name1; kind = kind1; args = args1 }
+  { name = name2; kind = kind2; args = args2 } =
+  String.equal name1 name2 &&
+  equal_constructor_representation kind1 kind2 &&
+  List.equal (equal_complex_constructor_arguments eq) args1 args2
+
+and equal_complex_constructor_arguments eq
+  { field_name = field_name1; field_value = field_value1 }
+  { field_name = field_name2; field_value = field_value2 } =
+  Option.equal String.equal field_name1 field_name2 &&
+  eq field_value1 field_value2
+
+and equal_constructor_representation k1 k2 =
+  match k1, k2 with
+  | Constructor_uniform_value, Constructor_uniform_value -> true
+  | Constructor_mixed lys1, Constructor_mixed lys2 ->
+    Misc.Stdlib.Array.equal (Jkind_types.Sort.equal_base) lys1 lys2
+  | Constructor_uniform_value, (Constructor_mixed _ )
+  | Constructor_mixed _, (Constructor_uniform_value )
+    -> false
+
+and equal_without_layout =
+  function Layout_to_be_determined ->
+  function Layout_to_be_determined -> true
+
+and equal_poly_variant_constructor eq
+  { pv_constr_name = name1; pv_constr_args = args1 }
+  { pv_constr_name = name2; pv_constr_args = args2 } =
+  String.equal name1 name2 &&
+  List.equal (equal_ts eq) args1 args2
+
+and equal_ts :
+  'a. ('a -> 'a -> bool) -> 'a ts -> 'a ts -> bool =
+  fun eq t1 t2 ->
+  match t1, t2 with
+  | Ts_constr ((sh1, ly1), ts1), Ts_constr ((sh2, ly2), ts2) ->
+    equal sh1 sh2 &&
+    eq ly1 ly2 &&
+    List.equal (equal_ts equal_without_layout) ts1 ts2
+  | Ts_tuple ts1, Ts_tuple ts2 ->
+    List.equal (equal_ts eq) ts1 ts2
+  | Ts_unboxed_tuple ts1, Ts_unboxed_tuple ts2 ->
+    List.equal (equal_ts eq) ts1 ts2
+  | Ts_var (name1, ly1), Ts_var (name2, ly2) ->
+    Option.equal String.equal name1 name2 &&
+    eq ly1 ly2
+  | Ts_predef (predef1, shapes1), Ts_predef (predef2, shapes2) ->
+    Predef.equal predef1 predef2 &&
+    List.equal (equal_ts equal_without_layout) shapes1 shapes2
+  | Ts_arrow (arg1, ret1), Ts_arrow (arg2, ret2) ->
+    equal_ts equal_without_layout arg1 arg2 &&
+    equal_ts equal_without_layout ret1 ret2
+  | Ts_variant (cstrs1), Ts_variant (cstrs2) ->
+    List.equal (equal_poly_variant_constructor eq) cstrs1 cstrs2
+  | Ts_other ly1, Ts_other ly2 -> eq ly1 ly2
+  | Ts_constr _,
+      (Ts_other _ | Ts_predef _ | Ts_arrow _ | Ts_variant _ | Ts_tuple _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_other _,
+      (Ts_constr _ | Ts_predef _ | Ts_arrow _ | Ts_variant _ | Ts_tuple _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_predef _ ,
+      (Ts_constr _ | Ts_other _ | Ts_arrow _ | Ts_variant _ | Ts_tuple _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_arrow _ ,
+      (Ts_constr _ | Ts_predef _ | Ts_other _ | Ts_variant _ | Ts_tuple _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_variant _ ,
+      (Ts_constr _ | Ts_predef _ | Ts_arrow _ | Ts_other _  | Ts_tuple _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_tuple _ ,
+      (Ts_constr _ | Ts_predef _ | Ts_arrow _ | Ts_variant _ | Ts_other _
+       | Ts_unboxed_tuple _ | Ts_var _)
+  | Ts_unboxed_tuple _ ,
+      (Ts_constr _ | Ts_predef _ | Ts_arrow _ | Ts_variant _ | Ts_other _
+       | Ts_tuple _ | Ts_var _)
+  | Ts_var _ ,
+      (Ts_constr _ | Ts_predef _ | Ts_arrow _ | Ts_variant _ | Ts_other _
+       | Ts_tuple _ | Ts_unboxed_tuple _)
+    -> false
+
+
+
+let rec print fmt t =
   let print_uid_opt =
     Format.pp_print_option (fun fmt -> Format.fprintf fmt "<%a>" Uid.print)
   in
@@ -589,6 +804,10 @@ let print fmt t =
           print_uid_opt uid
     | Leaf ->
         Format.fprintf fmt "<%a>" (Format.pp_print_option Uid.print) uid
+    | Type_decl decl ->
+      Format.fprintf fmt "<%a> = %a"
+        (Format.pp_print_option Uid.print) uid
+        print_type_decl_shape decl
     | Proj (t, item) ->
         begin match uid with
         | None ->
@@ -625,7 +844,7 @@ let print fmt t =
     Format.fprintf fmt "@[%a@]@;" aux t
 
 (* printing type shapes *)
-let rec print_type_shape : type a. Format.formatter -> a ts -> unit =
+and print_type_shape : type a. Format.formatter -> a ts -> unit =
   fun ppf -> function
   | Ts_predef (predef, shapes) ->
     Format.fprintf ppf "Ts_predef %s (%a)" (Predef.to_string predef)
@@ -633,12 +852,12 @@ let rec print_type_shape : type a. Format.formatter -> a ts -> unit =
           ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
           print_type_shape)
       shapes
-  | Ts_constr ((uid, path, _), shapes) ->
-    Format.fprintf ppf "Ts_constr uid=%a path=%a (%a)" Uid.print uid
-      Path.print path
+  | Ts_constr ((shape, _), shapes) ->
+    Format.fprintf ppf "Ts_constr shape=%a (%a)"
+    print shape
       (Format.pp_print_list
-          ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
-          print_type_shape)
+        ~pp_sep:(fun ppf () -> Format.pp_print_string ppf ", ")
+        print_type_shape)
       shapes
   | Ts_tuple shapes ->
     Format.fprintf ppf "Ts_tuple (%a)"
@@ -675,36 +894,36 @@ let rec print_type_shape : type a. Format.formatter -> a ts -> unit =
 
 (* We use custom strings as separators instead of pp_print_space, because the
     latter introduces line breaks that can mess up the tables with all shapes.*)
-let print_sep_string str ppf () = Format.pp_print_string ppf str
+and print_sep_string str ppf () = Format.pp_print_string ppf str
 
-let print_one_entry print_value ppf { field_name; field_value } =
+and print_one_entry print_value ppf { field_name; field_value } =
   match field_name with
   | Some name ->
     Format.fprintf ppf "%a=%a" Format.pp_print_string name print_value
       field_value
   | None -> Format.fprintf ppf "%a" print_value field_value
 
-let print_complex_constructor print_value ppf { name; kind = _; args } =
+and print_complex_constructor print_value ppf { name; kind = _; args } =
   Format.fprintf ppf "(%a of %a)" Format.pp_print_string name
     (Format.pp_print_list ~pp_sep:(print_sep_string " * ")
         (print_one_entry print_value))
     args
 
-let print_only_shape ppf (shape, _) = print_type_shape ppf shape
+and print_only_shape ppf (shape, _) = print_type_shape ppf shape
 
-let print_field ppf
+and print_field ppf
     ((name, shape, _) : _ * without_layout ts * _) =
   Format.fprintf ppf "%a: %a" Format.pp_print_string name print_type_shape
     shape
 
-let print_record_type = function
+and print_record_type = function
   | Record_boxed -> "_boxed"
   | Record_floats -> "_floats"
   | Record_mixed _ -> "_mixed"
   | Record_unboxed -> " [@@unboxed]"
   | Record_unboxed_product -> "_unboxed_product"
 
-let print_tds_desc ppf = function
+and print_tds_desc ppf = function
   | Tds_variant { simple_constructors; complex_constructors } ->
     Format.fprintf ppf
       "Tds_variant simple_constructors=%a complex_constructors=%a"
@@ -728,9 +947,8 @@ let print_tds_desc ppf = function
     Format.fprintf ppf "Tds_alias %a" print_type_shape type_shape
   | Tds_other -> Format.fprintf ppf "Tds_other"
 
-let print_type_decl_shape ppf t =
-  Format.fprintf ppf "path=%a, definition=(%a)" Path.print t.path print_tds_desc
-    t.definition
+and print_type_decl_shape ppf t =
+  print_tds_desc ppf t.definition
 
 let rec strip_head_aliases = function
   | { desc = Alias t; _ } -> strip_head_aliases t
@@ -782,6 +1000,12 @@ let leaf' uid =
     approximated = false }
 
 let leaf uid = leaf' (Some uid)
+
+let type_decl uid name =
+  { uid;
+    desc = Type_decl name;
+    hash = Hashtbl.hash (hash_alias, uid, name);
+    approximated = false }
 
 let approx t = { t with approximated = true}
 
@@ -873,7 +1097,7 @@ let poly_variant_constructors_map f pvs =
 
 let rec shape_layout (sh : Layout.t ts) =
   match sh with
-  | Ts_constr ((_, _, ly), _) -> ly
+  | Ts_constr ((_, ly), _) -> ly
   | Ts_tuple _ -> Layout.Base Value
   | Ts_unboxed_tuple shapes -> Layout.Product (List.map shape_layout shapes)
   | Ts_var (_, ly) -> ly
@@ -897,8 +1121,8 @@ let complex_constructors_map f = List.map (complex_constructor_map f)
 let rec shape_with_layout ~(layout : Layout.t) (sh : without_layout ts) :
     Layout.t ts =
   match sh, layout with
-  | Ts_constr ((uid, path, Layout_to_be_determined), shapes), _ ->
-    Ts_constr ((uid, path, layout), shapes)
+  | Ts_constr ((sh, Layout_to_be_determined), shapes), _ ->
+    Ts_constr ((sh, layout), shapes)
   | Ts_tuple shapes, Base Value ->
     let layouted_shapes =
       List.map (shape_with_layout ~layout:(Layout.Base Value)) shapes
@@ -993,7 +1217,6 @@ let replace_tvar (t : tds)
     let replace_tvar (sh, ly) = replace_tvar_type_shape ~pairs:subst sh, ly in
     let ret =
       { type_params = [];
-        path = t.path;
         definition =
           (match t.definition with
           | Tds_variant { simple_constructors; complex_constructors } ->
@@ -1024,7 +1247,28 @@ let replace_tvar (t : tds)
       }
     in
     ret
-  | false -> { type_params = []; path = t.path; definition = Tds_other }
+  | false -> { type_params = []; definition = Tds_other }
+
+let rec forget_layout (sh : Layout.t ts) : without_layout ts =
+  match sh with
+  | Ts_constr ((sh, _), shapes) ->
+    Ts_constr ((sh, Layout_to_be_determined), shapes)
+  | Ts_tuple shapes ->
+    let erased_shapes =
+      List.map (forget_layout) shapes
+    in
+    Ts_tuple erased_shapes
+  | Ts_unboxed_tuple shapes ->
+    Ts_unboxed_tuple (List.map (forget_layout) shapes)
+  | Ts_var (name, _) -> Ts_var (name, Layout_to_be_determined)
+  | Ts_arrow (arg, ret)-> Ts_arrow (arg, ret)
+  | Ts_predef (predef, shapes) -> Ts_predef (predef, shapes)
+  | Ts_variant (fields) ->
+    let fields = poly_variant_constructors_map (forget_layout) fields in
+    Ts_variant fields
+  | Ts_other _ -> Ts_other Layout_to_be_determined
+
+
 
 
 
