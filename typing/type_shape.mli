@@ -22,9 +22,14 @@ module Type_decl_shape : sig
 
 end
 
+type type_shape_with_name =
+  { type_shape : Layout.t Shape.ts;
+    type_name : string
+  }
+
 val all_type_decls : Shape.tds Uid.Tbl.t
 
-val all_type_shapes : Layout.t Shape.ts Uid.Tbl.t
+val all_type_shapes : type_shape_with_name Uid.Tbl.t
 
 (* Passing [Path.t -> Uid.t] instead of [Env.t] to avoid a dependency cycle. *)
 val add_to_type_decls :
@@ -34,12 +39,11 @@ val add_to_type_shapes :
   Uid.t ->
   Types.type_expr ->
   Jkind_types.Sort.Const.t ->
+  name:string ->
   (Path.t -> Uid.t option) ->
   unit
 
 val find_in_type_decls : Uid.t -> Shape.tds option
-
-val type_name : 'a. 'a Shape.ts -> string
 
 val print_table_all_type_decls : Format.formatter -> unit
 
