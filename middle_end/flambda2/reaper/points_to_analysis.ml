@@ -351,7 +351,7 @@ module Datalog_schedule = struct
   let make_schedule l = Schedule.saturate (List.map snd l)
 
   (* CR sspies: We have changed the schedule compared to main to be flat (i.e.,
-     not sequenced according to priorities). This means [fixpoint] is no
+     not sequenced according to priorities). This means [fixpoint] is now
      dead-code, and so is the priority handling. Both should be removed or
      revisited when merging into main. *)
 
