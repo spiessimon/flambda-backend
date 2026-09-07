@@ -283,6 +283,7 @@ let compilation_units graph =
   let cus = Maps.Nnn.fold_ids graph.alias_if_any_source ~init:cus ~f in
   let cus = Maps.N.fold_ids graph.any_usage ~init:cus ~f in
   let cus = Maps.N.fold_ids graph.any_source ~init:cus ~f in
+  let cus = Maps.N.fold_ids graph.keep_alive ~init:cus ~f in
   let cus = Maps.N.fold_ids graph.zero_alloc_source ~init:cus ~f in
   Maps.Nn.fold_ids graph.code_id_my_closure ~init:cus ~f
 

@@ -17,52 +17,6 @@
 
 open Datalog_helpers
 
-(* The compilation units of all identifiers in [ids]. Constants and
-   continuations are not scoped to compilation units. *)
-let compilation_units_of_ids
-    ({ symbols; variables; simples; consts = _; code_ids; continuations = _ } :
-      Ids_for_export.t) =
-  let acc = Compilation_unit.Set.empty in
-  let acc =
-    Symbol.Set.fold
-      (fun symbol acc ->
-        Compilation_unit.Set.add (Symbol.compilation_unit symbol) acc)
-      symbols acc
-  in
-  let acc =
-    Variable.Set.fold
-      (fun var acc ->
-        Compilation_unit.Set.add (Variable.compilation_unit var) acc)
-      variables acc
-  in
-  let acc =
-    Code_id.Set.fold
-      (fun code_id acc ->
-        Compilation_unit.Set.add (Code_id.get_compilation_unit code_id) acc)
-      code_ids acc
-  in
-  Ids_for_export.Simple.Set.fold
-    (fun simple acc ->
-      Ids_for_export.Simple.pattern_match simple
-        ~name:(fun name ~coercion:_ ->
-          Compilation_unit.Set.add
-            (Code_id_or_name.compilation_unit (Code_id_or_name.name name))
-            acc)
-        ~const:(fun _ -> acc))
-    simples acc
-
-(* Split a map by the compilation unit of its (outermost) key. *)
-let partition_by_cu map =
-  Code_id_or_name.Map.fold
-    (fun id value acc ->
-      let cu = Code_id_or_name.compilation_unit id in
-      Compilation_unit.Map.update cu
-        (fun part ->
-          let part = Option.value part ~default:Code_id_or_name.Map.empty in
-          Some (Code_id_or_name.Map.add id value part))
-        acc)
-    map Compilation_unit.Map.empty
-
 module Solution_tables : sig
   type t
 
@@ -489,6 +443,40 @@ end = struct
       accumulator_by_unit Compilation_unit.Map.empty
 end
 
+(* The compilation units of all identifiers in [ids]. Constants and
+   continuations are not scoped to compilation units. *)
+let compilation_units_of_ids
+    ({ symbols; variables; simples; consts = _; code_ids; continuations = _ } :
+      Ids_for_export.t) =
+  let acc = Compilation_unit.Set.empty in
+  let acc =
+    Symbol.Set.fold
+      (fun symbol acc ->
+        Compilation_unit.Set.add (Symbol.compilation_unit symbol) acc)
+      symbols acc
+  in
+  let acc =
+    Variable.Set.fold
+      (fun var acc ->
+        Compilation_unit.Set.add (Variable.compilation_unit var) acc)
+      variables acc
+  in
+  let acc =
+    Code_id.Set.fold
+      (fun code_id acc ->
+        Compilation_unit.Set.add (Code_id.get_compilation_unit code_id) acc)
+      code_ids acc
+  in
+  Ids_for_export.Simple.Set.fold
+    (fun simple acc ->
+      Ids_for_export.Simple.pattern_match simple
+        ~name:(fun name ~coercion:_ ->
+          Compilation_unit.Set.add
+            (Code_id_or_name.compilation_unit (Code_id_or_name.name name))
+            acc)
+        ~const:(fun _ -> acc))
+    simples acc
+
 (* The part of the solution whose outermost keys belong to one compilation unit,
    stored as its own file section so that rebuilds can read only the units they
    need. *)
@@ -581,15 +569,14 @@ module Header = struct
          needs: the transitive closure of the references relation, starting from
          the units the participant's dependency graph references (see
          [save]). *)
-      participants : (Compilation_unit.t * Compilation_unit.t list) list;
+      participants : (Compilation_unit.t * Compilation_unit.Set.t) list;
       (* Fields are hashconsed per-process, so the solution is stored with views
          of them in the style of [table_data]. One list serves all sections. *)
       field_views : (Field.t * Field.view) list;
       (* One section per compilation unit that keys any fact (participant or
          not), in section order. *)
       index : (Compilation_unit.t * File_sections.Idx.t) list;
-      section_toc : int array;
-      sections_length : int
+      section_toc : int array
     }
 end
 
@@ -609,6 +596,18 @@ type error =
   | Marshal_failed of string
 
 exception Error of error
+
+(* Split a map by the compilation unit of its (outermost) key. *)
+let partition_by_cu map =
+  Code_id_or_name.Map.fold
+    (fun id value acc ->
+      let cu = Code_id_or_name.compilation_unit id in
+      Compilation_unit.Map.update cu
+        (fun part ->
+          let part = Option.value part ~default:Code_id_or_name.Map.empty in
+          Some (Code_id_or_name.Map.add id value part))
+        acc)
+    map Compilation_unit.Map.empty
 
 (* CR mvellacott: the -support-lto, -reaper-solve and -reaper-rebuild
    invocations must agree on the reaper flags that influence traversal, the
@@ -674,7 +673,7 @@ let save ~filename ~participants ~solution =
       shard_inputs
       ([], Field.Set.empty, Compilation_unit.Map.empty)
   in
-  let serialized_sections, section_toc, sections_length =
+  let serialized_sections, section_toc, _sections_length =
     File_sections.serialize (File_sections.Builder.build builder)
   in
   (* The sections a participant's rebuild needs are the transitive closure of
@@ -708,11 +707,9 @@ let save ~filename ~participants ~solution =
   let participants =
     List.map
       (fun (cu, referenced_by_graph) ->
-        let needed =
+        ( cu,
           transitively_referenced
-            (Compilation_unit.Set.add cu referenced_by_graph)
-        in
-        cu, Compilation_unit.Set.elements needed)
+            (Compilation_unit.Set.add cu referenced_by_graph) ))
       participants
   in
   (* We need to store ID stamp counters so that stamp-based ids created during
@@ -723,8 +720,7 @@ let save ~filename ~participants ~solution =
       participants;
       field_views = Field.export_views fields;
       index = List.rev rev_index;
-      section_toc;
-      sections_length
+      section_toc
     }
   in
   let oc = open_out_bin filename in
@@ -786,9 +782,7 @@ let solution_for_members { header; sections } ~members =
             header.Header.participants
         with
         | Some (_, needed_by_member) ->
-          List.fold_left
-            (fun needed cu -> Compilation_unit.Set.add cu needed)
-            needed needed_by_member
+          Compilation_unit.Set.union needed needed_by_member
         | None ->
           Misc.fatal_errorf "Unit %a is not a participant in the LTO solution"
             (Format_doc.compat Compilation_unit.print)
