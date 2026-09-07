@@ -355,7 +355,6 @@ module Datalog_schedule = struct
      dead-code, and so is the priority handling. Both should be removed or
      revisited when merging into main. *)
 
-
   let reverse_rules =
     (* Reverse relations, because datalog does not implement a more efficient
        representation yet. Datalog iterates on the first key of a relation
