@@ -630,31 +630,22 @@ let save ~filename ~participants ~solution =
   (* Combine the three partitions into one map over the union of their key sets,
      with empty defaults. *)
   let shard_inputs =
-    let merged =
-      Compilation_unit.Map.merge
-        (fun _cu tables unboxed ->
-          match tables, unboxed with
-          | None, None -> None
-          | _, _ ->
-            Some
-              ( Option.value tables ~default:Solution_tables.empty,
-                Option.value unboxed ~default:Code_id_or_name.Map.empty ))
-        tables_by_cu unboxed_by_cu
+    let all_units =
+      Compilation_unit.Set.union
+        (Compilation_unit.Map.keys tables_by_cu)
+        (Compilation_unit.Set.union
+           (Compilation_unit.Map.keys unboxed_by_cu)
+           (Compilation_unit.Map.keys changed_by_cu))
     in
-    Compilation_unit.Map.merge
-      (fun _cu tables_and_unboxed changed ->
-        match tables_and_unboxed, changed with
-        | None, None -> None
-        | _, _ ->
-          let tables, unboxed =
-            Option.value tables_and_unboxed
-              ~default:(Solution_tables.empty, Code_id_or_name.Map.empty)
-          in
-          Some
-            ( tables,
-              unboxed,
-              Option.value changed ~default:Code_id_or_name.Map.empty ))
-      merged changed_by_cu
+    let find cu map ~default =
+      Option.value (Compilation_unit.Map.find_opt cu map) ~default
+    in
+    Compilation_unit.Map.of_set
+      (fun cu ->
+        ( find cu tables_by_cu ~default:Solution_tables.empty,
+          find cu unboxed_by_cu ~default:Code_id_or_name.Map.empty,
+          find cu changed_by_cu ~default:Code_id_or_name.Map.empty ))
+      all_units
   in
   let builder =
     File_sections.Builder.create (Compilation_unit.Map.cardinal shard_inputs)
