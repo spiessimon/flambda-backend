@@ -565,11 +565,14 @@ end
 module Header = struct
   type t =
     { id_stamp_counters : Id_stamp_counters.t;
-      (* Each participant is paired with the units whose sections its rebuild
-         needs: the transitive closure of the references relation, starting from
-         the units the participant's dependency graph references (see
-         [save]). *)
+      (* Each participant is paired with the units its dependency graph
+         references. [solution_for_members] starts from these when computing
+         which sections a rebuild needs. *)
       participants : (Compilation_unit.t * Compilation_unit.Set.t) list;
+      (* The units referenced by each section's serialised contents.
+         [solution_for_members] takes the transitive closure of this
+         relation. *)
+      section_references : Compilation_unit.Set.t Compilation_unit.Map.t;
       (* Fields are hashconsed per-process, so the solution is stored with views
          of them in the style of [table_data]. One list serves all sections. *)
       field_views : (Field.t * Field.view) list;
@@ -667,48 +670,13 @@ let save ~filename ~participants ~solution =
   let serialized_sections, section_toc, _sections_length =
     File_sections.serialize (File_sections.Builder.build builder)
   in
-  (* The sections a participant's rebuild needs are the transitive closure of
-     the references relation, starting from the units the participant's own
-     dependency graph references (plus itself).
-
-     Two different reference sets are involved. The starting points must come
-     from the participant's graph, because the rebuild queries the solution
-     directly about identifiers occurring in the unit's own code. The closure
-     then follows [referenced_by_section] — the units referenced by each
-     section's serialised contents — because loading a section puts
-     solver-derived identifiers (e.g. from [usages] rows) in the rebuild's
-     hands, and those can belong to units the participant's graph never
-     mentions.
-
-     Absence of facts is meaningful to rebuild queries, so the closure must
-     cover every unit whose identifiers the rebuild can encounter; a section
-     outside it is then equivalent to one with no facts. *)
-  let transitively_referenced units =
-    let rec visit cu visited =
-      if Compilation_unit.Set.mem cu visited
-      then visited
-      else
-        let visited = Compilation_unit.Set.add cu visited in
-        match Compilation_unit.Map.find_opt cu referenced_by_section with
-        | None -> visited
-        | Some referenced -> Compilation_unit.Set.fold visit referenced visited
-    in
-    Compilation_unit.Set.fold visit units Compilation_unit.Set.empty
-  in
-  let participants =
-    List.map
-      (fun (cu, referenced_by_graph) ->
-        ( cu,
-          transitively_referenced
-            (Compilation_unit.Set.add cu referenced_by_graph) ))
-      participants
-  in
   (* We need to store ID stamp counters so that stamp-based ids created during
      rebuild don't conflict with the ones created during solve. *)
   let id_stamp_counters = Id_stamp_counters.save () in
   let header =
     { Header.id_stamp_counters;
       participants;
+      section_references = referenced_by_section;
       field_views = Field.export_views fields;
       index = List.rev rev_index;
       section_toc
@@ -764,21 +732,68 @@ let print_loaded_sections ~members ~total ~loaded =
     pp_units members (List.length loaded) total pp_units loaded
 
 let solution_for_members { header; sections } ~members =
-  let needed =
+  (* The sections the rebuild needs are the transitive closure of the
+     [section_references] relation, starting from the units each member's own
+     dependency graph references (plus the member itself).
+
+     Two reference relations are needed because neither contains the other. For
+     a participant [P], [referenced_by_graph(P)] (its [Header.participants]
+     entry) is computed before the solve: the units whose identifiers appear in
+     [P]'s code and graph. [section_references(P)] is computed after the solve:
+     the units whose identifiers appear in the facts keyed by [P]. A fact is
+     stored in the section of the unit that keys it, which is not always the
+     unit whose rebuild reads the fact.
+
+     The starting points must come from [referenced_by_graph] because the
+     rebuild queries the solution directly about identifiers in the member's own
+     code. For example, if [P] reads a field of a symbol [S] defined in unit
+     [X], then [X ∈ referenced_by_graph(P)], and the rebuild queries about [S] —
+     the [usages] of [S], [field_of_constructor_is_used (S, 0)], etc. — are
+     keyed by [S] and answered by facts in [X]'s section. No fact keyed by [P]'s
+     own identifiers needs to mention [S], so possibly [X ∉
+     section_references(P)].
+
+     The closure must follow [section_references] because the solve propagates
+     identifiers across the whole program. For example, if a value defined in
+     [P] flows through other units to a use in unit [Z], then the [usages] of
+     [P]'s variable (a fact in [P]'s own section) contain a use-site identifier
+     from [Z], so [Z ∈ section_references(P)] even though [Z ∉
+     referenced_by_graph(P)]. Deserialising a section gives the rebuild such
+     identifiers, and queries about them need the sections of their units.
+
+     Absence of facts is meaningful to rebuild queries, so the closure must
+     cover every unit whose identifiers the rebuild can encounter; a section
+     outside it is then equivalent to one with no facts. *)
+  let seeds =
     List.fold_left
-      (fun needed member ->
+      (fun seeds member ->
         match
           List.find_opt
             (fun (cu, _) -> Compilation_unit.equal cu member)
             header.Header.participants
         with
-        | Some (_, needed_by_member) ->
-          Compilation_unit.Set.union needed needed_by_member
+        | Some (_, referenced_by_graph) ->
+          Compilation_unit.Set.add member
+            (Compilation_unit.Set.union seeds referenced_by_graph)
         | None ->
           Misc.fatal_errorf "Unit %a is not a participant in the LTO solution"
             (Format_doc.compat Compilation_unit.print)
             member)
       Compilation_unit.Set.empty members
+  in
+  let needed =
+    let rec visit cu visited =
+      if Compilation_unit.Set.mem cu visited
+      then visited
+      else
+        let visited = Compilation_unit.Set.add cu visited in
+        match
+          Compilation_unit.Map.find_opt cu header.Header.section_references
+        with
+        | None -> visited
+        | Some referenced -> Compilation_unit.Set.fold visit referenced visited
+    in
+    Compilation_unit.Set.fold visit seeds Compilation_unit.Set.empty
   in
   let rename_field = Field.import_views header.Header.field_views in
   let tables, unboxed_fields, changed_representation, rev_loaded =
