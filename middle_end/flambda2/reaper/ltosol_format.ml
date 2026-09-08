@@ -298,21 +298,21 @@ end = struct
      distribute each whole-program table in a single pass, without building an
      intermediate partition of each table first. *)
   type accumulator =
-    { mutable constructor : Maps.Nfn.t;
-      mutable parameter : Maps.Ncn.t;
-      mutable code_id_my_closure : Maps.Nn.t;
-      mutable any_usage : Maps.N.t;
-      mutable any_source : Maps.N.t;
-      mutable usages : Maps.Nn.t;
-      mutable sources : Maps.Nn.t;
-      mutable rev_accessor : Maps.Nfn.t;
-      mutable has_usage : Maps.N.t;
-      mutable has_source : Maps.N.t;
-      mutable field_of_constructor_is_used : Maps.Nf.t;
-      mutable field_of_constructor_is_used_top : Maps.Nf.t;
-      mutable field_of_constructor_is_used_as : Maps.Nfn.t;
-      mutable allocation_point_dominator : Maps.Nn.t;
-      mutable cannot_change_calling_convention : Maps.N.t
+    { mutable constructor : Serialisation.Nfn.t;
+      mutable parameter : Serialisation.Ncn.t;
+      mutable code_id_my_closure : Serialisation.Nn.t;
+      mutable any_usage : Serialisation.N.t;
+      mutable any_source : Serialisation.N.t;
+      mutable usages : Serialisation.Nn.t;
+      mutable sources : Serialisation.Nn.t;
+      mutable rev_accessor : Serialisation.Nfn.t;
+      mutable has_usage : Serialisation.N.t;
+      mutable has_source : Serialisation.N.t;
+      mutable field_of_constructor_is_used : Serialisation.Nf.t;
+      mutable field_of_constructor_is_used_top : Serialisation.Nf.t;
+      mutable field_of_constructor_is_used_as : Serialisation.Nfn.t;
+      mutable allocation_point_dominator : Serialisation.Nn.t;
+      mutable cannot_change_calling_convention : Serialisation.N.t
     }
 
   let create_accumulator () : accumulator =
@@ -515,12 +515,6 @@ module Shard : sig
 end = struct
   type t =
     { table_data : Flambda_cmx_format.table_data;
-<<<<<<< HEAD
-      field_views : Fields_for_export.t;
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-      field_views : (Field.t * Field.view) list;
-=======
->>>>>>> 64ed0bfb00 (file sections for ltosol)
       solution_tables : Solution_tables.t;
       unboxed_fields : Unboxing_analysis.unboxed Code_id_or_name.Map.t;
       changed_representation :
@@ -545,31 +539,7 @@ end = struct
       Unboxing_analysis.changed_representation_fields_for_export
         changed_representation fields
     in
-<<<<<<< HEAD
-    { table_data = Flambda_cmx_format.create_table_data ids;
-      field_views = Fields_for_export.export fields;
-      solution_tables;
-      unboxed_fields;
-      changed_representation
-    }
-
-  let deserialise
-      { table_data;
-        field_views;
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-    { table_data = Flambda_cmx_format.create_table_data ids;
-      field_views = Field.export_views fields;
-      solution_tables;
-      unboxed_fields;
-      changed_representation
-    }
-
-  let deserialise
-      { table_data;
-        field_views;
-=======
     ( { table_data = Flambda_cmx_format.create_table_data ids;
->>>>>>> 64ed0bfb00 (file sections for ltosol)
         solution_tables;
         unboxed_fields;
         changed_representation
@@ -589,20 +559,8 @@ end = struct
         ~used_value_slots:Value_slot.Set.empty
         ~original_compilation_unit:(Symbol.external_symbols_compilation_unit ())
     in
-<<<<<<< HEAD
-    let rename_field = Fields_for_export.import field_views in
-    let db =
-      Solution_tables.to_database
-        (Solution_tables.apply_renaming solution_tables renaming ~rename_field)
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-    let rename_field = Field.import_views field_views in
-    let db =
-      Solution_tables.to_database
-        (Solution_tables.apply_renaming solution_tables renaming ~rename_field)
-=======
     let solution_tables =
       Solution_tables.apply_renaming solution_tables renaming ~rename_field
->>>>>>> 64ed0bfb00 (file sections for ltosol)
     in
     let unboxed_fields =
       Unboxing_analysis.unboxed_fields_apply_renaming unboxed_fields renaming
@@ -618,12 +576,6 @@ end
 module Header = struct
   type t =
     { id_stamp_counters : Id_stamp_counters.t;
-<<<<<<< HEAD
-      solution : Serialisable_solution.t
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-      participants : Compilation_unit.t list;
-      solution : Serialisable_solution.t
-=======
       (* Each participant is paired with the units its dependency graph
          references. [solution_for_members] starts from these when computing
          which sections a rebuild needs. *)
@@ -634,12 +586,11 @@ module Header = struct
       section_references : Compilation_unit.Set.t Compilation_unit.Map.t;
       (* Fields are hashconsed per-process, so the solution is stored with views
          of them in the style of [table_data]. One list serves all sections. *)
-      field_views : (Field.t * Field.view) list;
+      field_views : Fields_for_export.t;
       (* One section per compilation unit that keys any fact (participant or
          not), in section order. *)
       index : (Compilation_unit.t * File_sections.Idx.t) list;
       section_toc : int array
->>>>>>> 64ed0bfb00 (file sections for ltosol)
     }
 end
 
@@ -650,8 +601,6 @@ type t =
 
 let id_stamp_counters t = t.header.Header.id_stamp_counters
 
-let participants t = List.map fst t.header.Header.participants
-
 type error =
   | Wrong_format of string
   | Wrong_version of string
@@ -660,20 +609,6 @@ type error =
 
 exception Error of error
 
-<<<<<<< HEAD
-let save ~filename ~solution =
-  let solution = Serialisable_solution.create solution in
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-(* CR mvellacott: the -support-lto, -reaper-solve and -reaper-rebuild
-   invocations must agree on the reaper flags that influence traversal, the
-   solve and how the solved tables are queried (-reaper-local-fields,
-   -reaper-preserve-direct-calls, -reaper-unbox,
-   -reaper-change-calling-conventions). Record them in the .cmr and .ltosol
-   files and fail on mismatch instead of relying on callers passing consistent
-   command lines. *)
-let save ~filename ~participants ~solution =
-  let solution = Serialisable_solution.create solution in
-=======
 (* Split a map by the compilation unit of its (outermost) key. *)
 let partition_by_cu map =
   Code_id_or_name.Map.fold
@@ -686,13 +621,6 @@ let partition_by_cu map =
         acc)
     map Compilation_unit.Map.empty
 
-(* CR mvellacott: the -support-lto, -reaper-solve and -reaper-rebuild
-   invocations must agree on the reaper flags that influence traversal, the
-   solve and how the solved tables are queried (-reaper-local-fields,
-   -reaper-preserve-direct-calls, -reaper-unbox,
-   -reaper-change-calling-conventions). Record them in the .cmr and .ltosol
-   files and fail on mismatch instead of relying on callers passing consistent
-   command lines. *)
 let save ~filename ~participants ~solution =
   let ({ db; unboxed_fields; changed_representation }
         : Unboxing_analysis.result) =
@@ -744,27 +672,18 @@ let save ~filename ~participants ~solution =
   let serialized_sections, section_toc, _sections_length =
     File_sections.serialize (File_sections.Builder.build builder)
   in
->>>>>>> 64ed0bfb00 (file sections for ltosol)
   (* We need to store ID stamp counters so that stamp-based ids created during
      rebuild don't conflict with the ones created during solve. *)
   let id_stamp_counters = Id_stamp_counters.save () in
-<<<<<<< HEAD
-  let file_contents = { File_contents.id_stamp_counters; solution } in
-||||||| parent of 64ed0bfb00 (file sections for ltosol)
-  let file_contents =
-    { File_contents.id_stamp_counters; participants; solution }
-  in
-=======
   let header =
     { Header.id_stamp_counters;
       participants;
       section_references = referenced_by_section;
-      field_views = Field.export_views fields;
+      field_views = Fields_for_export.export fields;
       index = List.rev rev_index;
       section_toc
     }
   in
->>>>>>> 64ed0bfb00 (file sections for ltosol)
   let oc = open_out_bin filename in
   Misc.try_finally
     (fun () ->
@@ -878,7 +797,7 @@ let solution_for_members { header; sections } ~members =
     in
     Compilation_unit.Set.fold visit seeds Compilation_unit.Set.empty
   in
-  let rename_field = Field.import_views header.Header.field_views in
+  let rename_field = Fields_for_export.import header.Header.field_views in
   let tables, unboxed_fields, changed_representation, rev_loaded =
     List.fold_left
       (fun (tables, unboxed_fields, changed_representation, rev_loaded)

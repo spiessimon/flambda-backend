@@ -263,19 +263,18 @@ let compilation_units graph =
     Compilation_unit.Set.add (Code_id_or_name.compilation_unit id) cus
   in
   let cus = Compilation_unit.Set.empty in
-  let cus = Maps.Nn.fold_ids graph.alias ~init:cus ~f in
-  let cus = Maps.Nn.fold_ids graph.use ~init:cus ~f in
-  let cus = Maps.Nfn.fold_ids graph.accessor ~init:cus ~f in
-  let cus = Maps.Nfn.fold_ids graph.constructor ~init:cus ~f in
-  let cus = Maps.Ncn.fold_ids graph.argument ~init:cus ~f in
-  let cus = Maps.Ncn.fold_ids graph.parameter ~init:cus ~f in
-  let cus = Maps.Nnn.fold_ids graph.propagate ~init:cus ~f in
-  let cus = Maps.Nnn.fold_ids graph.alias_if_any_source ~init:cus ~f in
-  let cus = Maps.N.fold_ids graph.any_usage ~init:cus ~f in
-  let cus = Maps.N.fold_ids graph.any_source ~init:cus ~f in
-  let cus = Maps.N.fold_ids graph.keep_alive ~init:cus ~f in
-  let cus = Maps.N.fold_ids graph.zero_alloc_source ~init:cus ~f in
-  Maps.Nn.fold_ids graph.code_id_my_closure ~init:cus ~f
+  let cus = Serialisation.Nn.fold_ids graph.alias ~init:cus ~f in
+  let cus = Serialisation.Nn.fold_ids graph.use ~init:cus ~f in
+  let cus = Serialisation.Nfn.fold_ids graph.accessor ~init:cus ~f in
+  let cus = Serialisation.Nfn.fold_ids graph.constructor ~init:cus ~f in
+  let cus = Serialisation.Ncn.fold_ids graph.argument ~init:cus ~f in
+  let cus = Serialisation.Ncn.fold_ids graph.parameter ~init:cus ~f in
+  let cus = Serialisation.Nnn.fold_ids graph.propagate ~init:cus ~f in
+  let cus = Serialisation.Nnn.fold_ids graph.alias_if_any_source ~init:cus ~f in
+  let cus = Serialisation.N.fold_ids graph.any_usage ~init:cus ~f in
+  let cus = Serialisation.N.fold_ids graph.any_source ~init:cus ~f in
+  let cus = Serialisation.N.fold_ids graph.zero_alloc_source ~init:cus ~f in
+  Serialisation.Nn.fold_ids graph.code_id_my_closure ~init:cus ~f
 
 let fields_for_export graph =
   let open Datalog_helpers in
