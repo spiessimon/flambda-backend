@@ -440,25 +440,37 @@ let reaper_lto_solve ~cmr_files ~ltosol_file =
     List.split (List.map Flambda2_reaper.Cmr_format.load cmr_files)
   in
   Flambda2_reaper.Id_stamp_counters.restore_for_merge counters;
-  let combined_graph =
-    List.fold_left
-      (fun combined cmr ->
-        Flambda2_reaper.Global_flow_graph.union combined
-          (Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps_only cmr))
-      (Flambda2_reaper.Global_flow_graph.create ())
+  let graphs =
+    List.map
+      (fun cmr ->
+        ( Flambda2_reaper.Cmr_format.Serialisable.compilation_unit cmr,
+          Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps_only cmr ))
       cmrs
   in
-  (* CR mvellacott: split the resulting solution into per-compilation-unit
-     portions. *)
+  (* The compilation units referenced by each unit's own graph determine which
+     pieces of the solution are loaded when rebuilding. *)
+  let participants =
+    List.map
+      (fun (participant, graph) ->
+        participant, Flambda2_reaper.Global_flow_graph.compilation_units graph)
+      graphs
+  in
+  let combined_graph =
+    List.fold_left
+      (fun combined (_participant, graph) ->
+        Flambda2_reaper.Global_flow_graph.union combined graph)
+      (Flambda2_reaper.Global_flow_graph.create ())
+      graphs
+  in
   let solution = Flambda2_reaper.Reaper.Staged.solve combined_graph in
-  Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~solution
+  Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~participants
+    ~solution
 
 let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
     ~keep_symbol_tables ~ltosol_filename ~cmr_filename =
-  let { Flambda2_reaper.Ltosol_format.File_contents.id_stamp_counters;
-        solution = ltosol_solution
-      } =
-    Flambda2_reaper.Ltosol_format.load ltosol_filename
+  let ltosol = Flambda2_reaper.Ltosol_format.load ltosol_filename in
+  let id_stamp_counters =
+    Flambda2_reaper.Ltosol_format.id_stamp_counters ltosol
   in
   Flambda2_reaper.Id_stamp_counters.restore_for_resume id_stamp_counters;
   (* We expect the stamp counters in the .cmr file to be less than the counters
@@ -492,8 +504,11 @@ let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
   Exported_offsets.import_offsets imported_offsets;
   (* CR mvellacott: add profiling and debug printing code. *)
   let solved_dep =
-    Flambda2_reaper.Ltosol_format.Serialisable_solution.deserialise
-      ltosol_solution
+    let member =
+      Flambda2_identifiers.Symbol.compilation_unit
+        (Flambda_unit.Metadata.module_symbol unit_metadata)
+    in
+    Flambda2_reaper.Ltosol_format.solution_for_members ltosol ~members:[member]
   in
   let flambda, free_names, all_code, slot_offsets, final_typing_env =
     Flambda2_reaper.Reaper.Staged.rebuild ~unit_metadata

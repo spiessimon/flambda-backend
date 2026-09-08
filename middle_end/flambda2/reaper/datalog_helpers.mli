@@ -235,6 +235,8 @@ module Serialisation : sig
 
     type table = (t, Code_id_or_name.t -> Datalog.nil, unit) Datalog.table
 
+    val fold_ids : t -> init:'a -> f:('a -> Code_id_or_name.t -> 'a) -> 'a
+
     val add_ids : t -> Ids_for_export.t -> Ids_for_export.t
 
     val rename : t -> rename_id:(Code_id_or_name.t -> Code_id_or_name.t) -> t
@@ -249,6 +251,8 @@ module Serialisation : sig
         unit )
       Datalog.table
 
+    val fold_ids : t -> init:'a -> f:('a -> Code_id_or_name.t -> 'a) -> 'a
+
     val add_ids : t -> Ids_for_export.t -> Ids_for_export.t
 
     val rename : t -> rename_id:(Code_id_or_name.t -> Code_id_or_name.t) -> t
@@ -256,6 +260,8 @@ module Serialisation : sig
 
   module Nnn : sig
     type t = Nn.t Code_id_or_name.Map.t
+
+    val fold_ids : t -> init:'a -> f:('a -> Code_id_or_name.t -> 'a) -> 'a
 
     val add_ids : t -> Ids_for_export.t -> Ids_for_export.t
 
@@ -288,6 +294,8 @@ module Serialisation : sig
         unit )
       Datalog.table
 
+    val fold_ids : t -> init:'a -> f:('a -> Code_id_or_name.t -> 'a) -> 'a
+
     val add_ids : t -> Ids_for_export.t -> Ids_for_export.t
 
     val add_fields : t -> Field.Set.t -> Field.Set.t
@@ -307,6 +315,8 @@ module Serialisation : sig
         Code_id_or_name.t -> Cofield.t -> Code_id_or_name.t -> Datalog.nil,
         unit )
       Datalog.table
+
+    val fold_ids : t -> init:'a -> f:('a -> Code_id_or_name.t -> 'a) -> 'a
 
     val add_ids : t -> Ids_for_export.t -> Ids_for_export.t
 
