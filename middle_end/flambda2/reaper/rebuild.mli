@@ -43,12 +43,7 @@ val rebuild :
   fixed_arity_continuations:Continuation.Set.t ->
   final_typing_env:Typing_env.t option ->
   types_rewrite_context:Types_rewriter.rewrite_context ->
-<<<<<<< HEAD
-||||||| parent of b90e823ee7 (code metadata at solve time)
-  calling_convention_changes:Unboxing_analysis.calling_convention_changes ->
-=======
   code_changes:Unboxing_analysis.code_changes ->
->>>>>>> b90e823ee7 (code metadata at solve time)
   Unboxing_analysis.result ->
   (Code_id.t -> Code_metadata.t) ->
   Rev_expr.t ->

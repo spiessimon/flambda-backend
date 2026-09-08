@@ -74,14 +74,8 @@ let prepare_code acc (code_id : Code_id.t) (code : Code.t) =
   in
   let code_dep =
     { Traverse_acc.arity;
-<<<<<<< HEAD
       function_slot_size;
-||||||| parent of b90e823ee7 (code metadata at solve time)
-      result_arity;
-=======
-      result_arity;
       code_metadata = Code.code_metadata code;
->>>>>>> b90e823ee7 (code metadata at solve time)
       return;
       my_closure;
       exn;

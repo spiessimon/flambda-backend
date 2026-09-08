@@ -152,14 +152,15 @@ module Staged = struct
       }
 
     let map_result_types t ~f =
-      (* [code] is the only part of the rebuild data holding Flambda types. *)
-      let map_rev_code (rev_code : Rev_expr.rev_code) =
-        { rev_code with
+      (* The code metadata stored in [code_deps] is the only part of the rebuild
+         data holding Flambda types. *)
+      let map_code_dep (code_dep : Traverse_acc.code_dep) =
+        { code_dep with
           code_metadata =
-            Code_metadata.map_result_types rev_code.code_metadata ~f
+            Code_metadata.map_result_types code_dep.code_metadata ~f
         }
       in
-      { t with code = Code_id.Map.map map_rev_code t.code }
+      { t with code_deps = Code_id.Map.map map_code_dep t.code_deps }
   end
 
   let traverse ~free_names ~cmx_loader ~all_code unit =
@@ -228,10 +229,30 @@ module Staged = struct
     let types_rewrite_context =
       Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
     in
+    let code_changes =
+      Unboxing_analysis.compute_code_changes solved_dep
+        ~rewrite_kind_with_subkind:
+          (Types_rewriter.rewrite_kind_with_subkind types_rewrite_context)
+        ~rewrite_result_types:(fun ~my_closure ~params ~results types ->
+          match final_typing_env with
+          | None ->
+            (* This can happen if the result continuation of the compilation
+               unit is never used. If this happens, this compilation unit either
+               always raises an exception or diverges. In any case, it will not
+               be possible to use this compilation unit in another compilation
+               unit, so keeping the result types is useless. *)
+            Or_unknown_or_bottom.Unknown
+          | Some old_typing_env ->
+            Or_unknown_or_bottom.Ok
+              (Types_rewriter.rewrite_result_types types_rewrite_context
+                 ~old_typing_env ~my_closure ~params ~results types))
+        ~code_deps
+    in
     let Rebuild.{ body; all_code; code_ids_to_remember } =
       Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
         ~fixed_arity_continuations ~continuation_info ~final_typing_env
-        ~types_rewrite_context solved_dep get_code_metadata toplevel_expr code
+        ~types_rewrite_context ~code_changes solved_dep get_code_metadata
+        toplevel_expr code
     in
     let all_code =
       Exported_code.add_code
@@ -265,83 +286,4 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
     Staged.rebuild ~unit_metadata ~traverse_rebuild ~solved_dep ~machine_width
       ~cmx_loader ~all_code ~final_typing_env
   in
-<<<<<<< HEAD
   flambda, all_code, slot_offsets, final_typing_env
-||||||| parent of b90e823ee7 (code metadata at solve time)
-  let types_rewrite_context =
-    Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
-  in
-  let calling_convention_changes =
-    Unboxing_analysis.compute_calling_convention_changes solved_dep
-      ~rewrite_kind_with_subkind:
-        (Types_rewriter.rewrite_kind_with_subkind types_rewrite_context)
-      ~code_deps
-  in
-  let Rebuild.{ body; free_names; all_code; code_ids_to_remember; slot_offsets }
-      =
-    Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
-      ~fixed_arity_continuations ~continuation_info ~final_typing_env
-      ~types_rewrite_context ~calling_convention_changes solved_dep
-      get_code_metadata toplevel_expr code
-  in
-  let all_code =
-    Exported_code.add_code
-      ~keep_code:(fun code_id -> Code_id.Set.mem code_id code_ids_to_remember)
-      all_code
-      (Exported_code.mark_as_imported
-         (Flambda_cmx.get_imported_code cmx_loader ()))
-  in
-  let final_typing_env =
-    Option.map
-      (Types_rewriter.rewrite_typing_env types_rewrite_context
-         ~unit_symbol:(Flambda_unit.module_symbol unit))
-      final_typing_env
-  in
-  ( Flambda_unit.with_body unit body,
-    free_names,
-    all_code,
-    slot_offsets,
-    final_typing_env )
-=======
-  let types_rewrite_context =
-    Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
-  in
-  let code_changes =
-    Unboxing_analysis.compute_code_changes solved_dep
-      ~rewrite_kind_with_subkind:
-        (Types_rewriter.rewrite_kind_with_subkind types_rewrite_context)
-      ~rewrite_result_types:(fun ~my_closure ~params ~results types ->
-        match final_typing_env with
-        | None -> Or_unknown_or_bottom.Unknown
-        | Some old_typing_env ->
-          Or_unknown_or_bottom.Ok
-            (Types_rewriter.rewrite_result_types types_rewrite_context
-               ~old_typing_env ~my_closure ~params ~results types))
-      ~code_deps
-  in
-  let Rebuild.{ body; free_names; all_code; code_ids_to_remember; slot_offsets }
-      =
-    Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
-      ~fixed_arity_continuations ~continuation_info ~final_typing_env
-      ~types_rewrite_context ~code_changes solved_dep get_code_metadata
-      toplevel_expr code
-  in
-  let all_code =
-    Exported_code.add_code
-      ~keep_code:(fun code_id -> Code_id.Set.mem code_id code_ids_to_remember)
-      all_code
-      (Exported_code.mark_as_imported
-         (Flambda_cmx.get_imported_code cmx_loader ()))
-  in
-  let final_typing_env =
-    Option.map
-      (Types_rewriter.rewrite_typing_env types_rewrite_context
-         ~unit_symbol:(Flambda_unit.module_symbol unit))
-      final_typing_env
-  in
-  ( Flambda_unit.with_body unit body,
-    free_names,
-    all_code,
-    slot_offsets,
-    final_typing_env )
->>>>>>> b90e823ee7 (code metadata at solve time)
