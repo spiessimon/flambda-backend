@@ -96,14 +96,10 @@ type run_result =
     reachable_names : NO.t
   }
 
-let build_run_result unit ~free_names ~prepare_cmx ~all_code slot_offsets :
-    run_result =
+let build_run_result unit ~prepare_cmx ~all_code
+    ({ used_value_slots; exported_offsets } : Slot_offsets.result) : run_result
+    =
   let module_symbol = Flambda_unit.module_symbol unit in
-  let ({ used_value_slots; exported_offsets } : Slot_offsets.result) =
-    Slot_offsets.finalize_offsets_from_free_names slot_offsets
-      ~get_code_metadata:(Exported_code.get_code_metadata all_code)
-      ~free_names
-  in
   let reachable_names, cmx =
     prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets all_code
   in
@@ -116,12 +112,17 @@ type flambda_result =
     reachable_names : NO.t
   }
 
+let finalize_offsets ~free_names ~all_code slot_offsets =
+  Slot_offsets.finalize_offsets_from_free_names slot_offsets
+    ~get_code_metadata:(Exported_code.get_code_metadata all_code)
+    ~free_names
+
 let run_reaper ~ppf ~prefixname ~machine_width ~cmx_loader ~all_code
-    ~final_typing_env flambda =
-  let ((flambda, _, _, _, _) as result) =
+    ~final_typing_env ~free_names flambda =
+  let ((flambda, _, _, _) as result) =
     Profile.record_call ~accumulate:true "reaper" (fun () ->
         Flambda2_reaper.Reaper.run ~machine_width ~cmx_loader ~all_code
-          ~final_typing_env flambda)
+          ~final_typing_env ~free_names flambda)
   in
   print_flambda "reaper" (Flambda_features.dump_reaper ()) ppf flambda;
   print_fexpr "reaper"
@@ -175,6 +176,7 @@ let flambda_to_flambda0 : type m.
   Compiler_hooks.execute Raw_flambda2 raw_flambda;
   print_rawflambda ppf raw_flambda;
   dump_fexpr_annot ~prefixname "raw" raw_flambda;
+<<<<<<< HEAD
   let ( flambda,
         free_names,
         all_code,
@@ -182,6 +184,11 @@ let flambda_to_flambda0 : type m.
         prepare_cmx,
         last_pass_name,
         cmr_payload ) =
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+  let flambda, free_names, all_code, slot_offsets, prepare_cmx, last_pass_name =
+=======
+  let flambda, all_code, slot_offsets, prepare_cmx, last_pass_name =
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
     match mode, close_prog_metadata with
     | Classic, Classic (all_code, approxs, free_names, slot_offsets) ->
       (if Flambda_features.inlining_report ()
@@ -201,23 +208,33 @@ let flambda_to_flambda0 : type m.
             ~resolver:(Flambda_cmx.load_cmx_file_contents cmx_loader)
             approxs
         in
-        let flambda, free_names, all_code, slot_offsets, final_typing_env =
+        let flambda, all_code, slot_offsets, final_typing_env =
           run_reaper ~ppf ~prefixname ~machine_width ~cmx_loader ~all_code
-            ~final_typing_env:(Some final_typing_env) raw_flambda
+            ~final_typing_env:(Some final_typing_env) ~free_names raw_flambda
         in
         let prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets
             all_code =
           Flambda_cmx.prepare_cmx_file_contents ~final_typing_env ~module_symbol
             ~used_value_slots ~exported_offsets ~sections all_code
         in
+<<<<<<< HEAD
         flambda, free_names, all_code, slot_offsets, prepare_cmx, "reaper", None
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+        flambda, free_names, all_code, slot_offsets, prepare_cmx, "reaper"
+=======
+        flambda, all_code, slot_offsets, prepare_cmx, "reaper"
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
       else
+        let slot_offsets =
+          finalize_offsets ~free_names ~all_code slot_offsets
+        in
         let prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets
             all_code =
           Flambda_cmx.prepare_cmx_from_approx ~machine_width ~approxs
             ~module_symbol ~exported_offsets ~used_value_slots ~sections
             all_code
         in
+<<<<<<< HEAD
         ( raw_flambda,
           free_names,
           all_code,
@@ -225,6 +242,11 @@ let flambda_to_flambda0 : type m.
           prepare_cmx,
           "raw",
           None )
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+        raw_flambda, free_names, all_code, slot_offsets, prepare_cmx, "raw"
+=======
+        raw_flambda, all_code, slot_offsets, prepare_cmx, "raw"
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
     | Normal, Normal ->
       let round = 0 in
       let { Simplify.free_names;
@@ -253,6 +275,7 @@ let flambda_to_flambda0 : type m.
         (Flambda_features.dump_fexpr (This_pass "simplify"))
         ppf flambda;
       dump_fexpr_annot ~prefixname "simplify" flambda;
+<<<<<<< HEAD
       let ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
             last_pass_name,
             cmr_payload ) =
@@ -263,9 +286,22 @@ let flambda_to_flambda0 : type m.
             None )
         | Single_unit_run ->
           let result =
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+      let ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
+            last_pass_name ) =
+        if Flambda_features.enable_reaper ()
+        then
+          let result =
+=======
+      let flambda, all_code, slot_offsets, final_typing_env, last_pass_name =
+        if Flambda_features.enable_reaper ()
+        then
+          let flambda, all_code, slot_offsets, final_typing_env =
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
             run_reaper ~ppf ~prefixname ~machine_width ~cmx_loader ~all_code
-              ~final_typing_env flambda
+              ~final_typing_env ~free_names flambda
           in
+<<<<<<< HEAD
           result, "reaper", None
         | Lto_support ->
           let deps, rebuild_data =
@@ -285,12 +321,26 @@ let flambda_to_flambda0 : type m.
           ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
             last_pass_name,
             cmr_payload )
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+          result, "reaper"
+        else
+          ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
+            last_pass_name )
+=======
+          flambda, all_code, slot_offsets, final_typing_env, "reaper"
+        else
+          let slot_offsets =
+            finalize_offsets ~free_names ~all_code slot_offsets
+          in
+          flambda, all_code, slot_offsets, final_typing_env, last_pass_name
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
       in
       let prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets
           all_code =
         Flambda_cmx.prepare_cmx_file_contents ~final_typing_env ~module_symbol
           ~used_value_slots ~exported_offsets ~sections all_code
       in
+<<<<<<< HEAD
       ( flambda,
         free_names,
         all_code,
@@ -298,9 +348,15 @@ let flambda_to_flambda0 : type m.
         prepare_cmx,
         last_pass_name,
         cmr_payload )
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+      flambda, free_names, all_code, slot_offsets, prepare_cmx, last_pass_name
+=======
+      flambda, all_code, slot_offsets, prepare_cmx, last_pass_name
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
   in
   print_flambda last_pass_name (Flambda_features.dump_flambda ()) ppf flambda;
   print_fexpr last_pass_name (Flambda_features.dump_fexpr Last_pass) ppf flambda;
+<<<<<<< HEAD
   let { unit = flambda;
         exported_offsets;
         cmx;
@@ -309,6 +365,13 @@ let flambda_to_flambda0 : type m.
         reachable_names
       } =
     build_run_result flambda ~free_names ~all_code slot_offsets ~prepare_cmx
+||||||| parent of 1e37ee1ce4 (slot offset changes from main)
+  let { unit = flambda; exported_offsets; cmx; all_code; reachable_names } =
+    build_run_result flambda ~free_names ~all_code slot_offsets ~prepare_cmx
+=======
+  let { unit = flambda; exported_offsets; cmx; all_code; reachable_names } =
+    build_run_result flambda ~all_code slot_offsets ~prepare_cmx
+>>>>>>> 1e37ee1ce4 (slot offset changes from main)
   in
   Option.iter
     (Flambda2_reaper.Cmr_format.save ~filename:(prefixname ^ ".cmr")
