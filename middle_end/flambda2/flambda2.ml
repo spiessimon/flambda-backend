@@ -420,6 +420,7 @@ let reaper_lto_solve ~cmr_files ~ltosol_file =
     List.split (List.map Flambda2_reaper.Cmr_format.load cmr_files)
   in
   Flambda2_reaper.Id_stamp_counters.restore_for_merge counters;
+<<<<<<< HEAD
   let combined_graph =
     List.fold_left
       (fun combined cmr ->
@@ -427,26 +428,142 @@ let reaper_lto_solve ~cmr_files ~ltosol_file =
           (Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps_only cmr))
       (Flambda2_reaper.Global_flow_graph.create ())
       cmrs
+||||||| parent of 64ed0bfb00 (file sections for ltosol)
+  let participants =
+    List.map Flambda2_reaper.Cmr_format.Serialisable.compilation_unit cmrs
   in
+  (* All allocation and access sites of participating units' slots are in the
+     combined graph, so they are local; set this before the solve. *)
+  Flambda2_reaper.Field.set_locality_scope
+    (Compilation_unit.Set.of_list participants);
+  let combined_graph =
+    (* The lists are in command-line order, which is deterministic, as required
+       for reproducible .ltosol output. *)
+    Flambda2_reaper.Lto_combine.combine
+      (List.map2
+         (fun participant cmr ->
+           ( participant,
+             Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps cmr ))
+         participants cmrs)
+=======
+  let participants =
+    List.map Flambda2_reaper.Cmr_format.Serialisable.compilation_unit cmrs
+  in
+  (* All allocation and access sites of participating units' slots are in the
+     combined graph, so they are local; set this before the solve. *)
+  Flambda2_reaper.Field.set_locality_scope
+    (Compilation_unit.Set.of_list participants);
+  let graphs =
+    (* The lists are in command-line order, which is deterministic, as required
+       for reproducible .ltosol output. *)
+    List.map2
+      (fun participant cmr ->
+        ( participant,
+          Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps cmr ))
+      participants cmrs
+>>>>>>> 64ed0bfb00 (file sections for ltosol)
+  in
+<<<<<<< HEAD
   (* CR mvellacott: split the resulting solution into per-compilation-unit
      portions. *)
   let solution = Flambda2_reaper.Reaper.Staged.solve combined_graph in
   Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~solution
+||||||| parent of 64ed0bfb00 (file sections for ltosol)
+  (* CR mvellacott: split the resulting solution into per-compilation-unit
+     portions. *)
+  let solution =
+    Flambda2_reaper.Reaper.Staged.solve_whole_program combined_graph
+  in
+  Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~participants
+    ~solution
+=======
+  (* The compilation units referenced by each unit's own graph determine which
+     pieces of the solution are loaded when rebuilding. *)
+  let participants =
+    List.map
+      (fun (participant, graph) ->
+        participant, Flambda2_reaper.Global_flow_graph.compilation_units graph)
+      graphs
+  in
+  let combined_graph = Flambda2_reaper.Lto_combine.combine graphs in
+  let solution =
+    Flambda2_reaper.Reaper.Staged.solve_whole_program combined_graph
+  in
+  Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~participants
+    ~solution
+>>>>>>> 64ed0bfb00 (file sections for ltosol)
 
+<<<<<<< HEAD
 let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
     ~keep_symbol_tables ~ltosol_filename ~cmr_filename =
   let { Flambda2_reaper.Ltosol_format.File_contents.id_stamp_counters;
         solution = ltosol_solution
       } =
     Flambda2_reaper.Ltosol_format.load ltosol_filename
+||||||| parent of 64ed0bfb00 (file sections for ltosol)
+let reaped_flambda2_to_cmm ~machine_width ~ltosol_filename ~batch_members =
+  (* Everything up to the function returned below is computed once and shared by
+     the whole batch of rebuilds. *)
+  let { Flambda2_reaper.Ltosol_format.File_contents.id_stamp_counters;
+        participants;
+        solution = ltosol_solution
+      } =
+    Profile.record_call ~accumulate:true "ltosol_load" (fun () ->
+        Flambda2_reaper.Ltosol_format.load ltosol_filename)
+=======
+let reaped_flambda2_to_cmm ~machine_width ~ltosol_filename ~batch_members =
+  (* Everything up to the function returned below is computed once and shared by
+     the whole batch of rebuilds. *)
+  let ltosol =
+    Profile.record_call ~accumulate:true "ltosol_load" (fun () ->
+        Flambda2_reaper.Ltosol_format.load ltosol_filename)
+>>>>>>> 64ed0bfb00 (file sections for ltosol)
+  in
+  let id_stamp_counters =
+    Flambda2_reaper.Ltosol_format.id_stamp_counters ltosol
   in
   Flambda2_reaper.Id_stamp_counters.restore_for_resume id_stamp_counters;
+<<<<<<< HEAD
   (* We expect the stamp counters in the .cmr file to be less than the counters
      in the .ltosol file, because the -reaper-solve invocation begins by taking
      the maximum counters across the .cmr files it reads. Therefore, we can
      ignore these counters. *)
   let cmr_serialisable, cmr_stamp_counters =
     Flambda2_reaper.Cmr_format.load cmr_filename
+||||||| parent of 64ed0bfb00 (file sections for ltosol)
+  Compilenv.set_lto_participants participants;
+  (* Query the solved tables under the same locality the solve used. *)
+  Flambda2_reaper.Field.set_locality_scope
+    (Compilation_unit.Set.of_list participants);
+  (* Deserialised on first use, which is after the first member's .cmr has been
+     deserialised. This matches the identifier creation order of the
+     pre-batching rebuild, keeping the first member's output identical to what
+     separate invocations produce (under -dcanonical-ids, this makes a reaped
+     unit that the Reaper didn't change byte-identical to a plain compile, see
+     testsuite/tests/lto). Later members share the already-forced solution. *)
+  let solved_dep =
+    lazy
+      (Profile.record_call ~accumulate:true "ltosol_deserialise" (fun () ->
+           Flambda2_reaper.Ltosol_format.Serialisable_solution.deserialise
+             ltosol_solution))
+=======
+  let participants = Flambda2_reaper.Ltosol_format.participants ltosol in
+  Compilenv.set_lto_participants participants;
+  (* Query the solved tables under the same locality the solve used. *)
+  Flambda2_reaper.Field.set_locality_scope
+    (Compilation_unit.Set.of_list participants);
+  (* Deserialised on first use, which is after the first member's .cmr has been
+     deserialised. This matches the identifier creation order of the
+     pre-batching rebuild, keeping the first member's output identical to what
+     separate invocations produce (under -dcanonical-ids, this makes a reaped
+     unit that the Reaper didn't change byte-identical to a plain compile, see
+     testsuite/tests/lto). Later members share the already-forced solution. *)
+  let solved_dep =
+    lazy
+      (Profile.record_call ~accumulate:true "ltosol_deserialise" (fun () ->
+           Flambda2_reaper.Ltosol_format.solution_for_members ltosol
+             ~members:batch_members))
+>>>>>>> 64ed0bfb00 (file sections for ltosol)
   in
   if
     Flambda2_reaper.Id_stamp_counters.any_greater_than cmr_stamp_counters

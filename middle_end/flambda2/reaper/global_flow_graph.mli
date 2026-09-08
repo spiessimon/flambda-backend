@@ -171,6 +171,9 @@ val print_iter_edges :
 
 val ids_for_export : graph -> Ids_for_export.t
 
+(** The compilation units of all identifiers in the graph. *)
+val compilation_units : graph -> Compilation_unit.Set.t
+
 (** Fields are hashconsed, so for serialisation the [Field.view] of each one
     needs serialising separately. *)
 val fields_for_export : graph -> Field.Set.t
