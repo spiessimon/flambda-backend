@@ -422,8 +422,10 @@ module Serialisation = struct
 
     type table = (t, Code_id_or_name.t -> Datalog.nil, unit) Datalog.table
 
-    let add_ids t ids =
-      Code_id_or_name.Map.fold (fun id () ids -> add_id ids id) t ids
+    let fold_ids t ~init ~f =
+      Code_id_or_name.Map.fold (fun id () acc -> f acc id) t init
+
+    let add_ids t ids = fold_ids t ~init:ids ~f:add_id
 
     let rename old_t ~rename_id =
       Code_id_or_name.Map.fold
@@ -440,10 +442,12 @@ module Serialisation = struct
         unit )
       Datalog.table
 
-    let add_ids t ids =
+    let fold_ids t ~init ~f =
       Code_id_or_name.Map.fold
-        (fun id n ids -> N.add_ids n (add_id ids id))
-        t ids
+        (fun id n acc -> N.fold_ids n ~init:(f acc id) ~f)
+        t init
+
+    let add_ids t ids = fold_ids t ~init:ids ~f:add_id
 
     let rename old_t ~rename_id =
       Code_id_or_name.Map.fold
@@ -457,10 +461,12 @@ module Serialisation = struct
   module Nnn = struct
     type t = Nn.t Code_id_or_name.Map.t
 
-    let add_ids t ids =
+    let fold_ids t ~init ~f =
       Code_id_or_name.Map.fold
-        (fun id nn ids -> Nn.add_ids nn (add_id ids id))
-        t ids
+        (fun id nn acc -> Nn.fold_ids nn ~init:(f acc id) ~f)
+        t init
+
+    let add_ids t ids = fold_ids t ~init:ids ~f:add_id
 
     let rename old_t ~rename_id =
       Code_id_or_name.Map.fold
@@ -512,13 +518,15 @@ module Serialisation = struct
         unit )
       Datalog.table
 
-    let add_ids t ids =
+    let fold_ids t ~init ~f =
       Code_id_or_name.Map.fold
-        (fun id fn ids ->
+        (fun id fn acc ->
           Field.Map.fold
-            (fun (_ : Field.t) n ids -> N.add_ids n ids)
-            fn (add_id ids id))
-        t ids
+            (fun (_ : Field.t) n acc -> N.fold_ids n ~init:acc ~f)
+            fn (f acc id))
+        t init
+
+    let add_ids t ids = fold_ids t ~init:ids ~f:add_id
 
     let add_fields t fields =
       Code_id_or_name.Map.fold
@@ -552,13 +560,15 @@ module Serialisation = struct
         unit )
       Datalog.table
 
-    let add_ids t ids =
+    let fold_ids t ~init ~f =
       Code_id_or_name.Map.fold
-        (fun id cn ids ->
+        (fun id cn acc ->
           Cofield.Map.fold
-            (fun (_ : Cofield.t) n ids -> N.add_ids n ids)
-            cn (add_id ids id))
-        t ids
+            (fun (_ : Cofield.t) n acc -> N.fold_ids n ~init:acc ~f)
+            cn (f acc id))
+        t init
+
+    let add_ids t ids = fold_ids t ~init:ids ~f:add_id
 
     let rename old_t ~rename_id =
       (* Cofields are stable across processes, so they are not renamed. *)
