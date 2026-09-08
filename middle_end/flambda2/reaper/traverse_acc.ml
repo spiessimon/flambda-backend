@@ -26,6 +26,13 @@ module Env = Traverse_env
 
 type code_dep =
   { arity : [`Complex] Flambda_arity.t;
+<<<<<<< HEAD
+||||||| parent of b90e823ee7 (code metadata at solve time)
+    result_arity : [`Unarized] Flambda_arity.t;
+=======
+    result_arity : [`Unarized] Flambda_arity.t;
+    code_metadata : Code_metadata.t;
+>>>>>>> b90e823ee7 (code metadata at solve time)
     params : Variable.t list;
     my_closure : Variable.t;
     return : Variable.t list; (* Dummy variable representing return value *)
