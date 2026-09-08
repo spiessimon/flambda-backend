@@ -74,13 +74,7 @@ let prepare_code acc (code_id : Code_id.t) (code : Code.t) =
   in
   let code_dep =
     { Traverse_acc.arity;
-<<<<<<< HEAD
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-      result_arity;
-=======
-      result_arity;
       function_slot_size;
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
       return;
       my_closure;
       exn;

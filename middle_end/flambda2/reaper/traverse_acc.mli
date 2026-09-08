@@ -242,7 +242,14 @@ val add_set_of_closures :
 val get_all_sets_of_closures :
   t -> (Name.t * Code_id.t Or_unknown.t) Function_slot.Lmap.t list
 
-<<<<<<< HEAD
+(** Record the function declaration a closure is bound to. *)
+val add_closure_function_decl :
+  t -> Name.t -> Function_declarations.code_id_in_function_declaration -> unit
+
+val get_closure_function_decls :
+  t ->
+  Function_declarations.code_id_in_function_declaration Code_id_or_name.Map.t
+
 val ids_for_export_continuation_info : continuation_info -> Ids_for_export.t
 
 val ids_for_export_code_dep : code_dep -> Ids_for_export.t
@@ -251,13 +258,3 @@ val apply_renaming_continuation_info :
   continuation_info -> Renaming.t -> continuation_info
 
 val apply_renaming_code_dep : code_dep -> Renaming.t -> code_dep
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-=======
-(** Record the function declaration a closure is bound to. *)
-val add_closure_function_decl :
-  t -> Name.t -> Function_declarations.code_id_in_function_declaration -> unit
-
-val get_closure_function_decls :
-  t ->
-  Function_declarations.code_id_in_function_declaration Code_id_or_name.Map.t
->>>>>>> 1e37ee1ce4 (slot offset changes from main)

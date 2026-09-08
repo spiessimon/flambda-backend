@@ -176,19 +176,8 @@ let flambda_to_flambda0 : type m.
   Compiler_hooks.execute Raw_flambda2 raw_flambda;
   print_rawflambda ppf raw_flambda;
   dump_fexpr_annot ~prefixname "raw" raw_flambda;
-<<<<<<< HEAD
-  let ( flambda,
-        free_names,
-        all_code,
-        slot_offsets,
-        prepare_cmx,
-        last_pass_name,
-        cmr_payload ) =
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-  let flambda, free_names, all_code, slot_offsets, prepare_cmx, last_pass_name =
-=======
-  let flambda, all_code, slot_offsets, prepare_cmx, last_pass_name =
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+  let flambda, all_code, slot_offsets, prepare_cmx, last_pass_name, cmr_payload
+      =
     match mode, close_prog_metadata with
     | Classic, Classic (all_code, approxs, free_names, slot_offsets) ->
       (if Flambda_features.inlining_report ()
@@ -217,13 +206,7 @@ let flambda_to_flambda0 : type m.
           Flambda_cmx.prepare_cmx_file_contents ~final_typing_env ~module_symbol
             ~used_value_slots ~exported_offsets ~sections all_code
         in
-<<<<<<< HEAD
-        flambda, free_names, all_code, slot_offsets, prepare_cmx, "reaper", None
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-        flambda, free_names, all_code, slot_offsets, prepare_cmx, "reaper"
-=======
-        flambda, all_code, slot_offsets, prepare_cmx, "reaper"
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+        flambda, all_code, slot_offsets, prepare_cmx, "reaper", None
       else
         let slot_offsets =
           finalize_offsets ~free_names ~all_code slot_offsets
@@ -234,19 +217,7 @@ let flambda_to_flambda0 : type m.
             ~module_symbol ~exported_offsets ~used_value_slots ~sections
             all_code
         in
-<<<<<<< HEAD
-        ( raw_flambda,
-          free_names,
-          all_code,
-          slot_offsets,
-          prepare_cmx,
-          "raw",
-          None )
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-        raw_flambda, free_names, all_code, slot_offsets, prepare_cmx, "raw"
-=======
-        raw_flambda, all_code, slot_offsets, prepare_cmx, "raw"
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+        raw_flambda, all_code, slot_offsets, prepare_cmx, "raw", None
     | Normal, Normal ->
       let round = 0 in
       let { Simplify.free_names;
@@ -275,37 +246,27 @@ let flambda_to_flambda0 : type m.
         (Flambda_features.dump_fexpr (This_pass "simplify"))
         ppf flambda;
       dump_fexpr_annot ~prefixname "simplify" flambda;
-<<<<<<< HEAD
-      let ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
+      let ( (flambda, all_code, slot_offsets, final_typing_env),
             last_pass_name,
             cmr_payload ) =
         match Reaper_mode.of_flags () with
         | Disabled ->
-          ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
+          let slot_offsets =
+            finalize_offsets ~free_names ~all_code slot_offsets
+          in
+          ( (flambda, all_code, slot_offsets, final_typing_env),
             last_pass_name,
             None )
         | Single_unit_run ->
           let result =
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-      let ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
-            last_pass_name ) =
-        if Flambda_features.enable_reaper ()
-        then
-          let result =
-=======
-      let flambda, all_code, slot_offsets, final_typing_env, last_pass_name =
-        if Flambda_features.enable_reaper ()
-        then
-          let flambda, all_code, slot_offsets, final_typing_env =
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
             run_reaper ~ppf ~prefixname ~machine_width ~cmx_loader ~all_code
               ~final_typing_env ~free_names flambda
           in
-<<<<<<< HEAD
           result, "reaper", None
         | Lto_support ->
-          let deps, rebuild_data =
-            Flambda2_reaper.Reaper.Staged.traverse flambda
+          let deps, slot_offsets_inputs, rebuild_data =
+            Flambda2_reaper.Reaper.Staged.traverse ~free_names ~cmx_loader
+              ~all_code flambda
           in
           let cmr_payload =
             Some
@@ -315,48 +276,26 @@ let flambda_to_flambda0 : type m.
                 all_code;
                 imported_offsets = Exported_offsets.imported_offsets ();
                 deps;
+                slot_offsets_inputs;
                 rebuild_data
               }
           in
-          ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
-            last_pass_name,
-            cmr_payload )
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-          result, "reaper"
-        else
-          ( (flambda, free_names, all_code, slot_offsets, final_typing_env),
-            last_pass_name )
-=======
-          flambda, all_code, slot_offsets, final_typing_env, "reaper"
-        else
           let slot_offsets =
             finalize_offsets ~free_names ~all_code slot_offsets
           in
-          flambda, all_code, slot_offsets, final_typing_env, last_pass_name
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+          ( (flambda, all_code, slot_offsets, final_typing_env),
+            last_pass_name,
+            cmr_payload )
       in
       let prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets
           all_code =
         Flambda_cmx.prepare_cmx_file_contents ~final_typing_env ~module_symbol
           ~used_value_slots ~exported_offsets ~sections all_code
       in
-<<<<<<< HEAD
-      ( flambda,
-        free_names,
-        all_code,
-        slot_offsets,
-        prepare_cmx,
-        last_pass_name,
-        cmr_payload )
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-      flambda, free_names, all_code, slot_offsets, prepare_cmx, last_pass_name
-=======
-      flambda, all_code, slot_offsets, prepare_cmx, last_pass_name
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+      flambda, all_code, slot_offsets, prepare_cmx, last_pass_name, cmr_payload
   in
   print_flambda last_pass_name (Flambda_features.dump_flambda ()) ppf flambda;
   print_fexpr last_pass_name (Flambda_features.dump_fexpr Last_pass) ppf flambda;
-<<<<<<< HEAD
   let { unit = flambda;
         exported_offsets;
         cmx;
@@ -364,14 +303,7 @@ let flambda_to_flambda0 : type m.
         used_value_slots;
         reachable_names
       } =
-    build_run_result flambda ~free_names ~all_code slot_offsets ~prepare_cmx
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-  let { unit = flambda; exported_offsets; cmx; all_code; reachable_names } =
-    build_run_result flambda ~free_names ~all_code slot_offsets ~prepare_cmx
-=======
-  let { unit = flambda; exported_offsets; cmx; all_code; reachable_names } =
     build_run_result flambda ~all_code slot_offsets ~prepare_cmx
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
   in
   Option.iter
     (Flambda2_reaper.Cmr_format.save ~filename:(prefixname ^ ".cmr")
@@ -503,31 +435,54 @@ let reaper_lto_solve ~cmr_files ~ltosol_file =
     List.split (List.map Flambda2_reaper.Cmr_format.load cmr_files)
   in
   Flambda2_reaper.Id_stamp_counters.restore_for_merge counters;
-  let graphs =
+  let solve_data =
     List.map
       (fun cmr ->
         ( Flambda2_reaper.Cmr_format.Serialisable.compilation_unit cmr,
-          Flambda2_reaper.Cmr_format.Serialisable.deserialise_deps_only cmr ))
+          Flambda2_reaper.Cmr_format.Serialisable.deserialise_for_solve cmr ))
       cmrs
   in
   (* The compilation units referenced by each unit's own graph determine which
      pieces of the solution are loaded when rebuilding. *)
   let participants =
     List.map
-      (fun (participant, graph) ->
+      (fun (participant, (graph, _, _)) ->
         participant, Flambda2_reaper.Global_flow_graph.compilation_units graph)
-      graphs
+      solve_data
   in
   let combined_graph =
     List.fold_left
-      (fun combined (_participant, graph) ->
+      (fun combined (_participant, (graph, _, _)) ->
         Flambda2_reaper.Global_flow_graph.union combined graph)
       (Flambda2_reaper.Global_flow_graph.create ())
-      graphs
+      solve_data
   in
-  let solution = Flambda2_reaper.Reaper.Staged.solve combined_graph in
+  let slot_offsets_inputs =
+    List.fold_left
+      (fun combined (_participant, (_, inputs, _)) ->
+        Flambda2_reaper.Slot_offsets_analysis.Inputs.union combined inputs)
+      Flambda2_reaper.Slot_offsets_analysis.Inputs.empty solve_data
+  in
+  let participant_units =
+    Compilation_unit.Set.of_list (List.map fst participants)
+  in
+  let is_participant cu = Compilation_unit.Set.mem cu participant_units in
+  (* Make the offsets of slots defined by units outside the solve available to
+     [Slot_offsets.finalize_offsets]. The offsets of the participants' own slots
+     are recomputed from the solution, so the stale ones stored in the .cmr
+     files must not be imported. *)
+  List.iter
+    (fun (_participant, (_, _, imported_offsets)) ->
+      Exported_offsets.import_offsets
+        (Exported_offsets.filter_by_compilation_unit imported_offsets
+           ~keep:(fun cu -> not (is_participant cu))))
+    solve_data;
+  let solution, slot_offsets =
+    Flambda2_reaper.Reaper.Staged.solve ~slot_offsets_inputs
+      ~is_local_compilation_unit:is_participant combined_graph
+  in
   Flambda2_reaper.Ltosol_format.save ~filename:ltosol_file ~participants
-    ~solution
+    ~solution ~slot_offsets
 
 let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
     ~keep_symbol_tables ~ltosol_filename ~cmr_filename =
@@ -556,14 +511,16 @@ let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
         all_code;
         imported_offsets;
         deps = _;
+        slot_offsets_inputs = _;
         rebuild_data
       } =
     Flambda2_reaper.Cmr_format.Serialisable.deserialise ~machine_width
       ~resolver:(Flambda_cmx.load_cmx_file_contents cmx_loader)
       cmr_serialisable
   in
-  (* Make the paused compilation's imported offsets available to
-     [Slot_offsets.finalize_offsets]. *)
+  (* Make the paused compilation's imported offsets available for re-export in
+     [Flambda_cmx.prepare_cmx_file_contents]. The offsets of the units
+     participating in the solve come from the solution file instead. *)
   Exported_offsets.import_offsets imported_offsets;
   (* CR mvellacott: add profiling and debug printing code. *)
   let solved_dep =
@@ -573,7 +530,17 @@ let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
     in
     Flambda2_reaper.Ltosol_format.solution_for_members ltosol ~members:[member]
   in
-  let flambda, free_names, all_code, slot_offsets, final_typing_env =
+  (* CR sspies: These are the whole-program slot offsets (and used value slot
+     set) computed at solve time, so every rebuilt unit exports the entire table
+     in its .cmx, and value-slot pruning of the exported typing env uses the
+     whole-program set. This is correct but conservative; in the future we may
+     want to restrict both to the slots the unit actually references. *)
+  let slot_offsets = Flambda2_reaper.Ltosol_format.slot_offsets ltosol in
+  let participant_units =
+    Compilation_unit.Set.of_list
+      (Flambda2_reaper.Ltosol_format.participants ltosol)
+  in
+  let flambda, all_code, final_typing_env =
     Flambda2_reaper.Reaper.Staged.rebuild ~unit_metadata
       ~traverse_rebuild:rebuild_data ~solved_dep ~machine_width ~cmx_loader
       ~all_code ~final_typing_env
@@ -587,15 +554,24 @@ let reaped_flambda2_to_cmm ~ppf_dump:_ ~prefixname:_ ~machine_width
       } =
     let prepare_cmx ~module_symbol ~used_value_slots ~exported_offsets all_code
         =
-      Flambda_cmx.prepare_cmx_file_contents ~final_typing_env ~module_symbol
-        ~used_value_slots
+      (* CR sspies: Offsets of participants' slots are not re-exported here;
+         they must come from the solution file's [slot_offsets] instead of the
+         (stale) imported offsets. A participant slot that occurs only in
+         exported code metadata or the typing env, but not in the used slots
+         seen by the solve, is therefore missing from the .reaped.cmx. This is
+         fine while .reaped.cmx files are only used for linking, but must be
+         revisited if rebuilds were to consume each other's metadata. *)
+      Flambda_cmx.prepare_cmx_file_contents
+        ~is_local_compilation_unit:(fun cu ->
+          Compilation_unit.Set.mem cu participant_units)
+        ~final_typing_env ~module_symbol ~used_value_slots
         ~exported_offsets
           (* Pass a mutable reference to the (currently empty) list of .cmx
              sections so that the sections created here get appended. *)
         ~sections:(Compilenv.current_sections ())
         all_code
     in
-    build_run_result flambda ~free_names ~all_code slot_offsets ~prepare_cmx
+    build_run_result flambda ~all_code slot_offsets ~prepare_cmx
   in
   Option.iter Compilenv.set_export_info cmx;
   Compiler_hooks.execute Reaped_flambda2 flambda;

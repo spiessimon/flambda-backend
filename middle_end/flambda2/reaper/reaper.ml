@@ -13,7 +13,14 @@
 (*                                                                        *)
 (**************************************************************************)
 
-<<<<<<< HEAD
+let get_code_metadata ~cmx_loader ~all_code =
+  let load_code = Flambda_cmx.get_imported_code cmx_loader in
+  fun code_id ->
+    Code_or_metadata.code_metadata
+      (match Exported_code.find all_code code_id with
+      | Some code -> code
+      | None -> Exported_code.find_exn (load_code ()) code_id)
+
 module Staged = struct
   module Traverse_rebuild = struct
     type t =
@@ -28,39 +35,14 @@ module Staged = struct
       }
 
     let ids_for_export
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-let run ~machine_width ~cmx_loader ~all_code ~final_typing_env
-    (unit : Flambda_unit.t) =
-  let load_code = Flambda_cmx.get_imported_code cmx_loader in
-  let get_code_metadata code_id =
-    Code_or_metadata.code_metadata
-      (match Exported_code.find all_code code_id with
-      | Some code -> code
-      | None -> Exported_code.find_exn (load_code ()) code_id)
-  in
-  let Traverse.
-=======
-let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
-    (unit : Flambda_unit.t) =
-  let load_code = Flambda_cmx.get_imported_code cmx_loader in
-  let get_code_metadata code_id =
-    Code_or_metadata.code_metadata
-      (match Exported_code.find all_code code_id with
-      | Some code -> code
-      | None -> Exported_code.find_exn (load_code ()) code_id)
-  in
-  let Traverse.
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
         { toplevel_expr;
           code;
           ordered_code_ids;
           fixed_arity_continuations;
           continuation_info;
           code_deps;
-          all_sets_of_closures;
-          closure_function_decls
+          all_sets_of_closures
         } =
-<<<<<<< HEAD
       let ids = Rev_expr.ids_for_export toplevel_expr in
       let ids =
         Code_id.Map.fold
@@ -180,7 +162,7 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
       { t with code = Code_id.Map.map map_rev_code t.code }
   end
 
-  let traverse unit =
+  let traverse ~free_names ~cmx_loader ~all_code unit =
     let Traverse.
           { toplevel_expr;
             code;
@@ -189,9 +171,15 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
             fixed_arity_continuations;
             continuation_info;
             code_deps;
-            all_sets_of_closures
+            all_sets_of_closures;
+            closure_function_decls
           } =
       Traverse.run unit
+    in
+    let slot_offsets_inputs =
+      Slot_offsets_analysis.Inputs.create ~free_names ~closure_function_decls
+        ~code_deps
+        ~get_code_metadata:(get_code_metadata ~cmx_loader ~all_code)
     in
     let rebuild_data =
       Traverse_rebuild.
@@ -204,9 +192,9 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
           all_sets_of_closures
         }
     in
-    deps, rebuild_data
+    deps, slot_offsets_inputs, rebuild_data
 
-  let solve deps =
+  let solve ~slot_offsets_inputs ~is_local_compilation_unit deps =
     let solved_dep =
       Profile.record_call ~accumulate:true "solver" (fun () ->
           Analysis.fixpoint deps)
@@ -217,17 +205,15 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
         Format.printf "RESULT@ %a@." Unboxing_analysis.pp_result solved_dep;
         Dot_printer.print_solved_dep solved_dep deps)
     in
-    solved_dep
+    let slot_offsets =
+      Slot_offsets_analysis.compute ~inputs:slot_offsets_inputs
+        ~is_local_compilation_unit solved_dep
+    in
+    solved_dep, slot_offsets
 
   let rebuild ~unit_metadata ~traverse_rebuild ~solved_dep ~machine_width
       ~cmx_loader ~all_code ~final_typing_env =
-    let load_code = Flambda_cmx.get_imported_code cmx_loader in
-    let get_code_metadata code_id =
-      Code_or_metadata.code_metadata
-        (match Exported_code.find all_code code_id with
-        | Some code -> code
-        | None -> Exported_code.find_exn (load_code ()) code_id)
-    in
+    let get_code_metadata = get_code_metadata ~cmx_loader ~all_code in
     let Traverse_rebuild.
           { toplevel_expr;
             code;
@@ -242,8 +228,7 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
     let types_rewrite_context =
       Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
     in
-    let Rebuild.
-          { body; free_names; all_code; code_ids_to_remember; slot_offsets } =
+    let Rebuild.{ body; all_code; code_ids_to_remember } =
       Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
         ~fixed_arity_continuations ~continuation_info ~final_typing_env
         ~types_rewrite_context solved_dep get_code_metadata toplevel_expr code
@@ -262,110 +247,22 @@ let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
         final_typing_env
     in
     ( Flambda_unit.create_of_metadata_and_body unit_metadata body,
-      free_names,
       all_code,
-      slot_offsets,
       final_typing_env )
 end
 
-let run ~machine_width ~cmx_loader ~all_code ~final_typing_env
+let run ~machine_width ~cmx_loader ~all_code ~final_typing_env ~free_names
     (unit : Flambda_unit.t) =
-  let deps, traverse_rebuild = Staged.traverse unit in
-  let solved_dep = Staged.solve deps in
+  let deps, slot_offsets_inputs, traverse_rebuild =
+    Staged.traverse ~free_names ~cmx_loader ~all_code unit
+  in
+  let solved_dep, slot_offsets =
+    Staged.solve ~slot_offsets_inputs
+      ~is_local_compilation_unit:Current_unit.is_current deps
+  in
   let unit_metadata = Flambda_unit.metadata unit in
-  Staged.rebuild ~unit_metadata ~traverse_rebuild ~solved_dep ~machine_width
-    ~cmx_loader ~all_code ~final_typing_env
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-    Traverse.run unit
+  let flambda, all_code, final_typing_env =
+    Staged.rebuild ~unit_metadata ~traverse_rebuild ~solved_dep ~machine_width
+      ~cmx_loader ~all_code ~final_typing_env
   in
-  let solved_dep =
-    Profile.record_call ~accumulate:true "solver" (fun () ->
-        Analysis.fixpoint deps)
-  in
-  let () =
-    if Flambda_features.debug_reaper "print-solved"
-    then (
-      Format.printf "RESULT@ %a@." Unboxing_analysis.pp_result solved_dep;
-      Dot_printer.print_solved_dep solved_dep deps)
-  in
-  let types_rewrite_context =
-    Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
-  in
-  let calling_convention_changes =
-    Unboxing_analysis.compute_calling_convention_changes solved_dep
-      ~rewrite_kind_with_subkind:
-        (Types_rewriter.rewrite_kind_with_subkind types_rewrite_context)
-      ~code_deps
-  in
-  let Rebuild.{ body; free_names; all_code; code_ids_to_remember; slot_offsets }
-      =
-    Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
-      ~fixed_arity_continuations ~continuation_info ~final_typing_env
-      ~types_rewrite_context ~calling_convention_changes solved_dep
-      get_code_metadata toplevel_expr code
-  in
-  let all_code =
-    Exported_code.add_code
-      ~keep_code:(fun code_id -> Code_id.Set.mem code_id code_ids_to_remember)
-      all_code
-      (Exported_code.mark_as_imported
-         (Flambda_cmx.get_imported_code cmx_loader ()))
-  in
-  let final_typing_env =
-    Option.map
-      (Types_rewriter.rewrite_typing_env types_rewrite_context
-         ~unit_symbol:(Flambda_unit.module_symbol unit))
-      final_typing_env
-  in
-  ( Flambda_unit.with_body unit body,
-    free_names,
-    all_code,
-    slot_offsets,
-    final_typing_env )
-=======
-    Traverse.run unit
-  in
-  let solved_dep =
-    Profile.record_call ~accumulate:true "solver" (fun () ->
-        Analysis.fixpoint deps)
-  in
-  let () =
-    if Flambda_features.debug_reaper "print-solved"
-    then (
-      Format.printf "RESULT@ %a@." Unboxing_analysis.pp_result solved_dep;
-      Dot_printer.print_solved_dep solved_dep deps)
-  in
-  let types_rewrite_context =
-    Types_rewriter.prepare_rewrite_context solved_dep all_sets_of_closures
-  in
-  let calling_convention_changes =
-    Unboxing_analysis.compute_calling_convention_changes solved_dep
-      ~rewrite_kind_with_subkind:
-        (Types_rewriter.rewrite_kind_with_subkind types_rewrite_context)
-      ~code_deps
-  in
-  let slot_offsets =
-    Slot_offsets_analysis.compute ~free_names ~code_deps ~closure_function_decls
-      ~get_code_metadata solved_dep
-  in
-  let Rebuild.{ body; all_code; code_ids_to_remember } =
-    Rebuild.rebuild ~machine_width ~ordered_code_ids ~code_deps
-      ~fixed_arity_continuations ~continuation_info ~final_typing_env
-      ~types_rewrite_context ~calling_convention_changes solved_dep
-      get_code_metadata toplevel_expr code
-  in
-  let all_code =
-    Exported_code.add_code
-      ~keep_code:(fun code_id -> Code_id.Set.mem code_id code_ids_to_remember)
-      all_code
-      (Exported_code.mark_as_imported
-         (Flambda_cmx.get_imported_code cmx_loader ()))
-  in
-  let final_typing_env =
-    Option.map
-      (Types_rewriter.rewrite_typing_env types_rewrite_context
-         ~unit_symbol:(Flambda_unit.module_symbol unit))
-      final_typing_env
-  in
-  Flambda_unit.with_body unit body, all_code, slot_offsets, final_typing_env
->>>>>>> 1e37ee1ce4 (slot offset changes from main)
+  flambda, all_code, slot_offsets, final_typing_env

@@ -73,8 +73,15 @@ val add_offsets_from_function : t -> from_function:t -> t
 (** Compute offsets for all function and value slots that occur in the current
     compilation unit, taking into account the constraints introduced by the
     potential sharing of slots across multiple sets of closures (see .ml file
-    for more details). *)
+    for more details).
+
+    [is_local_compilation_unit] says whether slots of the given compilation unit
+    are laid out by this computation (as opposed to imported slots, whose
+    offsets are fixed by their own compilation unit). Ordinary compilations pass
+    [Current_unit.is_current]; the LTO solve invocation lays out the slots of
+    all participating units at once. *)
 val finalize_offsets :
+  is_local_compilation_unit:(Compilation_unit.t -> bool) ->
   get_function_slot_size:(Code_id.t -> int) ->
   used_slots:used_slots ->
   t ->

@@ -552,12 +552,14 @@ let sort_code_ids t =
 
 let get_all_sets_of_closures t = t.all_sets_of_closures
 
-<<<<<<< HEAD
+let get_closure_function_decls t = t.closure_function_decls
+
 let ids_for_export_continuation_info { is_exn_handler = _; params; arity = _ } =
   Ids_for_export.create ~variables:(Variable.Set.of_list params) ()
 
 let ids_for_export_code_dep
     { arity = _;
+      function_slot_size = _;
       params;
       my_closure;
       return;
@@ -583,6 +585,7 @@ let apply_renaming_continuation_info { is_exn_handler; params; arity } renaming
 
 let apply_renaming_code_dep
     { arity;
+      function_slot_size;
       params;
       my_closure;
       return;
@@ -592,6 +595,7 @@ let apply_renaming_code_dep
       unknown_arity_call_witnesses
     } renaming =
   { arity;
+    function_slot_size;
     params = List.map (Renaming.apply_variable renaming) params;
     my_closure = Renaming.apply_variable renaming my_closure;
     return = List.map (Renaming.apply_variable renaming) return;
@@ -604,7 +608,3 @@ let apply_renaming_code_dep
         (Renaming.apply_code_id_or_name renaming)
         unknown_arity_call_witnesses
   }
-||||||| parent of 1e37ee1ce4 (slot offset changes from main)
-=======
-let get_closure_function_decls t = t.closure_function_decls
->>>>>>> 1e37ee1ce4 (slot offset changes from main)

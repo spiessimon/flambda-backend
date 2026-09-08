@@ -28,9 +28,123 @@
 module PTA = Points_to_analysis
 module Unboxed_fields = Unboxing_analysis.Unboxed_fields
 
-let function_slots_to_be_built ~(uses : Unboxing_analysis.result)
-    ~get_code_metadata ~closure_function_decls ~function_slot_rewrites
-    ~function_slots =
+module Inputs = struct
+  type code_info =
+    { function_slot_size : int;
+      dbg : Debuginfo.t
+    }
+
+  type t =
+    { free_names : Name_occurrences.t;
+      closure_function_decls :
+        Function_declarations.code_id_in_function_declaration
+        Code_id_or_name.Map.t;
+      code_info : code_info Code_id.Map.t
+    }
+
+  let create ~free_names ~closure_function_decls ~code_deps ~get_code_metadata =
+    (* [code_info] covers every code ID a function slot can be bound to, so the
+       solve-time computation does not need access to code metadata (which would
+       require loading .cmx files). *)
+    let code_info =
+      Code_id_or_name.Map.fold
+        (fun _closure_name
+             (decl : Function_declarations.code_id_in_function_declaration)
+             code_info ->
+          match decl with
+          | Deleted _ -> code_info
+          | Code_id { code_id; only_full_applications = _ } ->
+            if Code_id.Map.mem code_id code_info
+            then code_info
+            else
+              let function_slot_size =
+                match Code_id.Map.find_opt code_id code_deps with
+                | Some ({ function_slot_size; _ } : Traverse_acc.code_dep) ->
+                  function_slot_size
+                | None ->
+                  (* Imported code, which is only reached through its cmx. *)
+                  Code_metadata.function_slot_size (get_code_metadata code_id)
+              in
+              let dbg = Code_metadata.dbg (get_code_metadata code_id) in
+              Code_id.Map.add code_id { function_slot_size; dbg } code_info)
+        closure_function_decls Code_id.Map.empty
+    in
+    { free_names; closure_function_decls; code_info }
+
+  let empty =
+    { free_names = Name_occurrences.empty;
+      closure_function_decls = Code_id_or_name.Map.empty;
+      code_info = Code_id.Map.empty
+    }
+
+  let union t1 t2 =
+    { free_names = Name_occurrences.union t1.free_names t2.free_names;
+      (* Closures are defined by a single compilation unit, so the maps of
+         different units are disjoint. *)
+      closure_function_decls =
+        Code_id_or_name.Map.disjoint_union t1.closure_function_decls
+          t2.closure_function_decls;
+      (* Several units can record info for the same imported code ID; the
+         entries are equal, so keep either. *)
+      code_info =
+        Code_id.Map.union
+          (fun _code_id info _info -> Some info)
+          t1.code_info t2.code_info
+    }
+
+  let ids_for_export { free_names; closure_function_decls; code_info } =
+    let ids = Name_occurrences.ids_for_export free_names in
+    let ids =
+      Code_id_or_name.Map.fold
+        (fun closure_name decl ids ->
+          let ids = Ids_for_export.add_code_id_or_name ids closure_name in
+          match
+            (decl : Function_declarations.code_id_in_function_declaration)
+          with
+          | Deleted _ -> ids
+          | Code_id { code_id; only_full_applications = _ } ->
+            Ids_for_export.add_code_id ids code_id)
+        closure_function_decls ids
+    in
+    Code_id.Map.fold
+      (fun code_id _info ids -> Ids_for_export.add_code_id ids code_id)
+      code_info ids
+
+  let apply_renaming { free_names; closure_function_decls; code_info } renaming
+      =
+    let free_names = Name_occurrences.apply_renaming free_names renaming in
+    let closure_function_decls =
+      Code_id_or_name.Map.fold
+        (fun closure_name
+             (decl : Function_declarations.code_id_in_function_declaration)
+             decls ->
+          let decl : Function_declarations.code_id_in_function_declaration =
+            match decl with
+            | Deleted _ -> decl
+            | Code_id { code_id; only_full_applications } ->
+              Code_id
+                { code_id = Renaming.apply_code_id renaming code_id;
+                  only_full_applications
+                }
+          in
+          Code_id_or_name.Map.add
+            (Renaming.apply_code_id_or_name renaming closure_name)
+            decl decls)
+        closure_function_decls Code_id_or_name.Map.empty
+    in
+    let code_info =
+      Code_id.Map.fold
+        (fun code_id info code_info ->
+          Code_id.Map.add
+            (Renaming.apply_code_id renaming code_id)
+            info code_info)
+        code_info Code_id.Map.empty
+    in
+    { free_names; closure_function_decls; code_info }
+end
+
+let function_slots_to_be_built ~(uses : Unboxing_analysis.result) ~get_code_info
+    ~closure_function_decls ~function_slot_rewrites ~function_slots =
   let db = uses.db in
   List.fold_left
     (fun new_slots (slot, closure_name) ->
@@ -69,12 +183,10 @@ let function_slots_to_be_built ~(uses : Unboxing_analysis.result)
                   only_full_applications || changed_calling_convention
               }
           else
-            let code_metadata = get_code_metadata code_id in
-            Deleted
-              { function_slot_size =
-                  Code_metadata.function_slot_size code_metadata;
-                dbg = Code_metadata.dbg code_metadata
-              }
+            let ({ function_slot_size; dbg } : Inputs.code_info) =
+              get_code_info code_id
+            in
+            Deleted { function_slot_size; dbg }
         | None ->
           Misc.fatal_errorf "No function declaration found for closure %a"
             Code_id_or_name.print closure_name
@@ -107,7 +219,7 @@ let value_slots_to_be_built ~db ~unboxed_value_slots
    built at all, e.g. if it has no usages. [closure_name] should be the name of
    any one of the closures in the set. *)
 let slots_to_be_built_for_set_of_closures ~(uses : Unboxing_analysis.result)
-    ~get_code_metadata ~closure_function_decls ~unboxed_fields
+    ~get_code_info ~closure_function_decls ~unboxed_fields
     ~(changed_representation :
        (Unboxing_analysis.changed_representation * Code_id_or_name.t)
        Code_id_or_name.Map.t) ~closure_name (set : PTA.function_and_value_slots)
@@ -139,14 +251,21 @@ let slots_to_be_built_for_set_of_closures ~(uses : Unboxing_analysis.result)
         Some unboxed_value_slots, Some function_slot_rewrites
     in
     Some
-      ( function_slots_to_be_built ~uses ~get_code_metadata
-          ~closure_function_decls ~function_slot_rewrites
-          ~function_slots:set.function_slots,
+      ( function_slots_to_be_built ~uses ~get_code_info ~closure_function_decls
+          ~function_slot_rewrites ~function_slots:set.function_slots,
         value_slots_to_be_built ~db ~unboxed_value_slots set )
 
-let compute ~free_names ~code_deps ~closure_function_decls ~get_code_metadata
+let compute ~(inputs : Inputs.t) ~is_local_compilation_unit
     ({ db; unboxed_fields; changed_representation; _ } as uses :
       Unboxing_analysis.result) =
+  let { Inputs.free_names; closure_function_decls; code_info } = inputs in
+  let get_code_info code_id =
+    match Code_id.Map.find_opt code_id code_info with
+    | Some info -> info
+    | None ->
+      Misc.fatal_errorf "No code info was recorded for code ID %a" Code_id.print
+        code_id
+  in
   (* The query gives us the name of every closure, but we want one entry per set
      of closures. [seen_closure_names] tracks the closures of the sets already
      handled, so that the rest of them are skipped. *)
@@ -169,7 +288,7 @@ let compute ~free_names ~code_deps ~closure_function_decls ~get_code_metadata
             in
             let set_slots' =
               match
-                slots_to_be_built_for_set_of_closures ~uses ~get_code_metadata
+                slots_to_be_built_for_set_of_closures ~uses ~get_code_info
                   ~closure_function_decls ~unboxed_fields
                   ~changed_representation ~closure_name set
               with
@@ -238,11 +357,10 @@ let compute ~free_names ~code_deps ~closure_function_decls ~get_code_metadata
      shrunk by untupling. Once we pre-compute code metadata too, we should use
      it here. *)
   let get_function_slot_size code_id =
-    match Code_id.Map.find_opt code_id code_deps with
-    | Some ({ function_slot_size; _ } : Traverse_acc.code_dep) ->
-      function_slot_size
-    | None ->
-      (* Imported code, which is only reached through its cmx. *)
-      Code_metadata.function_slot_size (get_code_metadata code_id)
+    let ({ function_slot_size; dbg = _ } : Inputs.code_info) =
+      get_code_info code_id
+    in
+    function_slot_size
   in
-  Slot_offsets.finalize_offsets ~get_function_slot_size ~used_slots slot_offsets
+  Slot_offsets.finalize_offsets ~is_local_compilation_unit
+    ~get_function_slot_size ~used_slots slot_offsets
