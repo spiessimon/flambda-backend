@@ -41,7 +41,12 @@
  check-ocamlopt.opt-output;
 *)
 
-(* Rebuilding both units with a single batched -reaper-rebuild invocation must
-   behave like two invocations in dependency order. *)
+(* Rebuilding two independent units with a single batched -reaper-rebuild
+   invocation must behave like separate invocations: the .ltosol file is loaded
+   once and every member gets its own .reaped.cmx/.reaped.o pair. *)
 
-let () = assert (Reaper_rebuild_batch_dependency.used 41 = 42)
+let[@inline never] used x = x + 1
+
+let unused x = x * 2
+
+let () = assert (used 41 = 42)

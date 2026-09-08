@@ -35,14 +35,8 @@ val main
     batch_members:Compilation_unit.t list ->
     keep_symbol_tables:bool ->
     cmr_filename:string ->
-<<<<<<< HEAD
-||||||| parent of 857d23aaae (Support batched -reaper-rebuild invocations)
-    paused_imports_cmx:Import_info.t list ->
-=======
-    paused_imports_cmx:Import_info.t list ->
     ppf_dump:Format.formatter ->
     prefixname:string ->
->>>>>>> 857d23aaae (Support batched -reaper-rebuild invocations)
     Cmm.phrase list)
   -> reaper_lto_solve:(
     cmr_files:string list ->

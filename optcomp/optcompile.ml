@@ -311,8 +311,7 @@ module Make (Backend : Optcomp_intf.Backend) : S = struct
                info of dependencies loaded by earlier members (causing spurious
                zero_alloc check failures). The caches mirror on-disk data that
                does not change during the batch: members' own .reaped.cmx files
-               are only written during the batch, but they are never read before
-               their rebuild (this is checked). *)
+               are written during the batch but never read. *)
             Compilenv.reset ~keep_cmx_caches:(not is_first) info.target;
             (* The identifier tables are shared by the whole batch, so they may
                only be reset after the last unit. Similarly, compacting the heap
@@ -376,14 +375,8 @@ let native unix
        batch_members:Compilation_unit.t list ->
        keep_symbol_tables:bool ->
        cmr_filename:string ->
-<<<<<<< HEAD
-||||||| parent of 857d23aaae (Support batched -reaper-rebuild invocations)
-       paused_imports_cmx:Import_info.t list ->
-=======
-       paused_imports_cmx:Import_info.t list ->
        ppf_dump:Format.formatter ->
        prefixname:string ->
->>>>>>> 857d23aaae (Support batched -reaper-rebuild invocations)
        Cmm.phrase list) =
   (module Make (struct
     let backend = Compile_common.Native
@@ -436,44 +429,6 @@ let native unix
       Some
         (fun ~ltosol_file ~batch_members ->
           let machine_width = Target_system.Machine_width.Sixty_four in
-<<<<<<< HEAD
-          Asmgen.compile_implementation_from_cmm unix
-            ~sourcefile:(Some cmr_file)
-            ~prefixname:(Unit_info.prefix info.target)
-            ~ppf_dump:info.ppf_dump
-            (reaped_flambda2_to_cmm ~machine_width ~keep_symbol_tables
-               ~ltosol_filename:ltosol_file ~cmr_filename:cmr_file);
-          (* Unlike [compile_implementation] we also create the .reaped.cmx file
-             here, using the old .cmx file and data accumulated in
-             [Compilenv].*)
-          let paused_unit_infos, (_ : Digest.t) =
-            Compilenv.read_unit_info
-              (Filename.chop_suffix cmr_file ".cmr" ^ ext_flambda_obj)
-          in
-          Compilenv.save_resumed_unit_info
-            (Unit_info.Artifact.filename
-               (Unit_info.artifact info.target ~extension:ext_flambda_obj))
-            ~paused:paused_unit_infos)
-||||||| parent of 857d23aaae (Support batched -reaper-rebuild invocations)
-          let paused_unit_infos, (_ : Digest.t) =
-            Compilenv.read_unit_info
-              (Filename.chop_suffix cmr_file ".cmr" ^ ext_flambda_obj)
-          in
-          Asmgen.compile_implementation_from_cmm unix
-            ~sourcefile:(Some cmr_file)
-            ~prefixname:(Unit_info.prefix info.target)
-            ~ppf_dump:info.ppf_dump
-            (reaped_flambda2_to_cmm ~machine_width ~keep_symbol_tables
-               ~ltosol_filename:ltosol_file ~cmr_filename:cmr_file
-               ~paused_imports_cmx:paused_unit_infos.Cmx_format.ui_imports_cmx);
-          (* Unlike [compile_implementation] we also create the .reaped.cmx file
-             here, using the old .cmx file and data accumulated in
-             [Compilenv].*)
-          Compilenv.save_resumed_unit_info
-            (Unit_info.Artifact.filename
-               (Unit_info.artifact info.target ~extension:ext_flambda_obj))
-            ~paused:paused_unit_infos)
-=======
           (* This application loads and deserialises the .ltosol file and
              creates the state shared by the whole batch. *)
           let rebuild_unit_to_cmm =
@@ -490,8 +445,7 @@ let native unix
               ~sourcefile:(Some cmr_file)
               ~prefixname:(Unit_info.prefix info.target)
               ~ppf_dump:info.ppf_dump
-              (rebuild_unit_to_cmm ~keep_symbol_tables ~cmr_filename:cmr_file
-                 ~paused_imports_cmx:paused_unit_infos.Cmx_format.ui_imports_cmx);
+              (rebuild_unit_to_cmm ~keep_symbol_tables ~cmr_filename:cmr_file);
             (* Unlike [compile_implementation] we also create the .reaped.cmx
                file here, using the old .cmx file and data accumulated in
                [Compilenv].*)
@@ -499,7 +453,6 @@ let native unix
               (Unit_info.Artifact.filename
                  (Unit_info.artifact info.target ~extension:ext_flambda_obj))
               ~paused:paused_unit_infos)
->>>>>>> 857d23aaae (Support batched -reaper-rebuild invocations)
 
     let extra_load_paths_for_eval = ["unix"; "compiler-libs"; "ocaml-jit"]
 
