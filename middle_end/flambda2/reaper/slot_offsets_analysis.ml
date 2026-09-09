@@ -143,8 +143,9 @@ module Inputs = struct
     { free_names; closure_function_decls; code_info }
 end
 
-let function_slots_to_be_built ~(uses : Unboxing_analysis.result) ~get_code_info
-    ~closure_function_decls ~function_slot_rewrites ~function_slots =
+let function_slots_to_be_built ~(uses : Unboxing_analysis.result)
+    ~is_local_compilation_unit ~get_code_info ~closure_function_decls
+    ~function_slot_rewrites ~function_slots =
   let db = uses.db in
   List.fold_left
     (fun new_slots (slot, closure_name) ->
@@ -175,7 +176,8 @@ let function_slots_to_be_built ~(uses : Unboxing_analysis.result) ~get_code_info
           then
             let changed_calling_convention =
               not
-                (Unboxing_analysis.cannot_change_calling_convention uses code_id)
+                (Unboxing_analysis.cannot_change_calling_convention
+                   ~is_local_compilation_unit uses code_id)
             in
             Code_id
               { code_id;
@@ -219,7 +221,8 @@ let value_slots_to_be_built ~db ~unboxed_value_slots
    built at all, e.g. if it has no usages. [closure_name] should be the name of
    any one of the closures in the set. *)
 let slots_to_be_built_for_set_of_closures ~(uses : Unboxing_analysis.result)
-    ~get_code_info ~closure_function_decls ~unboxed_fields
+    ~is_local_compilation_unit ~get_code_info ~closure_function_decls
+    ~unboxed_fields
     ~(changed_representation :
        (Unboxing_analysis.changed_representation * Code_id_or_name.t)
        Code_id_or_name.Map.t) ~closure_name (set : PTA.function_and_value_slots)
@@ -251,8 +254,9 @@ let slots_to_be_built_for_set_of_closures ~(uses : Unboxing_analysis.result)
         Some unboxed_value_slots, Some function_slot_rewrites
     in
     Some
-      ( function_slots_to_be_built ~uses ~get_code_info ~closure_function_decls
-          ~function_slot_rewrites ~function_slots:set.function_slots,
+      ( function_slots_to_be_built ~uses ~is_local_compilation_unit
+          ~get_code_info ~closure_function_decls ~function_slot_rewrites
+          ~function_slots:set.function_slots,
         value_slots_to_be_built ~db ~unboxed_value_slots set )
 
 let compute ~(inputs : Inputs.t) ~is_local_compilation_unit
@@ -288,7 +292,8 @@ let compute ~(inputs : Inputs.t) ~is_local_compilation_unit
             in
             let set_slots' =
               match
-                slots_to_be_built_for_set_of_closures ~uses ~get_code_info
+                slots_to_be_built_for_set_of_closures ~uses
+                  ~is_local_compilation_unit ~get_code_info
                   ~closure_function_decls ~unboxed_fields
                   ~changed_representation ~closure_name set
               with

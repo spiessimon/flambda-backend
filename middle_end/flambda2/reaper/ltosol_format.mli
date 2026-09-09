@@ -38,6 +38,7 @@ val save :
   participants:(Compilation_unit.t * Compilation_unit.Set.t) list ->
   solution:Unboxing_analysis.result ->
   slot_offsets:Slot_offsets.result ->
+  code_changes:Unboxing_analysis.code_changes ->
   unit
 
 (** Read the header of an ltosol file from disk. *)
@@ -52,7 +53,9 @@ val participants : t -> Compilation_unit.t list
     participants. *)
 val slot_offsets : t -> Slot_offsets.result
 
-(** Deserialise the solution needed to rebuild [members], inserting the
-    necessary objects into the global hashcons tables. *)
+(** Deserialise the solution and code changes needed to rebuild [members],
+    inserting the necessary objects into the global hashcons tables. *)
 val solution_for_members :
-  t -> members:Compilation_unit.t list -> Unboxing_analysis.result
+  t ->
+  members:Compilation_unit.t list ->
+  Unboxing_analysis.result * Unboxing_analysis.code_changes

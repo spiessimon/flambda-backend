@@ -53,7 +53,7 @@ type env =
   { machine_width : Target_system.Machine_width.t;
     uses : Unboxing_analysis.result;
     code_changes : Unboxing_analysis.code_changes;
-    code_deps : Traverse_acc.code_dep Code_id.Map.t;
+    code_deps_for_result_types : Traverse_acc.code_dep Code_id.Map.t option;
     get_code_metadata : Code_id.t -> Code_metadata.t;
     (* TODO change names *)
     cont_params_to_keep :
@@ -459,8 +459,6 @@ let rewrite_set_of_closures env res ~(bound : Name.t list)
             if code_is_used bound_name
             then
               let changed_calling_convention =
-                Current_unit.is_current (Code_id.get_compilation_unit code_id)
-                &&
                 match
                   Unboxing_analysis.get_calling_convention_change
                     env.code_changes code_id
@@ -475,11 +473,15 @@ let rewrite_set_of_closures env res ~(bound : Name.t list)
                 }
             else
               let code_metadata =
-                if
-                  Current_unit.is_current (Code_id.get_compilation_unit code_id)
-                then
-                  Unboxing_analysis.get_code_metadata env.code_changes code_id
-                else env.get_code_metadata code_id
+                match
+                  Unboxing_analysis.find_code_metadata env.code_changes code_id
+                with
+                | Some code_metadata -> code_metadata
+                | None ->
+                  (* Not computed by the solve, so this code is from a unit that
+                     did not participate in it; its .cmx metadata is not
+                     stale. *)
+                  env.get_code_metadata code_id
               in
               Deleted
                 { function_slot_size =
@@ -1050,12 +1052,9 @@ let decide_whether_apply_needs_calling_convention_change env apply =
   in
   match code_id_actually_called with
   | None -> Unboxing_analysis.Not_changing_calling_convention, call_kind
-  | Some code_id -> (
-    match Code_id.Map.find_opt code_id env.code_deps with
-    | None -> Unboxing_analysis.Not_changing_calling_convention, call_kind
-    | Some _ ->
-      ( Unboxing_analysis.get_calling_convention_change env.code_changes code_id,
-        call_kind ))
+  | Some code_id ->
+    ( Unboxing_analysis.get_calling_convention_change env.code_changes code_id,
+      call_kind )
 
 let rebuild_apply env apply =
   let callee_is_dead =
@@ -1771,7 +1770,12 @@ let rebuild_let_expr_holed_set_of_closures env res bvs ~set_of_closures
                       in [all_code]"
                      Set_of_closures.print set_of_closures Code_id.print code_id
                  | code -> Code.code_metadata code
-               else env.get_code_metadata code_id
+               else
+                 match
+                   Unboxing_analysis.find_code_metadata env.code_changes code_id
+                 with
+                 | Some code_metadata -> code_metadata
+                 | None -> env.get_code_metadata code_id
              in
              { cost_metrics = Code_metadata.cost_metrics code_metadata;
                function_slot_size =
@@ -2106,6 +2110,54 @@ and rebuild_function_params_and_body (env : env) res code_metadata
   let updating_calling_convention =
     Unboxing_analysis.get_calling_convention_change env.code_changes code_id
   in
+  let code_metadata =
+    match env.code_deps_for_result_types with
+    | None -> code_metadata
+    | Some code_deps ->
+      let code_dep = Code_id.Map.find code_id code_deps in
+      let result_types =
+        match Code_metadata.result_types code_dep.code_metadata with
+        | Unknown -> Or_unknown_or_bottom.Unknown
+        | Bottom -> Or_unknown_or_bottom.Bottom
+        | Ok result_types -> (
+          match env.old_typing_env with
+          | None -> Or_unknown_or_bottom.Unknown
+          | Some old_typing_env ->
+            if Flambda_features.debug_reaper "forget-types"
+            then Or_unknown_or_bottom.Unknown
+            else
+              let params_vars_and_keep, results_vars_and_keep =
+                match updating_calling_convention with
+                | Not_changing_calling_convention ->
+                  ( List.map
+                      (fun p -> p, Points_to_analysis.Keep)
+                      code_dep.params,
+                    List.map
+                      (fun p -> p, Points_to_analysis.Keep)
+                      code_dep.return )
+                | Changing_calling_convention
+                    { my_closure_decision = _;
+                      params_decisions;
+                      return_decisions
+                    } ->
+                  let with_decisions vars decisions =
+                    List.map2
+                      (fun p (decision : Unboxing_analysis.param_decision) ->
+                        match decision with
+                        | Keep _ | Unbox _ -> p, Points_to_analysis.Keep
+                        | Delete -> p, Points_to_analysis.Delete)
+                      vars decisions
+                  in
+                  ( with_decisions code_dep.params params_decisions,
+                    with_decisions code_dep.return return_decisions )
+              in
+              Or_unknown_or_bottom.Ok
+                (Types_rewriter.rewrite_result_types env.types_rewrite_context
+                   ~old_typing_env ~my_closure ~params:params_vars_and_keep
+                   ~results:results_vars_and_keep result_types))
+      in
+      Code_metadata.with_result_types result_types code_metadata
+  in
   let rebuild_body () =
     let region_vars =
       match (my_alloc_mode : Alloc_mode.For_applications.t) with
@@ -2215,11 +2267,8 @@ and rebuild_function_params_and_body (env : env) res code_metadata
 and rebuild_code env res code_id
     ({ params_and_body; free_names_of_params_and_body = _ } : Rev_expr.rev_code)
     =
-  (* At rebuild time, [code_metadata] may only be changed for fields that will
-     never be read again if we perform LTO, namely, code_size and
-     inlining_decisions. All other changes to [code_metadata] must be done in
-     [unboxing_analysis.ml] so that they correctly propagate to other
-     compilation units when in LTO mode. *)
+  (* Calling-convention metadata comes from the solve. Rebuild only updates cost
+     metrics, inlining decisions, and result types for non-LTO export. *)
   let code_metadata =
     Unboxing_analysis.get_code_metadata env.code_changes code_id
   in
@@ -2290,12 +2339,11 @@ type result =
     code_ids_to_remember : Code_id.Set.t
   }
 
-let rebuild ~machine_width ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
-    ~ordered_code_ids
+let rebuild ~machine_width ~ordered_code_ids
     ~(continuation_info : Traverse_acc.continuation_info Continuation.Map.t)
     ~fixed_arity_continuations ~final_typing_env ~types_rewrite_context
-    ~code_changes (solved_dep : Analysis.result) get_code_metadata toplevel_expr
-    code =
+    ~code_changes ~code_deps_for_result_types (solved_dep : Analysis.result)
+    get_code_metadata toplevel_expr code =
   let should_keep_param cont param kind : Unboxing_analysis.param_decision =
     let keep_all_parameters =
       Continuation.Set.mem cont fixed_arity_continuations
@@ -2338,7 +2386,7 @@ let rebuild ~machine_width ~(code_deps : Traverse_acc.code_dep Code_id.Map.t)
     { machine_width;
       uses = solved_dep;
       code_changes;
-      code_deps;
+      code_deps_for_result_types;
       get_code_metadata;
       cont_params_to_keep;
       should_keep_param;
